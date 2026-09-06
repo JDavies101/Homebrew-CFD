@@ -111,8 +111,17 @@ homebrew-cfd/
 **Phase 0 — Scaffold.** Repo structure, environment (Taichi + CUDA verified on the 3090),
 CI-style `pytest` skeleton, config loader. *Exit: `pytest` runs green on an empty suite.*
 
-**Phase 1 — 2D LBM core.** D2Q9 BGK in Taichi. Poiseuille + lid-driven cavity passing
-against analytic / Ghia data. *Exit: Tier B 2D cases within tolerance.*
+**Phase 1 — 2D LBM core. ✅ DONE.** D2Q9 BGK in **NumPy** (not Taichi — Phase 1 stays
+CPU/NumPy for clarity while learning the physics; GPU port lands in Phase 2 where 3D needs
+it). Operators: moments, equilibrium, BGK collision, streaming, bounce-back walls, moving
+wall, Guo body force. Validated:
+- **Poiseuille**: profile exactly parabolic (R²=1.0), peak within 1% of analytic (walls
+  taken from the fit to avoid sub-cell ambiguity). Guo forcing gives 2nd-order accuracy.
+- **Lid-driven cavity vs Ghia et al. (Re=100)**: correct vortex + centerline structure;
+  interior minimum matches Ghia within ~5% at 64² and **<1% at 128²** (convergent).
+
+37 tests (Tier A unit + Tier B validation); validation cases marked `slow`.
+*Exit met.*
 
 **Phase 2 — 3D + first bluff body.** D3Q19, cylinder and sphere drag vs Reynolds number,
 vortex shedding Strouhal check. VTK export working. *Exit: cylinder Cd within a few % of
