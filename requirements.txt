@@ -1,12 +1,10 @@
-# Core GPU compute
-taichi>=1.7.0        # LBM kernels, CUDA backend on the RTX 3090
-
-# Numerics & I/O
+# --- Phase 1 (2D solver, pure NumPy on CPU) ---
 numpy>=1.24
 pyevtk>=1.6.0        # VTK export for ParaView
-
-# Config
 pyyaml>=6.0          # run configuration files
+pytest>=7.4          # tests
 
-# Testing
-pytest>=7.4
+# --- Phase 2+ (3D, GPU) — install when we get there ---
+# taichi>=1.7.0      # LBM kernels, CUDA backend on the RTX 3090.
+#                    # No wheel for Python 3.14 yet; needs a 3.11/3.12 env.
+
