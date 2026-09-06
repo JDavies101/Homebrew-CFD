@@ -32,7 +32,7 @@ def collide_forced(f, tau, F):
 
     return f - (1 / tau) * (f - f_eq) + S
 
-def step(f, tau, solid, g):
+def step(f, tau, solid, g=0):
 
     nx, ny = f.shape[1], f.shape[2]
     F = np.zeros((2, nx, ny))
@@ -43,7 +43,7 @@ def step(f, tau, solid, g):
 
     return f_bc
 
-def run(f, tau, solid, steps, g):
+def run(f, tau, solid, steps, g=0):
 
     for i in range(steps):
         f = step(f, tau, solid, g)
