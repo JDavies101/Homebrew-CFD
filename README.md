@@ -46,3 +46,7 @@ makes this boundary explicit.
 
 Planning. No solver code yet. See [`docs/DESIGN.md`](docs/DESIGN.md) for the architecture
 and the phased roadmap.
+
+## License
+
+[MIT](LICENSE) — free to use, learn from, and build on.
