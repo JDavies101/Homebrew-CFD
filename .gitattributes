@@ -1,2 +1,25 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Normalize all text files to LF in the repo and on checkout.
+# Keeps line endings consistent across Windows (5800X3D box) and Linux/CI.
+* text=auto eol=lf
+
+# Explicit source & config types -> always LF
+*.py    text eol=lf
+*.md    text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+*.txt   text eol=lf
+*.cfg   text eol=lf
+*.toml  text eol=lf
+
+# Windows-native scripts keep CRLF
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# Binary / geometry assets -> never touch
+*.stl   binary
+*.obj   binary
+*.vtk   binary
+*.vti   binary
+*.vtr   binary
+*.vtu   binary
+*.png   binary
