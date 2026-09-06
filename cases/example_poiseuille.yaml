@@ -1,0 +1,8 @@
+# Phase 1 validation case (placeholder config — no solver yet).
+# 2D Poiseuille flow: analytic parabolic velocity profile is the reference.
+name: poiseuille_2d
+dimensions: 2
+resolution: [256, 64]
+reynolds: 100.0
+max_steps: 20000
+backend: cuda
