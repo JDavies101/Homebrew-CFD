@@ -1,5 +1,5 @@
 import numpy as np
-from src.engine import solver as S
+from src.engine.simulation import Simulation
 from src.lbm.moments import macroscopic as np_macroscopic
 from src.lbm.collision import collide as np_collide
 from src.lbm.stream import stream as np_stream
@@ -10,19 +10,19 @@ from src.engine.lattice import W
 import pytest
 
 rng = np.random.default_rng(0)
-nx, ny = S.nx, S.ny
+nx, ny = 64, 64
 mask = np.zeros((nx, ny), np.int32)
 mask[10, 10] = 1
 
 # test 1: compare rho and u between taichi and numpy
-def test_macroscopic_parity():
+def test_macroscopic_parity(sim):
 
     f = rng.uniform(0.5, 1.5, (9, nx, ny)).astype(np.float32)
 
     # taichi
-    S.f.from_numpy(f)
-    S.macroscopic()
-    rho_ti, u_ti = S.rho.to_numpy(), S.u.to_numpy()
+    sim.f.from_numpy(f)
+    sim.macroscopic()
+    rho_ti, u_ti = sim.rho.to_numpy(), sim.u.to_numpy()
 
     # numpy oracle
     rho_np, u_np = np_macroscopic(f.astype(np.float64))
@@ -31,15 +31,15 @@ def test_macroscopic_parity():
     assert np.allclose(u_ti, u_np, atol=1e-4)
 
 # test 2: compare collision between taichi and numpy
-def test_collide_parity():
+def test_collide_parity(sim):
 
     f = rng.uniform(0.5, 1.5, (9, nx, ny)).astype(np.float32)
     tau = rng.uniform(0.5, 1.5)
 
     # taichi
-    S.f.from_numpy(f)
-    S.collide(tau)
-    f_ti = S.f.to_numpy()
+    sim.f.from_numpy(f)
+    sim.collide(tau)
+    f_ti = sim.f.to_numpy()
 
     # numpy oracle
     f_np = np_collide(f.astype(np.float64), tau)
@@ -47,14 +47,14 @@ def test_collide_parity():
     assert np.allclose(f_ti, f_np, atol=1e-4)
 
 # test 3: compare stream between taichi and numpy
-def test_stream_parity():
+def test_stream_parity(sim):
 
     f = rng.uniform(0.5, 1.5, (9, nx, ny)).astype(np.float32)
 
     # taichi
-    S.f.from_numpy(f)
-    S.stream()
-    f_ti = S.f.to_numpy()
+    sim.f.from_numpy(f)
+    sim.stream()
+    f_ti = sim.f.to_numpy()
 
     # numpy oracle
     f_np = np_stream(f.astype(np.float64))
@@ -62,15 +62,15 @@ def test_stream_parity():
     assert np.allclose(f_ti, f_np, atol=1e-4)
 
 # test 4: compare bounce_back between taichi and numpy
-def test_bounce_back_parity():
+def test_bounce_back_parity(sim):
 
     f = rng.uniform(0.5, 1.5, (9, nx, ny)).astype(np.float32)
 
     # taichi
-    S.solid.from_numpy(mask)  #load the wall into the Taichi field
-    S.f.from_numpy(f)
-    S.bounce_back()
-    f_ti = S.f.to_numpy()
+    sim.solid.from_numpy(mask)  #load the wall into the Taichi field
+    sim.f.from_numpy(f)
+    sim.bounce_back()
+    f_ti = sim.f.to_numpy()
 
     # numpy oracle
     f_np = np_bounce_back(f.astype(np.float64), mask.astype(bool))
@@ -79,7 +79,7 @@ def test_bounce_back_parity():
 
 @pytest.mark.slow
 # test 5: compare cavity solving between taichi and numpy
-def test_cavity_parity():
+def test_cavity_parity(sim):
 
     f = rng.uniform(0.5, 1.5, (9, nx, ny)).astype(np.float32)
     N = 64
@@ -96,16 +96,16 @@ def test_cavity_parity():
     stationary = solid & ~lid          # the 3 fixed walls
 
     # taichi
-    S.f.from_numpy(np.tile(W.to_numpy()[:, None, None], (1, N, N)).astype(np.float32))
-    S.solid.from_numpy(stationary.astype(np.int32))
-    S.lid.from_numpy(lid.astype(np.int32))
+    sim.f.from_numpy(np.tile(W[:, None, None], (1, N, N)).astype(np.float32))
+    sim.solid.from_numpy(stationary.astype(np.int32))
+    sim.lid.from_numpy(lid.astype(np.int32))
     for _ in range(steps):
-        S.collide(tau)
-        S.stream()
-        S.bounce_back()
-        S.moving_wall(U)
-    S.macroscopic()
-    u_ti = S.u.to_numpy()[0, nx//2, :]     # read the centerline out of the field
+        sim.collide(tau)
+        sim.stream()
+        sim.bounce_back()
+        sim.moving_wall(U)
+    sim.macroscopic()
+    u_ti = sim.u.to_numpy()[0, nx//2, :]     # read the centerline out of the field
 
     # numpy oracle
     f_np = np_initial(N, N)
@@ -118,3 +118,7 @@ def test_cavity_parity():
     u_np = u_np[0, nx//2, :]
 
     assert np.allclose(u_ti, u_np, atol=1e-4)
+
+@pytest.fixture(scope="module")
+def sim():
+    return Simulation(64, 64, "cpu")
