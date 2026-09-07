@@ -19,6 +19,8 @@ class Simulation3D:
         self.force = ti.field(ti.f32, shape=L3.D)
         self.MIRROR_Y = ti.field(ti.i32, shape=L3.Q)
         self.MIRROR_Y.from_numpy(L3.MIRROR_Y.astype(np.int32))
+        self.q  = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))   # wall fractions (0 = not a boundary link)
+        self.fc = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))   # post-collision snapshot (Bouzidi needs it)
         # lattice constants as fields, built from the NumPy descriptor
         self.E   = ti.field(ti.i32, shape=(self.Q, self.D))
         self.E.from_numpy(L3.E.astype(np.int32))
@@ -124,7 +126,26 @@ class Simulation3D:
                         tmp = self.f[q, i, j, k]
                         self.f[q, i, j, k] = self.f[o, i, j, k]
                         self.f[o, i, j, k] = tmp
-    
+
+    @ti.kernel
+    def bounce_back_interp(self):
+        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
+            for d in range(self.Q):
+                qf = self.q[d, i, j, k]
+                if qf > 0.0:                          # dir d from (i,j,k) crosses the wall
+                    ob = self.OPP[d]
+                    fi = self.fc[d, i, j, k]          # post-collision f_i at x_f
+                    if qf <= 0.5:
+                        iff = i - self.E[d, 0]; jff = j - self.E[d, 1]; kff = k - self.E[d, 2]
+                        if 0 <= iff < self.nx and 0 <= jff < self.ny and 0 <= kff < self.nz:
+                            fiff = self.fc[d, iff, jff, kff]
+                            self.f[ob, i, j, k] = 2.0 * qf * fi + (1.0 - 2.0*qf) * fiff
+                        else:                          # no upstream node -> fall back to halfway
+                            self.f[ob, i, j, k] = fi
+                    else:
+                        fib = self.fc[ob, i, j, k]     # post-collision f_ibar at x_f
+                        self.f[ob, i, j, k] = fi / (2.0 * qf) + (2.0 * qf - 1.0) / (2.0 * qf) * fib
+        
     @ti.kernel
     def free_slip_y(self):
         for i, k in ti.ndrange(self.nx, self.nz):

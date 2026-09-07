@@ -5,6 +5,7 @@ from src.engine import lattice3d as L
 from src.post.progress import Progress
 from src.post.progress import Progress
 from src.post.vtk import write_field
+from src.geometry.wall_fraction import wall_fraction_cylinder
 
 D = 45                      # cylinder diameter in cells
 nx = 1800
@@ -33,6 +34,7 @@ def cylinder():
 def main():
     sim = Simulation3D(nx, ny, nz, backend="cuda")
     sim.solid.from_numpy(cylinder())
+    sim.q.from_numpy(wall_fraction_cylinder(nx, ny, nz, cx, cy, D/2))
     sim.f.from_numpy(np.tile(L.W[:, None, None, None], (1, nx, ny, nz)).astype(np.float32))
 
     cd_samples = []
@@ -40,12 +42,13 @@ def main():
     prog = Progress(steps)
     for s in range(steps):
         sim.collide(tau)
+        sim.fc.copy_from(sim.f)        # snapshot post-collision BEFORE streaming
         sim.drag()          # force measured post collision
         sim.stream()
         sim.inlet_neem(U) # use Guo non-equilibrium extrapolation
         sim.outlet()
         sim.free_slip_y() # top/bottom now free-slip instead of periodic
-        sim.bounce_back()
+        sim.bounce_back_interp()       # replaces bounce_back for the cylinder
 
         if s >= warmup and s % sample_every == 0:
             F = sim.force.to_numpy()
