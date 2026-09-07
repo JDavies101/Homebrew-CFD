@@ -4,6 +4,7 @@ from src.engine.simulation3d import Simulation3D
 from src.engine import lattice3d as L
 from src.post.progress import Progress
 from src.post.vtk import write_field
+from src.geometry.sphere import sphere
 
 D = 20                      # sphere diameter in cells
 nx = 384
@@ -20,16 +21,9 @@ steps = 20000               # sphere wake is steady at this Re -> reaches steady
 check_every = 500           # progress + health readout interval
 A = np.pi * (D/2) ** 2                 # frontal area
 
-def sphere():
-    solid = np.zeros((nx, ny, nz), np.int32)
-    X, Y, Z = np.meshgrid(np.arange(nx), np.arange(ny), np.arange(nz),indexing="ij")
-    ball = (X - cx) ** 2 + (Y - cy) ** 2 + (Z - cz) ** 2< (D / 2) ** 2
-    solid[ball] = 1
-    return solid
-
 def main():
     sim = Simulation3D(nx, ny, nz, backend="cuda")
-    sim.solid.from_numpy(sphere())
+    sim.solid.from_numpy(sphere(nx, ny, nz, cx, cy, cz, D))
     sim.f.from_numpy(np.tile(L.W[:, None, None, None], (1, nx, ny, nz)).astype(np.float32))
 
     prog = Progress(steps)

@@ -3,9 +3,9 @@ import numpy as np
 from src.engine.simulation3d import Simulation3D
 from src.engine import lattice3d as L
 from src.post.progress import Progress
-from src.post.progress import Progress
 from src.post.vtk import write_field
 from src.geometry.wall_fraction import wall_fraction_cylinder
+from src.geometry.cylinder import cylinder
 
 D = 45                      # cylinder diameter in cells
 nx = 1800
@@ -23,17 +23,9 @@ sample_every = 20           # sample force every N steps (avoids per-step GPU sy
 check_every = 500           # progress readout interval
 A = D * nz                  # frontal area
 
-# disc in x-y, spanning the periodic z -> a cylinder
-def cylinder():
-    solid = np.zeros((nx, ny, nz), np.int32)
-    X, Y = np.meshgrid(np.arange(nx), np.arange(ny), indexing="ij")
-    disc = (X - cx) ** 2 + (Y - cy) ** 2 < (D / 2) ** 2
-    solid[disc] = 1
-    return solid
-
 def main():
     sim = Simulation3D(nx, ny, nz, backend="cuda")
-    sim.solid.from_numpy(cylinder())
+    sim.solid.from_numpy(cylinder(nx, ny, nz, cx, cy, D/2))
     sim.q.from_numpy(wall_fraction_cylinder(nx, ny, nz, cx, cy, D/2))
     sim.f.from_numpy(np.tile(L.W[:, None, None, None], (1, nx, ny, nz)).astype(np.float32))
 

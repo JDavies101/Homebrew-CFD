@@ -106,3 +106,17 @@ def test_LES3d(sim):
 
     assert np.allclose(f_check.sum(), f_new.sum(), atol=1e-4)
     assert np.allclose(f_check2.sum(), f.sum(), atol=1e-4)
+
+# test 9: LES BGK match
+def test_LESTinyCSMatchesBGK(sim):
+    f = rng.uniform(0.5, 1.5, (19, N, N, N)).astype(np.float32)
+    tau = rng.uniform(0.5, 1.5)
+    sim.f.from_numpy(f)
+    sim.collide(tau)
+    f_new = sim.f.to_numpy()
+
+    sim.f.from_numpy(f)
+    sim.collide_les(tau, 1e-9)
+    f_check = sim.f.to_numpy()
+
+    assert np.allclose(f_check, f_new, atol=1e-6)
