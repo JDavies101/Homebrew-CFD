@@ -196,7 +196,10 @@ descriptor tests (weights sum to 1, opposites reverse, isotropy moments).
 ## 9. Open questions to revisit
 
 - Taichi vs Warp final call (decide after Phase 1 ergonomics).
-- MRT vs regularized/entropic collision for high-Re stability (decide in Phase 3).
+- Collision operator: **TRT chosen** for Phase 3 (two-relaxation-time). Near-BGK cost
+  (LBM is memory-bound), decouples stability from viscosity, and Lambda=3/16 fixes the
+  tau-dependent wall location. **Full MRT deferred** as a later option if TRT proves
+  insufficient at extreme Re (it buys more control at ~10-25% cost and much more code).
 - FP16 storage - how much accuracy do we trade for domain size? (measure in Phase 5).
 - Real F1 geometry source and its licensing (needed by Phase 4).
 - Cylinder Cd calibration: blockage, resolution, tau, MEM factor (Phase 2, in progress).

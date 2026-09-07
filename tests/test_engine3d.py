@@ -77,3 +77,13 @@ def test_inlet3d(sim):
     assert np.allclose(u[1, 0], 0, atol=1e-5)
     assert np.allclose(u[2, 0], 0, atol=1e-5)
     assert np.allclose(rho[0], 1, atol=1e-5)
+
+# test 7: TRT collision
+def test_collideTRT3d(sim):
+    f = rng.uniform(0.5, 1.5, (19, N, N, N)).astype(np.float32)
+    tau = rng.uniform(0.5, 1.5)
+    sim.f.from_numpy(f)
+    sim.collide_trt(tau)
+    f_new = sim.f.to_numpy()
+
+    assert np.allclose(f.sum(), f_new.sum(), atol=1e-4)

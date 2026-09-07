@@ -10,7 +10,7 @@ nx = 384
 ny = 128
 nz = 128
 U = 0.1                     # inlet speed (keep < ~0.1 for low Mach)
-Re = 20                     # low Re -> high tau (~0.8), damps free-slip-corner instability
+Re = 50                     # low Re -> high tau (~0.8), damps free-slip-corner instability
 nu = U * D / Re
 tau = 3 * nu + 0.5
 cx = 120
@@ -34,7 +34,7 @@ def main():
 
     prog = Progress(steps)
     for s in range(steps):
-        sim.collide(tau)
+        sim.collide_trt(tau)
         sim.drag()          # force measured post collision
         sim.stream()
         sim.inlet(U)        # equilibrium inlet: stable at free-slip corners (NEEM diverges there)

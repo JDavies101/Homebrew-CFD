@@ -70,6 +70,38 @@ class Simulation3D:
                 self.f[q,i,j,k] += -(1/tau)*(self.f[q,i,j,k]-feq)
 
     @ti.kernel
+    def collide_trt(self, tau: ti.f32):
+        s_plus = 1.0 / tau
+        s_minus = 1.0 / (0.5 + (3.0/16.0)/(tau - 0.5))
+        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
+            r = 0.0
+            mx = 0.0
+            my = 0.0
+            mz = 0.0
+            for q in range(self.Q):
+                r += self.f[q, i, j, k]
+                mx += self.f[q, i, j, k] * self.E[q, 0]
+                my += self.f[q, i, j, k] * self.E[q, 1]
+                mz += self.f[q, i, j, k] * self.E[q, 2]
+            ux = mx / r
+            uy = my / r
+            uz = mz / r
+            usqr = ux * ux + uy * uy + uz * uz
+
+            for q in range(self.Q):
+                m = self.OPP[q]
+                if q <= m:                                   # each pair once
+                    eu = self.E[q,0] * ux + self.E[q,1] * uy + self.E[q,2] * uz
+                    even = self.W[q] * r * (1 + 4.5 * eu * eu - 1.5 * usqr)   # feq even part
+                    odd  = self.W[q] * r * (3.0 * eu)                     # feq odd part
+                    fq, fm = self.f[q,i,j,k], self.f[m,i,j,k]
+                    fp  = 0.5 * (fq + fm)       # f even
+                    fmn = 0.5 * (fq - fm)       # f odd
+                    self.f[q,i,j,k] = fq - s_plus * (fp - even) - s_minus * (fmn - odd)
+                    if q != m:                # opposite: even part same, odd part flips sign
+                        self.f[m,i,j,k] = fm - s_plus * (fp - even) + s_minus * (fmn - odd)
+
+    @ti.kernel
     def _stream(self):
         for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):        # parallel over destination cells
             for q in range(self.Q):
