@@ -232,7 +232,7 @@ class Simulation3D:
                             self.force[1] += 2.0 * self.f[q,i,j,k] * self.E[q,1]
                             self.force[2] += 2.0 * self.f[q,i,j,k] * self.E[q,2]
     
-    def step(self, tau, U=0.0):        # NO @ti.kernel — plain Python
+    def step(self, tau, U=0.0):        # NO @ti.kernel - plain Python
         
         self.collide(tau)
         self.stream()

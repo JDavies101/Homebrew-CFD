@@ -95,7 +95,7 @@ class Simulation:
                         self.f[q, i, j] += corr
                         self.f[o, i, j] -= corr        # opposite dir gets the negative
     
-    def step(self, tau, U=0.0):        # NO @ti.kernel — plain Python
+    def step(self, tau, U=0.0):        # NO @ti.kernel - plain Python
         
         self.collide(tau)
         self.stream()

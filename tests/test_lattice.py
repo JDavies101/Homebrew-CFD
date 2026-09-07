@@ -1,6 +1,6 @@
 """Tier A unit tests for the D2Q9 lattice constants.
 
-These check the fixed geometry of the lattice — the invariants that collision,
+These check the fixed geometry of the lattice - the invariants that collision,
 streaming, and bounce-back all depend on. If any of these fail, nothing built
 on top can be trusted.
 """

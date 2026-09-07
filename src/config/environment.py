@@ -8,7 +8,7 @@ Verifies the GPU compute stack is ready before any solver work:
 Run directly:  python -m src.config.environment
 Import and call check_environment() for use in tests / scripts.
 
-No solver physics here — this is a Phase 0 readiness probe.
+No solver physics here - this is a Phase 0 readiness probe.
 """
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ def check_environment() -> EnvReport:
 
 def main() -> int:
     report = check_environment()
-    print("Homebrew CFD — environment check")
+    print("Homebrew CFD - environment check")
     print("-" * 34)
     print(f"Taichi available : {report.taichi_available}")
     print(f"Taichi version   : {report.taichi_version}")
