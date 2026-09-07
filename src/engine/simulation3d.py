@@ -1,9 +1,12 @@
+# 3D D3Q19 LBM solver, runs on cpu or cuda
+# geometry-agnostic: consumes solid/lid/q fields, does not build shapes
 import taichi as ti
 import numpy as np
 from src.engine import lattice3d as L3
 
 @ti.data_oriented
 class Simulation3D:
+    # allocate fields and load the lattice constants
     def __init__(self, nx, ny, nz, backend="cpu"):
         ti.init(arch=ti.cuda if backend == "cuda" else ti.cpu)
         self.Q = L3.Q
@@ -19,6 +22,8 @@ class Simulation3D:
         self.force = ti.field(ti.f32, shape=L3.D)
         self.MIRROR_Y = ti.field(ti.i32, shape=L3.Q)
         self.MIRROR_Y.from_numpy(L3.MIRROR_Y.astype(np.int32))
+        self.MIRROR_Z = ti.field(ti.i32, shape=L3.Q)
+        self.MIRROR_Z.from_numpy(L3.MIRROR_Z.astype(np.int32))
         self.q  = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))   # wall fractions (0 = not a boundary link)
         self.fc = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))   # post-collision snapshot (Bouzidi needs it)
         # lattice constants as fields, built from the NumPy descriptor
@@ -29,15 +34,15 @@ class Simulation3D:
         self.OPP = ti.field(ti.i32, shape=self.Q)
         self.OPP.from_numpy(L3.OPP.astype(np.int32))
 
+    # density and velocity from the populations
     @ti.kernel
     def macroscopic(self):
-        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):    # PARALLEL over cells
-            # same body as before, but self.f, self.rho, self.u, self.E
+        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):    # parallel over cells
             r = 0.0
             mx = 0.0
             my = 0.0
             mz = 0.0
-            for q in range(self.Q):            # serial: sum the 9 populations
+            for q in range(self.Q):            # serial: sum the 19 populations
                 r += self.f[q, i, j, k]
                 mx += self.f[q, i, j, k] * self.E[q, 0]
                 my += self.f[q, i, j, k] * self.E[q, 1]
@@ -47,18 +52,25 @@ class Simulation3D:
             self.u[1, i, j, k] = my / r
             self.u[2, i, j, k] = mz / r
 
+    # wrappers: each collision variant is a special case of collide_full
+    # plain BGK
     def collide(self, tau: ti.f32):
         self.collide_full(tau, 0.0, 0.0, 0)
 
+    # BGK + Guo body force in x
     def collide_forced(self, tau: ti.f32, gx: ti.f32):
         self.collide_full(tau, 0.0, gx,  0)
 
+    # two-relaxation-time
     def collide_trt(self, tau: ti.f32):
         self.collide_full(tau, 0.0, 0.0, 1)
 
+    # BGK + Smagorinsky subgrid viscosity
     def collide_les(self, tau: ti.f32, cs: ti.f32):
         self.collide_full(tau, cs,  0.0, 0)
 
+    # one collision kernel: moments -> local tau (LES) -> TRT/BGK relax + Guo source
+    # cs=0 disables LES, gx=0 disables forcing, trt=0 gives BGK
     @ti.kernel
     def collide_full(self, tau0: ti.f32, cs: ti.f32, gx: ti.f32, trt: ti.i32):
         for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
@@ -99,7 +111,7 @@ class Simulation3D:
                 tau = 0.5 * (tau0 + ti.sqrt(tau0 * tau0 + 18.0 * cs * cs * Qmag / r))
 
             s_plus = 1.0 / tau
-            s_minus = s_plus # rtr = 0 then BGK
+            s_minus = s_plus # trt = 0 -> BGK
             if trt == 1:
                 s_minus = 1.0 / (0.5 + (3.0 / 16.0) / (tau - 0.5))
             prefac = 1.0 - 0.5 * s_plus # Guo prefactor
@@ -118,19 +130,22 @@ class Simulation3D:
                     if q != m:
                         self.f[m,i,j,k] = fm - s_plus*(fp-even) + s_minus*(fmn-odd) + Sm
 
+    # pull each population from its upstream neighbour into f_new
     @ti.kernel
     def _stream(self):
         for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):        # parallel over destination cells
             for q in range(self.Q):
                 src_i = (i - self.E[q,0]) % self.nx     # where this population came from
-                src_j = (j - self.E[q,1]) % self.ny     # % nx/ny = periodic wrap
+                src_j = (j - self.E[q,1]) % self.ny     # % nx/ny/nz = periodic wrap
                 src_k = (k - self.E[q,2]) % self.nz
                 self.f_new[q, i, j, k] = self.f[q, src_i, src_j, src_k]
 
+    # stream then swap the buffer back into f
     def stream(self):                        # plain Python: kernel + buffer swap
         self._stream()
         self.f.copy_from(self.f_new)
 
+    # no-slip wall: reverse the populations at solid nodes
     @ti.kernel
     def bounce_back(self):
         for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):        # parallel over cells
@@ -142,6 +157,9 @@ class Simulation3D:
                         self.f[q, i, j, k] = self.f[o, i, j, k]
                         self.f[o, i, j, k] = tmp
 
+    # Bouzidi wall: interpolate the reflected population using the sub-cell
+    # wall fraction q, so curved surfaces are not staircased
+    # reads fc (post-collision), writes f (post-stream)
     @ti.kernel
     def bounce_back_interp(self):
         for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
@@ -161,6 +179,7 @@ class Simulation3D:
                         fib = self.fc[ob, i, j, k]     # post-collision f_ibar at x_f
                         self.f[ob, i, j, k] = fi / (2.0 * qf) + (2.0 * qf - 1.0) / (2.0 * qf) * fib
         
+    # free-slip y walls: specular reflection, mirrors the y component
     @ti.kernel
     def free_slip_y(self):
         for i, k in ti.ndrange(self.nx, self.nz):
@@ -176,11 +195,12 @@ class Simulation3D:
                     self.f[q, i, self.ny - 1, k] = self.f[m, i , self.ny - 1, k]
                     self.f[m, i, self.ny - 1, k] = t2
     
+    # free-slip z walls: specular reflection, mirrors the z component
     @ti.kernel
     def free_slip_z(self):
         for i, j in ti.ndrange(self.nx, self.ny):
             for q in range(self.Q):
-                m = self.MIRROR_Y[q]
+                m = self.MIRROR_Z[q]
                 if q < m:
                     #  wall k = 0
                     t = self.f[q, i, j, 0]
@@ -191,6 +211,7 @@ class Simulation3D:
                     self.f[q, i, j, self.nz - 1] = self.f[m, i , j, self.nz - 1]
                     self.f[m, i, j, self.nz - 1] = t2
 
+    # lid: bounce-back plus a momentum kick so the wall drags the fluid at U
     @ti.kernel
     def moving_wall(self, U: ti.f32):
         for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
@@ -205,6 +226,8 @@ class Simulation3D:
                         self.f[q, i, j, k] += corr
                         self.f[o, i, j, k] -= corr        # opposite dir gets the negative
     
+    # equilibrium inlet at x=0, rho fixed at 1
+    # stable but soft: the free-stream can sag below U against blockage
     @ti.kernel
     def inlet(self, U: ti.f32):
         for j, k in ti.ndrange(self.ny, self.nz):
@@ -213,6 +236,9 @@ class Simulation3D:
                 usqr = U * U
                 self.f[q,0,j,k] = self.W[q] * (1+ 3 * eu + 4.5 * eu * eu - 1.5 * usqr)
     
+    # Guo non-equilibrium extrapolation inlet: equilibrium at the imposed U with
+    # rho taken from x=1, plus the neighbour non-equilibrium part
+    # holds the free-stream rigidly, but diverges where two free-slip walls meet
     @ti.kernel
     def inlet_neem(self, U: ti.f32):
         for j, k in ti.ndrange(self.ny, self.nz):
@@ -238,12 +264,15 @@ class Simulation3D:
                 feq_n = self.W[q] * rn * (1+ 3 * eu_n + 4.5 * eu_n * eu_n - 1.5 * usqr_n)
                 self.f[q, 0, j, k] = feq_b + (self.f[q, 1, j, k] - feq_n)
 
+    # zero-gradient outlet: copy the second-to-last plane onto the last
     @ti.kernel
     def outlet(self):
         for j, k in ti.ndrange(self.ny, self.nz):
             for q in range(self.Q):
                 self.f[q, self.nx - 1, j, k] = self.f[q, self.nx - 2, j , k]
-    
+
+    # force on the solid by momentum exchange, sum 2 c_i f_i over fluid->solid links
+    # call after collide, before stream
     @ti.kernel
     def drag(self):
         for c in range(L3.D): # reset accumulator
