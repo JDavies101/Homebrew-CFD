@@ -44,8 +44,35 @@ makes this boundary explicit.
 
 ## Status
 
-Planning. No solver code yet. See [`docs/DESIGN.md`](docs/DESIGN.md) for the architecture
-and the phased roadmap.
+**Phases 0–2 complete: a validated 2D and 3D GPU solver.** Working from the ground up,
+built and checked one operator at a time.
+
+- **Phase 1 — 2D core (NumPy):** D2Q9 BGK — moments, equilibrium, collision, streaming,
+  bounce-back, moving wall, Guo body force. Validated against **Poiseuille** (exact
+  parabola, R²=1, peak <1%) and the **Ghia et al. lid-driven cavity** (<1% at 128²).
+- **Phase 2 — 3D on the GPU (Taichi):** D3Q19 engine (`Simulation3D`), Guo forcing,
+  velocity inlet/outlet, free-slip walls, voxelized obstacles, drag via momentum exchange,
+  VTK export, and a live progress/ETA + divergence monitor. Validated against **cylinder**
+  flow (measured Re and vortex-shedding Strouhal ≈ 0.165 both correct; no shedding below
+  the critical Re) and **sphere** drag. Same code runs on CPU or CUDA via one flag.
+
+Honest limits, all documented in [`docs/DESIGN.md`](docs/DESIGN.md): staircase bounce-back
+over-predicts absolute drag (cured by interpolated bounce-back), and BGK needs headroom
+above τ=0.5 for high Re (cured by MRT). Both are **Phase 3** work — turbulence (LES),
+wall functions, and MRT collision — the gate to real F1 geometry (Ahmed body first).
+
+### Run it
+
+```bash
+py -3.12 -m venv .venv && .venv\Scripts\activate      # Taichi needs Python <=3.12
+pip install -r requirements.txt
+python -m src.config.environment          # verify CUDA on the GPU
+python -m src.examples.cylinder           # 3D cylinder: prints Cd + Strouhal
+pytest -m "not slow"                      # fast unit tests
+pytest                                    # + physics validation (Poiseuille, cavity)
+```
+
+See [`docs/DESIGN.md`](docs/DESIGN.md) for the architecture, numerics, and full roadmap.
 
 ## License
 
