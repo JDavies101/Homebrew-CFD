@@ -1,3 +1,4 @@
+# BGK collision: conservation, tau independence, equilibrium fixed point
 import numpy as np
 from src.lbm.collision import collide
 from src.lbm.moments import macroscopic

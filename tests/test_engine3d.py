@@ -1,3 +1,4 @@
+# 3D engine invariants: moments, collision, streaming, walls, inlet
 import numpy as np
 import pytest
 from src.engine.simulation3d import Simulation3D

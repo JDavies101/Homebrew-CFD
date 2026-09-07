@@ -1,3 +1,4 @@
+# sphere solid mask
 import numpy as np
 
 def sphere(nx, ny, nz, cx, cy, cz, D):

@@ -1,3 +1,4 @@
+# 2D timestep: at rest stays at rest, no NaNs, mass conserved
 import numpy as np
 from src.lbm.advance import initial, run
 from src.lbm.moments import macroscopic

@@ -1,3 +1,4 @@
+# bounce-back wall and moving wall
 import numpy as np
 from . import lattice as lt
 

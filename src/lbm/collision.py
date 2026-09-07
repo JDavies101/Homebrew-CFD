@@ -1,3 +1,4 @@
+# BGK collision: relax the populations toward equilibrium
 import numpy as np
 from .moments import macroscopic
 from .equilibrium import equilibrium

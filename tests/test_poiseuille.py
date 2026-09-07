@@ -1,3 +1,4 @@
+# 2D Poiseuille: parabolic profile, symmetry, peak vs analytic
 import numpy as np
 import pytest
 from src.lbm.advance import initial, run

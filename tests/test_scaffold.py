@@ -1,8 +1,4 @@
-"""Phase 0 scaffold tests.
-
-These assert the project skeleton is wired up correctly. No solver physics yet;
-physics validation (Tier B) arrives with each solver phase.
-"""
+# scaffold checks: packages import, env probe runs, config validates
 from pathlib import Path
 
 import pytest

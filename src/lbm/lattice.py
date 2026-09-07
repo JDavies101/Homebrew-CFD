@@ -1,3 +1,4 @@
+# D2Q9 lattice constants: velocities, weights, opposites
 import numpy as np
 
 # number of directions, each cell has 9 populations

@@ -1,3 +1,4 @@
+# equilibrium distribution from rho and u
 import numpy as np
 from . import lattice as lt
 

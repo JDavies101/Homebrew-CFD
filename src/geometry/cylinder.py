@@ -1,3 +1,4 @@
+# cylinder solid mask: disc in x-y, spanning z
 import numpy as np
 
 def cylinder(nx, ny, nz, cx, cy, r):

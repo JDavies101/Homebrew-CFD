@@ -1,3 +1,4 @@
+# bounce-back: swap at the wall, fluid untouched, involution
 import numpy as np
 from src.lbm.boundary_conditions import bounce_back
 from src.lbm import lattice as lt

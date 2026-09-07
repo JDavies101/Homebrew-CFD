@@ -1,3 +1,4 @@
+# equilibrium: moment round-trip and a hand-computed value
 import numpy as np
 from src.lbm.moments import macroscopic
 from src.lbm.equilibrium import equilibrium

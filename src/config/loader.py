@@ -1,9 +1,4 @@
-"""Run configuration loading for Homebrew CFD.
-
-A run is described by a YAML file (see cases/). Phase 0 keeps this deliberately
-small: load YAML into a validated dataclass with sane defaults. Physics fields
-will grow as solver phases land.
-"""
+# run settings loaded from a yaml case file (see cases/)
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -11,12 +6,9 @@ from pathlib import Path
 from typing import Any
 
 
+# one run, with defaults
 @dataclass
 class RunConfig:
-    """Minimal run configuration.
-
-    Fields are intentionally generic for Phase 0; each solver phase extends this.
-    """
     name: str = "unnamed"
     dimensions: int = 2            # 2 (Phase 1) or 3 (Phase 2+)
     resolution: list[int] = field(default_factory=lambda: [256, 128])
@@ -24,6 +16,7 @@ class RunConfig:
     max_steps: int = 10_000
     backend: str = "cuda"          # "cuda" or "cpu"
 
+    # reject nonsense settings early
     def validate(self) -> None:
         if self.dimensions not in (2, 3):
             raise ValueError(f"dimensions must be 2 or 3, got {self.dimensions}")
@@ -41,8 +34,8 @@ class RunConfig:
             raise ValueError(f"backend must be 'cuda' or 'cpu', got {self.backend}")
 
 
+# build a validated config from a plain dict
 def from_dict(data: dict[str, Any]) -> RunConfig:
-    """Build a validated RunConfig from a plain dict."""
     known = RunConfig.__dataclass_fields__.keys()
     filtered = {k: v for k, v in data.items() if k in known}
     cfg = RunConfig(**filtered)
@@ -50,8 +43,8 @@ def from_dict(data: dict[str, Any]) -> RunConfig:
     return cfg
 
 
+# read a yaml case file into a validated config
 def load_config(path: str | Path) -> RunConfig:
-    """Load and validate a YAML run configuration."""
     import yaml
 
     path = Path(path)

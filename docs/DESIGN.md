@@ -18,9 +18,9 @@ This document is the technical plan. It is meant to be edited as decisions chang
 
 - **Method:** Lattice Boltzmann, D3Q19 to start (good accuracy/cost balance); D3Q27
   option later for higher-fidelity turbulence.
-- **Collision operator:** start with BGK (single relaxation time) for clarity and
-  testing; move to MRT or a regularized/entropic operator for stability at the high
-  Reynolds numbers of car aero (Re ~ 10^6).
+- **Collision operator:** BGK (single relaxation time) first for clarity, then **TRT**
+  (two-relaxation-time) for stability at the high Reynolds numbers of car aero (Re ~ 10^6).
+  Full MRT is deferred - see section 9.
 - **Turbulence:** LES with a Smagorinsky (or WALE) subgrid model. Direct wall resolution
   is infeasible at these Re on one GPU, so use **wall functions**.
 - **Boundary conditions:** inlet velocity, outlet pressure/outflow, no-slip walls
@@ -48,6 +48,12 @@ no body-fitted meshing, so any source that can produce a watertight surface or a
 
 After voxelization, assign per-part tags (front wing, floor, wheels...) so forces can be
 broken out by part.
+
+Curved walls also need a **wall fraction** field `q`, shaped `(Q, nx, ny, nz)`: for each
+fluid node and direction, the fraction of that link lying inside the fluid before it
+crosses the surface. `0` means the link is not a boundary link. Interpolated bounce-back
+consumes it; it is produced per shape in `src/geometry/` (analytically for cylinder and
+sphere, from a signed-distance field for arbitrary STL later).
 
 > No CAD/geometry files exist yet - intentional. Phases 1-3 run entirely on parametric and
 > hand-drawn shapes, so validation never blocks on external assets. STL import is only
@@ -100,9 +106,10 @@ homebrew-cfd/
 |   |                   #   streaming, boundary conditions, advance (Phase 1 reference)
 |   +-- engine/         # 3D Taichi solver: lattice3d, Simulation3D (GPU/CPU) (Phase 2)
 |   +-- examples/       # runnable cases: cavity, cylinder, sphere
-|   +-- post/           # plotting, VTK export, progress monitor
+|   +-- post/           # plotting, VTK export, progress/health monitor
 |   +-- config/         # run configuration, environment check
-|   +-- geometry/       # STL import, voxelization, part tagging (Phase 4)
+|   +-- geometry/       # solid masks (cylinder, sphere) and wall fractions;
+|   |                   #   STL import + voxelization later (Phase 4)
 |   +-- turbulence/     # LES subgrid model, wall functions (Phase 3)
 +-- cases/              # validation + demo case definitions
 +-- tests/              # pytest: Tier A unit + Tier B validation (marked slow)
@@ -123,7 +130,7 @@ wall, Guo body force. Validated:
 - **Lid-driven cavity vs Ghia et al. (Re=100)**: correct vortex + centerline structure;
   interior minimum matches Ghia within ~5% at 64^2 and **<1% at 128^2** (convergent).
 
-37 tests (Tier A unit + Tier B validation); validation cases marked `slow`.
+44 fast tests (Tier A unit) + 10 slow (Tier B validation).
 *Exit met.*
 
 **Phase 2 - 3D + first bluff body. DONE.** D3Q19 engine (`Simulation3D`), Guo
@@ -134,7 +141,8 @@ monitor. Cylinder result:
   100); vortex shedding **Strouhal = 0.165** at Re=100 (ref ~0.16-0.18); **no shedding at
   Re=40** (correct sub-critical behavior).
 - **Drag: correct method, known discretization offset.** Momentum-exchange force is
-  `sum 2 c_i f_i` (post-collision, over fluid->solid links). Cd ~ 1.9 vs unbounded ref ~1.4 -
+  `sum 2 c_i f_i` (post-collision, over fluid->solid links). Cd ~ 1.9 vs unbounded ref ~1.4
+(later cut to 1.576 by interpolated bounce-back in Phase 3) -
   the ~35% is the documented over-prediction of **full-way (staircase) bounce-back** at
   finite resolution, which converges with resolution and is cured by **interpolated
   bounce-back** (the accuracy upgrade, deferred to Phase 3 with the wall-treatment work;
@@ -146,18 +154,41 @@ Sphere (true 3D): runs stably at low Re (Re~15-20; BGK needs high tau, so higher
 MRT in Phase 3). Cd lands in the staircase over-prediction band, but the free-slip **corner**
 where the y and z symmetry planes meet injects spurious energy (`max|u|` ~4x inlet) - a
 node-based specular-reflection artifact needing proper corner handling (Phase 3). So the
-sphere validates the machinery, not a clean Cd.
+sphere validates the machinery, not a clean Cd. It also still uses staircase
+`bounce_back`: only `wall_fraction_cylinder` exists, so the sphere never got Bouzidi.
+A `wall_fraction_sphere` is the fix.
 
 Regression net: `tests/test_engine3d.py` (6 Tier-A invariant tests - macroscopic, collide
 fixed-point, conservation, bounce-back swap, free-slip involution, inlet). It caught a real
 top-wall bug in `free_slip_y`/`_z` (a reused temp), which also slightly cleaned the cylinder
-Cd (1.89->1.83). 41 fast tests total; validation cases marked `slow`.
+Cd (1.89->1.83). 44 fast tests total; validation cases marked `slow`.
 
 *Exit met. Deferred to Phase 3: interpolated bounce-back (staircase Cd),
 free-slip corner treatment (sphere), MRT/regularized collision (high-Re stability).*
 
-**Phase 3 - Turbulence + walls.** LES subgrid model, wall functions; backward-facing step
-and **Ahmed body** validation. *Exit: Ahmed body Cd and wake match published data.*
+**Phase 3 - Turbulence + walls. IN PROGRESS.** Three of the core operators are in, each
+validated by reducing exactly to the previous scheme (a golden-oracle parity test):
+
+- **TRT collision. DONE.** Two-relaxation-time: even/odd split about `OPP`, with `s_plus`
+  set by viscosity and `s_minus` by the magic parameter `Lambda = 3/16` (which also fixes
+  the tau-dependent wall location). Decouples stability from viscosity: the sphere now runs
+  at Re=50 where BGK diverged above Re=20. Parity test: `s_minus = s_plus` reproduces BGK.
+- **Interpolated (Bouzidi) bounce-back. DONE.** Uses a per-link sub-cell wall fraction `q`
+  so curved surfaces are not staircased. Cylinder Cd **1.83 -> 1.576** against the ~1.4
+  reference. Needs a post-collision snapshot (`fc`) and costs ~38% runtime (the per-step
+  full-field copy; fixable later with buffer ping-pong).
+- **LES Smagorinsky. DONE.** Local eddy viscosity from the non-equilibrium stress tensor
+  `Q_ij` (no finite differences, fully local), giving a per-cell `tau`. Inactive on smooth
+  flow (`|Q|=0`), active where strained. Parity test: `cs=0` reproduces BGK exactly.
+
+**Collision consolidation.** All variants are now one kernel, `collide_full(tau, cs, gx,
+trt)`, with thin Python wrappers (`collide`, `collide_forced`, `collide_trt`, `collide_les`)
+as special cases. This removed four copies of the moment block and, more importantly, makes
+the variants **composable** - TRT + LES + forcing together, which the Ahmed body needs and
+the previous separate kernels could not express.
+
+*Remaining: wall functions; then backward-facing step and the **Ahmed body** gate.
+Exit: Ahmed body Cd and wake match published data.*
 
 **Phase 4 - Automotive features.** STL import + voxelization of real parts, moving ground,
 rotating wheels, per-part force breakdown. *Exit: front-wing or full-car run with sane,

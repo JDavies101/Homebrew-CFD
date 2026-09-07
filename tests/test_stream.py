@@ -1,3 +1,4 @@
+# streaming: mass conserved, blob moves one cell, rest stays put
 import numpy as np
 from src.lbm.stream import stream
 

@@ -44,8 +44,8 @@ makes this boundary explicit.
 
 ## Status
 
-**Phases 0-2 complete: a validated 2D and 3D GPU solver.** Working from the ground up,
-built and checked one operator at a time.
+**Phases 0-2 complete, Phase 3 underway: a validated 2D and 3D GPU solver with
+turbulence and sub-cell walls.** Built and checked one operator at a time.
 
 - **Phase 1 - 2D core (NumPy):** D2Q9 BGK - moments, equilibrium, collision, streaming,
   bounce-back, moving wall, Guo body force. Validated against **Poiseuille** (exact
@@ -56,10 +56,17 @@ built and checked one operator at a time.
   flow (measured Re and vortex-shedding Strouhal ~ 0.165 both correct; no shedding below
   the critical Re) and **sphere** drag. Same code runs on CPU or CUDA via one flag.
 
-Honest limits, all documented in [`docs/DESIGN.md`](docs/DESIGN.md): staircase bounce-back
-over-predicts absolute drag (cured by interpolated bounce-back), and BGK needs headroom
-above tau=0.5 for high Re (cured by MRT). Both are **Phase 3** work - turbulence (LES),
-wall functions, and MRT collision - the gate to real F1 geometry (Ahmed body first).
+- **Phase 3 - turbulence and walls (in progress):** **TRT** collision (stability decoupled
+  from viscosity - the sphere now runs at Re=50 where BGK diverged above Re=20),
+  **interpolated (Bouzidi) bounce-back** for curved walls (cylinder Cd **1.83 -> 1.576**
+  toward the ~1.4 reference), and **LES Smagorinsky** subgrid turbulence. All collision
+  variants are one composable kernel. Each was validated by reducing exactly to the
+  previous scheme.
+
+Honest limits, all documented in [`docs/DESIGN.md`](docs/DESIGN.md): the sphere still uses
+staircase bounce-back (no `wall_fraction_sphere` yet) so its Cd is over-predicted, and
+absolute drag remains sensitive to blockage and resolution. Still to come: **wall
+functions**, then the **backward-facing step** and **Ahmed body** gate before F1 geometry.
 
 ### Run it
 

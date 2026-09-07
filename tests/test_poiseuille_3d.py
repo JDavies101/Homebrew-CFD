@@ -1,3 +1,4 @@
+# 3D Poiseuille on the taichi engine, same analytic parabola
 import numpy as np
 import pytest
 from src.engine.simulation3d import Simulation3D as S

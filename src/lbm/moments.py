@@ -1,3 +1,4 @@
+# density and velocity from the populations
 from . import lattice as lt
 import numpy as np
 

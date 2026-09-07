@@ -1,3 +1,4 @@
+# D3Q19 lattice constants: velocities, weights, opposites, y/z mirrors
 import numpy as np
 
 Q = 19 

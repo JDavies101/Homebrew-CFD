@@ -1,3 +1,4 @@
+# density and velocity from known population states
 import numpy as np
 from src.lbm import moments
 

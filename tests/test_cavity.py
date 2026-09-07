@@ -1,3 +1,4 @@
+# lid-driven cavity vs Ghia et al. (Re=100)
 import numpy as np
 import pytest
 from src.lbm.advance import initial

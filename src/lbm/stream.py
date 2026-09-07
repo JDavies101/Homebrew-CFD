@@ -1,3 +1,4 @@
+# streaming: shift each population one cell along its own direction
 import numpy as np
 from . import lattice as lt
 

@@ -1,3 +1,4 @@
+# sub-cell wall fractions q for interpolated bounce-back
 from src.engine import lattice3d as L3
 import numpy as np
 

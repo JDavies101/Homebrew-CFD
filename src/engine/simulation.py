@@ -1,3 +1,4 @@
+# 2D D2Q9 taichi solver, runs on cpu or cuda
 import taichi as ti
 import numpy as np
 from src.engine import lattice as L

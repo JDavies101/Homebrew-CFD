@@ -1,40 +1,26 @@
-"""Environment check for Homebrew CFD.
-
-Verifies the GPU compute stack is ready before any solver work:
-  * Taichi imports
-  * the CUDA backend initializes (the RTX 3090 is visible)
-  * reports available VRAM
-
-Run directly:  python -m src.config.environment
-Import and call check_environment() for use in tests / scripts.
-
-No solver physics here - this is a Phase 0 readiness probe.
-"""
+# checks taichi imports and that the cuda backend starts on the gpu
+# run: python -m src.config.environment
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 
+# what the probe found
 @dataclass
 class EnvReport:
-    """Result of an environment probe."""
     taichi_available: bool
     taichi_version: str | None
     cuda_available: bool
     notes: list[str]
 
+    # true when the gpu solver can run
     @property
     def ready(self) -> bool:
-        """True when the GPU LBM stack can run."""
         return self.taichi_available and self.cuda_available
 
 
+# probe the environment, never raises: failures land in the report
 def check_environment() -> EnvReport:
-    """Probe the compute environment without raising.
-
-    Safe to call anywhere (including CI without a GPU): failures are recorded
-    in the report rather than thrown, so callers decide how strict to be.
-    """
     notes: list[str] = []
 
     try:

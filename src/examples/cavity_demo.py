@@ -1,3 +1,4 @@
+# lid-driven cavity on the 2D numpy solver, plots the vortex
 import numpy as np
 from src.lbm.advance import initial
 from src.lbm.moments import macroscopic

@@ -1,3 +1,4 @@
+# D2Q9 lattice constants for the 2D taichi engine
 import numpy as np
 
 Q = 9 

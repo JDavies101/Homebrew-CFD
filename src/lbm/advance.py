@@ -1,3 +1,4 @@
+# 2D timestep and run loop, with Guo body force
 import numpy as np
 from .stream import stream
 from .collision import collide
