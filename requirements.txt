@@ -5,7 +5,8 @@ pyevtk>=1.6.0        # VTK export for ParaView
 pyyaml>=6.0          # run configuration files
 pytest>=7.4          # tests
 
-# --- Phase 2+ (3D, GPU) — install when we get there ---
-# taichi>=1.7.0      # LBM kernels, CUDA backend on the RTX 3090.
-#                    # No wheel for Python 3.14 yet; needs a 3.11/3.12 env.
+# --- Phase 2+ (3D, GPU) ---
+# Taichi needs Python <=3.12 (no 3.14 wheel). Use a dedicated 3.12 venv:
+#   py -3.12 -m venv .venv  &&  .venv\Scripts\activate  &&  pip install -r requirements.txt
+taichi>=1.7.0        # LBM kernels, CUDA backend on the RTX 3090
 
