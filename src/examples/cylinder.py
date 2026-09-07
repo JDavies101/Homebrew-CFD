@@ -35,11 +35,11 @@ def main():
     fy_history = []
     for s in range(steps):
         sim.collide(tau)
+        sim.drag()          # force measured post collision
         sim.stream()
         sim.inlet_neem(U) # use Guo non-equilibrium extrapolation
         sim.outlet()
         sim.free_slip_y() # top/bottom now free-slip instead of periodic
-        sim.drag()          # force measured after stream, before bounce-back
         sim.bounce_back()
 
         if s >= warmup and s % sample_every == 0:

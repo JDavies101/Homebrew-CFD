@@ -206,10 +206,9 @@ class Simulation3D:
                     # if the neighbor is inside the domain and solid, then boundary link
                     if 0 <= ni < self.nx and 0 <= nj < self.ny and 0 <= nk < self.nz:
                         if self.solid[ni, nj, nk] == 1:
-                            contrib = self.f[q,i,j,k] + self.f[self.OPP[q],i,j,k]
-                            self.force[0] += contrib * self.E[q,0]
-                            self.force[1] += contrib * self.E[q,1]
-                            self.force[2] += contrib * self.E[q,2]
+                            self.force[0] += 2.0 * self.f[q,i,j,k] * self.E[q,0]
+                            self.force[1] += 2.0 * self.f[q,i,j,k] * self.E[q,1]
+                            self.force[2] += 2.0 * self.f[q,i,j,k] * self.E[q,2]
     
     def step(self, tau, U=0.0):        # NO @ti.kernel — plain Python
         
