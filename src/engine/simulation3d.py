@@ -72,6 +72,31 @@ class Simulation3D:
                 self.f[q,i,j,k] += -(1/tau)*(self.f[q,i,j,k]-feq)
 
     @ti.kernel
+    def collide_forced(self, tau: ti.f32, gx: ti.f32):
+        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
+            r = 0.0
+            mx = 0.0
+            my = 0.0
+            mz = 0.0
+            for q in range(self.Q):
+                r += self.f[q,i,j,k]
+                mx += self.f[q,i,j,k] * self.E[q,0]
+                my += self.f[q,i,j,k] * self.E[q,1]
+                mz += self.f[q,i,j,k] * self.E[q,2]
+            ux = (mx + gx*0.5) / r # half-force velocity correction
+            uy = my / r
+            uz = mz / r
+            usqr = ux*ux + uy*uy + uz*uz
+            prefac = 1.0 - 1.0 / (2.0 * tau)
+            for q in range(self.Q):
+                eu = self.E[q,0] * ux + self.E[q,1] * uy + self.E[q,2] * uz
+                eF = self.E[q,0] * gx # F only in x
+                uF = ux * gx
+                feq = self.W[q] * r * (1 + 3 * eu + 4.5 * eu * eu - 1.5 * usqr)
+                S = prefac * self.W[q] * (3 * (eF - uF) + 9 * eu * eF)
+                self.f[q,i,j,k] += -(1.0 / tau) * (self.f[q,i,j,k] - feq) + S
+
+    @ti.kernel
     def collide_trt(self, tau: ti.f32):
         s_plus = 1.0 / tau
         s_minus = 1.0 / (0.5 + (3.0/16.0)/(tau - 0.5))
@@ -102,6 +127,48 @@ class Simulation3D:
                     self.f[q,i,j,k] = fq - s_plus * (fp - even) - s_minus * (fmn - odd)
                     if q != m:                # opposite: even part same, odd part flips sign
                         self.f[m,i,j,k] = fm - s_plus * (fp - even) + s_minus * (fmn - odd)
+
+    @ti.kernel
+    def collide_les(self, tau0: ti.f32, cs: ti.f32):
+        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
+            r = 0.0
+            mx = 0.0
+            my = 0.0
+            mz = 0.0
+            for q in range(self.Q):
+                r += self.f[q, i, j, k]
+                mx += self.f[q, i, j, k] * self.E[q, 0]
+                my += self.f[q, i, j, k] * self.E[q, 1]
+                mz += self.f[q, i, j, k] * self.E[q, 2]
+            ux = mx / r
+            uy = my / r
+            uz = mz / r
+            usqr = ux*ux + uy*uy + uz*uz
+            # accumulate the non-eq stress tensor from (f - feq):
+            Qxx=0.0
+            Qyy=0.0
+            Qzz=0.0
+            Qxy=0.0
+            Qxz=0.0
+            Qyz=0.0
+            for q in range(self.Q):
+                eu = self.E[q,0] * ux + self.E[q,1] * uy + self.E[q,2] * uz
+                feq = self.W[q] * r * (1 + 3 * eu + 4.5 * eu * eu - 1.5 * usqr)
+                neq = self.f[q,i,j,k] - feq
+                Qxx += self.E[q,0] * self.E[q,0] * neq
+                Qyy += self.E[q,1] * self.E[q,1] * neq
+                Qzz += self.E[q,2] * self.E[q,2] * neq
+                Qxy += self.E[q,0] * self.E[q,1] * neq
+                Qxz += self.E[q,0] * self.E[q,2] * neq
+                Qyz += self.E[q,1] * self.E[q,2] * neq
+
+            Qmag = ti.sqrt(Qxx * Qxx + Qyy * Qyy + Qzz * Qzz + 2 * (Qxy * Qxy + Qxz * Qxz + Qyz * Qyz))
+            tau = 0.5 * (tau0 + ti.sqrt(tau0 * tau0 + 18.0 * cs * cs * Qmag / r))
+            # then BGK relax with this local tau, second loop over q:
+            for q in range(self.Q):
+                eu = self.E[q,0] * ux + self.E[q,1] * uy + self.E[q,2] * uz
+                feq = self.W[q] * r *(1 + 3 * eu + 4.5 * eu * eu - 1.5 * usqr)
+                self.f[q,i,j,k] += -(1.0 / tau) * (self.f[q,i,j,k] - feq)
 
     @ti.kernel
     def _stream(self):
@@ -189,31 +256,6 @@ class Simulation3D:
                         corr = 6.0 * self.W[q] * self.E[q, 0] * U
                         self.f[q, i, j, k] += corr
                         self.f[o, i, j, k] -= corr        # opposite dir gets the negative
-    
-    @ti.kernel
-    def collide_forced(self, tau: ti.f32, gx: ti.f32):
-        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
-            r = 0.0
-            mx = 0.0
-            my = 0.0
-            mz = 0.0
-            for q in range(self.Q):
-                r += self.f[q,i,j,k]
-                mx += self.f[q,i,j,k] * self.E[q,0]
-                my += self.f[q,i,j,k] * self.E[q,1]
-                mz += self.f[q,i,j,k] * self.E[q,2]
-            ux = (mx + gx*0.5) / r # half-force velocity correction
-            uy = my / r
-            uz = mz / r
-            usqr = ux*ux + uy*uy + uz*uz
-            prefac = 1.0 - 1.0 / (2.0 * tau)
-            for q in range(self.Q):
-                eu = self.E[q,0] * ux + self.E[q,1] * uy + self.E[q,2] * uz
-                eF = self.E[q,0] * gx # F only in x
-                uF = ux * gx
-                feq = self.W[q] * r * (1 + 3 * eu + 4.5 * eu * eu - 1.5 * usqr)
-                S = prefac * self.W[q] * (3 * (eF - uF) + 9 * eu * eF)
-                self.f[q,i,j,k] += -(1.0 / tau) * (self.f[q,i,j,k] - feq) + S
     
     @ti.kernel
     def inlet(self, U: ti.f32):
