@@ -140,9 +140,34 @@ tables, mixed-precision for larger domains.
 Each phase ends only when its validation gate passes. Docs and tests are updated within
 the same phase, not after.
 
-## 8. Open questions to revisit
+## 8. Additional lattice stencils (future)
+
+The lattice is a pure-data descriptor (`Q, D, E, W, OPP, CS2`) that the operators
+consume generically, so new stencils are data-only additions — no kernel changes for
+same-dimension sets. Candidates, and what each is actually good for:
+
+- **D3Q15 / D3Q19 / D3Q27** — the 3D Navier–Stokes workhorses. D3Q19 is the default;
+  D3Q27 for high-Re isotropy/stability; D3Q15 for cheap/coarse runs (weaker isotropy).
+  *(D3Q19 done; Q15/Q27 planned as data-only additions.)*
+- **D2Q9** — the standard 2D NS stencil (done).
+- **D2Q5 / D3Q7** — *not* full fluid stencils. These are advection–diffusion lattices for
+  a scalar field (temperature, species). Useful later if we add heat transfer or passive
+  scalars alongside the flow — a second distribution on a small stencil.
+- **Higher-order 2D (D2Q17, D2Q37) / 3D (D3Q39, D3Q41)** — needed only for thermal
+  (compressible/high-Mach) or high-accuracy work. Overkill for incompressible aero;
+  revisit only if a case demands it.
+
+Note on "any DnQm": more velocities is not automatically better — a stencil must satisfy
+the isotropy moment conditions (`Σ wᵢeᵢ=0`, `Σ wᵢeᵢ⊗eᵢ=cs²I`, and the 4th-order condition)
+to reproduce the target physics. Arbitrary DnQm sets (e.g. a made-up D2Q16/D2Q25) generally
+do **not** — only specific, derived velocity/weight sets work. Add stencils from the
+literature, not by picking a velocity count. Every new stencil ships with the same
+descriptor tests (weights sum to 1, opposites reverse, isotropy moments).
+
+## 9. Open questions to revisit
 
 - Taichi vs Warp final call (decide after Phase 1 ergonomics).
 - MRT vs regularized/entropic collision for high-Re stability (decide in Phase 3).
 - FP16 storage — how much accuracy do we trade for domain size? (measure in Phase 5).
 - Real F1 geometry source and its licensing (needed by Phase 4).
+- Cylinder Cd calibration: blockage, resolution, τ, MEM factor (Phase 2, in progress).

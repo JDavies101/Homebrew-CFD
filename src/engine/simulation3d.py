@@ -16,6 +16,9 @@ class Simulation3D:
         self.u     = ti.field(ti.f32, shape=(self.D, nx, ny, nz))
         self.solid = ti.field(ti.i32, shape=(nx, ny, nz))
         self.lid   = ti.field(ti.i32, shape=(nx, ny, nz))
+        self.force = ti.field(ti.f32, shape=L3.D)
+        self.MIRROR_Y = ti.field(ti.i32, shape=L3.Q)
+        self.MIRROR_Y.from_numpy(L3.MIRROR_Y.astype(np.int32))
         # lattice constants as fields, built from the NumPy descriptor
         self.E   = ti.field(ti.i32, shape=(self.Q, self.D))
         self.E.from_numpy(L3.E.astype(np.int32))
@@ -89,6 +92,20 @@ class Simulation3D:
                         tmp = self.f[q, i, j, k]
                         self.f[q, i, j, k] = self.f[o, i, j, k]
                         self.f[o, i, j, k] = tmp
+    
+    @ti.kernel
+    def free_slip_y(self):
+        for i, k in ti.ndrange(self.nx, self.nz):
+            for q in range(self.Q):
+                m = self.MIRROR_Y[q]
+                if q < m:
+                    # bottom wall j = 0
+                    t = self.f[q, i, 0, k]
+                    self.f[q, i, 0, k] = self.f[m, i, 0, k]
+                    self.f[m, i, 0, k] = t
+                    # top wall j = ny - 1
+                    self.f[q, i, self.ny - 1, k] = self.f[m, i , self.ny - 1, k]
+                    self.f[m, i, self.ny - 1, k] = t
 
     @ti.kernel
     def moving_wall(self, U: ti.f32):
@@ -128,6 +145,45 @@ class Simulation3D:
                 feq = self.W[q] * r * (1 + 3 * eu + 4.5 * eu * eu - 1.5 * usqr)
                 S = prefac * self.W[q] * (3 * (eF - uF) + 9 * eu * eF)
                 self.f[q,i,j,k] += -(1.0 / tau) * (self.f[q,i,j,k] - feq) + S
+    
+    @ti.kernel
+    def inlet(self, U: ti.f32):
+        for j, k in ti.ndrange(self.ny, self.nz):
+            for q in range(self.Q):
+                eu = self.E[q,0] * U # u = (U,0,0) so e*u = E[q,0] * U
+                usqr = U * U
+                self.f[q,0,j,k] = self.W[q] * (1+ 3 * eu + 4.5 * eu * eu - 1.5 * usqr)
+    
+    @ti.kernel
+    def outlet(self):
+        for j, k in ti.ndrange(self.ny, self.nz):
+            for q in range(self.Q):
+                self.f[q, self.nx - 1, j, k] = self.f[q, self.nx - 2, j , k]
+
+    def cylinder(nx, ny, nz, cx, cy, r):
+        solid = np.zeros((nx, ny, nz), np.int32)
+        X, Y = np.meshgrid(np.arange(nx), np.arange(ny), indexing = "ij")
+        disc = (X - cx) ** 2 + (Y - cy) ** 2 < r ** 2 # (nx, ny) boolean
+        solid[disc] = 1
+        return solid
+    
+    @ti.kernel
+    def drag(self):
+        for c in range(L3.D): # reset accumulator
+            self.force[c] = 0.0
+        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
+            if self.solid[i,j,k] == 0:
+                for q in range(self.Q):
+                    ni = i + self.E[q,0]
+                    nj = j + self.E[q,1]
+                    nk = k + self.E[q,2]
+                    # if the neighbor is inside the domain and solid, then boundary link
+                    if 0 <= ni < self.nx and 0 <= nj < self.ny and 0 <= nk < self.nz:
+                        if self.solid[ni, nj, nk] == 1:
+                            contrib = self.f[q,i,j,k] + self.f[self.OPP[q],i,j,k]
+                            self.force[0] += contrib * self.E[q,0]
+                            self.force[1] += contrib * self.E[q,1]
+                            self.force[2] += contrib * self.E[q,2]
     
     def step(self, tau, U=0.0):        # NO @ti.kernel — plain Python
         

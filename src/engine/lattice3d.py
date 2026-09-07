@@ -21,3 +21,8 @@ W = np.select([sq==0, sq==1, sq==2], [1/3, 1/18, 1/36]).astype(np.float64)
 OPP = np.zeros(Q, dtype=np.int32)
 for i in range(Q):
     OPP[i] = np.where((E == -E[i]).all(axis=1))[0][0]
+# int array of opposite normal indices
+MIRROR_Y = np.zeros(Q, dtype=np.int32)
+flip = np.array([1, -1, 1])
+for i in range(Q):
+    MIRROR_Y[i] = np.where((E == E[i] * flip).all(axis = 1))[0][0]
