@@ -104,8 +104,24 @@ class Simulation3D:
                     self.f[q, i, 0, k] = self.f[m, i, 0, k]
                     self.f[m, i, 0, k] = t
                     # top wall j = ny - 1
+                    t2 = self.f[q, i, self.ny-1, k]
                     self.f[q, i, self.ny - 1, k] = self.f[m, i , self.ny - 1, k]
-                    self.f[m, i, self.ny - 1, k] = t
+                    self.f[m, i, self.ny - 1, k] = t2
+    
+    @ti.kernel
+    def free_slip_z(self):
+        for i, j in ti.ndrange(self.nx, self.ny):
+            for q in range(self.Q):
+                m = self.MIRROR_Y[q]
+                if q < m:
+                    #  wall k = 0
+                    t = self.f[q, i, j, 0]
+                    self.f[q, i, j, 0] = self.f[m, i, j, 0]
+                    self.f[m, i, j, 0] = t
+                    # wall k = nz - 1
+                    t2 = self.f[q, i, j, self.nz - 1]
+                    self.f[q, i, j, self.nz - 1] = self.f[m, i , j, self.nz - 1]
+                    self.f[m, i, j, self.nz - 1] = t2
 
     @ti.kernel
     def moving_wall(self, U: ti.f32):
@@ -181,7 +197,6 @@ class Simulation3D:
 
     @ti.kernel
     def outlet(self):
-        
         for j, k in ti.ndrange(self.ny, self.nz):
             for q in range(self.Q):
                 self.f[q, self.nx - 1, j, k] = self.f[q, self.nx - 2, j , k]
@@ -191,6 +206,13 @@ class Simulation3D:
         X, Y = np.meshgrid(np.arange(nx), np.arange(ny), indexing = "ij")
         disc = (X - cx) ** 2 + (Y - cy) ** 2 < r ** 2 # (nx, ny) boolean
         solid[disc] = 1
+        return solid
+    
+    def sphere(self, nx, ny, nz, cx, cy, cz, D):
+        solid = np.zeros((nx, ny, nz), np.int32)
+        X, Y, Z = np.meshgrid(np.arange(nx), np.arange(ny), np.arange(nz), indexing = "ij")
+        ball = (X - cx) ** 2 + (Y - cy) ** 2 + (Z - cz) ** 2 < (D / 2) ** 2
+        solid[ball] = 1
         return solid
     
     @ti.kernel

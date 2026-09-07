@@ -123,9 +123,34 @@ wall, Guo body force. Validated:
 37 tests (Tier A unit + Tier B validation); validation cases marked `slow`.
 *Exit met.*
 
-**Phase 2 — 3D + first bluff body.** D3Q19, cylinder and sphere drag vs Reynolds number,
-vortex shedding Strouhal check. VTK export working. *Exit: cylinder Cd within a few % of
-literature.*
+**Phase 2 — 3D + first bluff body. 🔶 IN PROGRESS.** D3Q19 engine (`Simulation3D`), Guo
+forcing, Zou-He/NEEM velocity inlet, zero-gradient outlet, free-slip walls, cylinder as a
+voxelized obstacle, drag via momentum exchange. VTK export pending. Cylinder result:
+- **Flow validated.** Rigid NEEM inlet holds the free-stream (measured Re=101 vs nominal
+  100); vortex shedding **Strouhal = 0.165** at Re=100 (ref ~0.16–0.18); **no shedding at
+  Re=40** (correct sub-critical behavior).
+- **Drag: correct method, known discretization offset.** Momentum-exchange force is
+  `Σ 2 cᵢ fᵢ` (post-collision, over fluid→solid links). Cd ≈ 1.9 vs unbounded ref ~1.4 —
+  the ~35% is the documented over-prediction of **full-way (staircase) bounce-back** at
+  finite resolution, which converges with resolution and is cured by **interpolated
+  bounce-back** (the accuracy upgrade, deferred to Phase 3 with the wall-treatment work;
+  needed for smooth aero surfaces regardless). Note the two references differ: unbounded
+  cylinder Cd≈1.4 vs the confined Schäfer–Turek channel benchmark Cd≈3.2 — free-slip walls
+  target the unbounded value.
+
+Sphere (true 3D): runs stably at low Re (Re≈15–20; BGK needs high τ, so higher Re awaits
+MRT in Phase 3). Cd lands in the staircase over-prediction band, but the free-slip **corner**
+where the y and z symmetry planes meet injects spurious energy (`max|u|` ~4× inlet) — a
+node-based specular-reflection artifact needing proper corner handling (Phase 3). So the
+sphere validates the machinery, not a clean Cd.
+
+Regression net: `tests/test_engine3d.py` (6 Tier-A invariant tests — macroscopic, collide
+fixed-point, conservation, bounce-back swap, free-slip involution, inlet). It caught a real
+top-wall bug in `free_slip_y`/`_z` (a reused temp), which also slightly cleaned the cylinder
+Cd (1.89→1.83). 41 fast tests total; validation cases marked `slow`.
+
+*Exit (remaining): VTK export. Deferred to Phase 3: interpolated bounce-back (staircase Cd),
+free-slip corner treatment (sphere), MRT/regularized collision (high-Re stability).*
 
 **Phase 3 — Turbulence + walls.** LES subgrid model, wall functions; backward-facing step
 and **Ahmed body** validation. *Exit: Ahmed body Cd and wake match published data.*

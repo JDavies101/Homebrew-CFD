@@ -26,3 +26,7 @@ MIRROR_Y = np.zeros(Q, dtype=np.int32)
 flip = np.array([1, -1, 1])
 for i in range(Q):
     MIRROR_Y[i] = np.where((E == E[i] * flip).all(axis = 1))[0][0]
+MIRROR_Z = np.zeros(Q, dtype=np.int32)
+flip_z = np.array([1, 1, -1])
+for i in range(Q):
+    MIRROR_Z[i] = np.where((E == E[i] * flip_z). all(axis = 1))[0][0]

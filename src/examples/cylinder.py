@@ -2,6 +2,9 @@
 import numpy as np
 from src.engine.simulation3d import Simulation3D
 from src.engine import lattice3d as L
+from src.post.progress import Progress
+from src.post.progress import Progress
+from src.post.vtk import write_field
 
 D = 45                      # cylinder diameter in cells
 nx = 1800
@@ -16,6 +19,7 @@ cy = ny // 2
 steps = 60000
 warmup = 30000              # discard transient before averaging
 sample_every = 20           # sample force every N steps (avoids per-step GPU sync)
+check_every = 500           # progress readout interval
 A = D * nz                  # frontal area
 
 # disc in x-y, spanning the periodic z -> a cylinder
@@ -33,6 +37,7 @@ def main():
 
     cd_samples = []
     fy_history = []
+    prog = Progress(steps)
     for s in range(steps):
         sim.collide(tau)
         sim.drag()          # force measured post collision
@@ -47,8 +52,15 @@ def main():
             cd_samples.append(F[0] / (0.5 * 1.0 * U * U * A))
             fy_history.append(F[1])
 
+        if s % check_every == 0:
+            sim.macroscopic()
+            hmax = float(np.nanmax(np.abs(sim.u.to_numpy())))
+            prog.update(s, hmax)
+
     sim.macroscopic()
+    write_field("results/cylinder", sim.rho.to_numpy(), sim.u.to_numpy())
     u = sim.u.to_numpy()
+    prog.done()
     U_eff = float(u[0, cx, 20, nz//2])   # same x as cylinder, but near the wall, out of the wake
     print(f"U_eff = {U_eff:.4f}  ->  effective Re = {U_eff*D/nu:.0f}")
 
