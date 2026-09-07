@@ -155,7 +155,33 @@ class Simulation3D:
                 self.f[q,0,j,k] = self.W[q] * (1+ 3 * eu + 4.5 * eu * eu - 1.5 * usqr)
     
     @ti.kernel
+    def inlet_neem(self, U: ti.f32):
+        for j, k in ti.ndrange(self.ny, self.nz):
+            # neighbor (x = 1) moments
+            rn = 0.0
+            mx = 0.0
+            my = 0.0
+            mz = 0.0
+            for q in range(self.Q):
+                rn += self.f[q, 1, j, k]
+                mx += self.f[q, 1, j, k] * self.E[q,0]
+                my += self.f[q, 1, j, k] * self.E[q,1]
+                mz += self.f[q, 1, j, k] * self.E[q,2]
+            ux = mx / rn
+            uy = my / rn
+            uz = mz / rn
+            usqr_n = ux * ux + uy * uy + uz * uz
+            usqr_b = U * U
+            for q in range(self.Q):
+                eu_b = self.E[q,0] * U # imposed u = (U, 0, 0)
+                feq_b = self.W[q] * rn * (1 + 3 * eu_b + 4.5 * eu_b * eu_b - 1.5 * usqr_b)
+                eu_n = self.E[q,0] * ux + self.E[q,1] * uy + self.E[q,2] * uz
+                feq_n = self.W[q] * rn * (1+ 3 * eu_n + 4.5 * eu_n * eu_n - 1.5 * usqr_n)
+                self.f[q, 0, j, k] = feq_b + (self.f[q, 1, j, k] - feq_n)
+
+    @ti.kernel
     def outlet(self):
+        
         for j, k in ti.ndrange(self.ny, self.nz):
             for q in range(self.Q):
                 self.f[q, self.nx - 1, j, k] = self.f[q, self.nx - 2, j , k]
