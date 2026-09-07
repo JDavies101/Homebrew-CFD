@@ -7,7 +7,7 @@ from src.lbm.boundary_conditions import bounce_back, moving_wall
 from src.post import plotting
 import matplotlib.pyplot as plt
 
-N = 64
+N = 128
 U = 0.1
 Re = 100
 nu = U * N / Re
