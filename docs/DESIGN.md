@@ -187,7 +187,24 @@ as special cases. This removed four copies of the moment block and, more importa
 the variants **composable** - TRT + LES + forcing together, which the Ahmed body needs and
 the previous separate kernels could not express.
 
-*Remaining: wall functions; then backward-facing step and the **Ahmed body** gate.
+- **Backward-facing step (Armaly). DONE.** First separation/reattachment case. New masked
+  inlet `inlet_neem_open` drives only the open channel rows (plain NEEM diverged with the
+  step block filling half the inlet plane; the soft equilibrium inlet under-drove to Re~27).
+  Reattachment `x_r` taken from the first floor-node `u_x` sign change: **x_r/S = 2.47 at
+  Armaly Re = 101** (channel-mean velocity, ref ~3). The ~18% low is attributed to the
+  uniform (non-developed) inlet and the on-node step height.
+
+**Interpolated-wall drag.** `drag_interp` sums `c_i (f_in + f_out)`, the correct momentum
+exchange for a Bouzidi wall (the full-way `2 c_i f_i` assumes reflection at the node). Both
+bodies then agree on a ~7-9% over-prediction, believed to be the discretization floor.
+
+**Test coverage.** Every engine kernel and geometry function is unit-tested, including the
+Phase 3 additions: bounce_back_interp (q=0.5 -> halfway), drag_interp, inlet_neem and
+inlet_neem_open, the combined collide_full (TRT+LES+forcing at once), and the wall fractions
+(crossing points land on the surface). Tests have caught real bugs: free_slip_z using the y
+mirror table, a double relaxation in LES, a missing q load.
+
+*Remaining: wall functions (deferred until a case needs them); then the **Ahmed body** gate.
 Exit: Ahmed body Cd and wake match published data.*
 
 **Phase 4 - Automotive features.** STL import + voxelization of real parts, moving ground,

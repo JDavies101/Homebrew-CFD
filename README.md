@@ -57,16 +57,18 @@ turbulence and sub-cell walls.** Built and checked one operator at a time.
   the critical Re) and **sphere** drag. Same code runs on CPU or CUDA via one flag.
 
 - **Phase 3 - turbulence and walls (in progress):** **TRT** collision (stability decoupled
-  from viscosity - the sphere now runs at Re=50 where BGK diverged above Re=20),
-  **interpolated (Bouzidi) bounce-back** for curved walls (cylinder Cd **1.83 -> 1.576**
-  toward the ~1.4 reference), and **LES Smagorinsky** subgrid turbulence. All collision
-  variants are one composable kernel. Each was validated by reducing exactly to the
-  previous scheme.
+  from viscosity - the sphere runs at Re=50 where BGK diverged above Re=20), **interpolated
+  (Bouzidi) bounce-back** on curved walls with the matching `c_i (f_in + f_out)` drag
+  (cylinder Cd **1.83 -> 1.52**, sphere **2.78 -> 1.98** vs Schiller-Naumann 1.81), **LES
+  Smagorinsky** subgrid turbulence, and a **backward-facing step** (Armaly) giving reattach
+  length **x_r/S = 2.47 at Re=101** (ref ~3) - first separation/reattachment case. All
+  collision variants are one composable kernel; every kernel and geometry function is
+  unit-tested.
 
-Honest limits, all documented in [`docs/DESIGN.md`](docs/DESIGN.md): the sphere still uses
-staircase bounce-back (no `wall_fraction_sphere` yet) so its Cd is over-predicted, and
-absolute drag remains sensitive to blockage and resolution. Still to come: **wall
-functions**, then the **backward-facing step** and **Ahmed body** gate before F1 geometry.
+Honest limits, all in [`docs/DESIGN.md`](docs/DESIGN.md): both bodies over-predict drag
+~7-9% (the discretization floor at this resolution; blockage ruled out), and the step is
+~18% low from the uniform inlet. Still to come: **wall functions** (when a case needs them),
+then the **Ahmed body** gate before F1 geometry.
 
 ### Run it
 
