@@ -161,3 +161,90 @@ def test_freeZReflectZ(sim):
     
     assert np.isclose(uu[0][c],  0.08, atol=1e-5)   # tangential kept
     assert np.isclose(uu[2][c], -0.05, atol=1e-5)   # normal flipped
+
+# test 12: bounce back interpolation
+def test_bounceBackInterp(sim):
+    c = (5, 5, 5)
+    # solid cell one step East of c along direction d (E-face dir)
+    d = int(np.where((L3.E == [1, 0, 0]).all(1))[0][0])
+    solid = np.zeros((N, N, N), np.int32); solid[6, 5, 5] = 1
+    q = np.zeros((L3.Q, N, N, N), np.float32); q[d][c] = 0.5
+
+    f = np.zeros((L3.Q, N, N, N), np.float32); f[d][c] = 0.3   # incoming pop toward wall
+    sim.solid.from_numpy(solid); sim.q.from_numpy(q)
+    sim.f.from_numpy(f); sim.fc.from_numpy(f)   # kernel reads fc as post-collision
+    sim.bounce_back_interp()
+    g = sim.f.to_numpy()
+
+    ob = int(L3.OPP[d])
+    assert np.isclose(g[ob][c], 0.3, atol=1e-6)   # q=0.5 -> reflected == incoming
+
+# test 13: drag_interp sums c_i (f_in + f_out) over boundary links
+def test_drag_interp(sim):
+    c = (5, 5, 5)
+    d = int(np.where((L3.E == [1, 0, 0]).all(1))[0][0])   # East, into solid
+    ob = int(L3.OPP[d])
+    solid = np.zeros((N, N, N), np.int32); solid[6, 5, 5] = 1
+    q = np.zeros((L3.Q, N, N, N), np.float32); q[d][c] = 0.5
+
+    fc = np.zeros((L3.Q, N, N, N), np.float32); fc[d][c] = 0.3   # incoming
+    f  = np.zeros((L3.Q, N, N, N), np.float32); f[ob][c] = 0.2   # reflected
+    sim.solid.from_numpy(solid); sim.q.from_numpy(q)
+    sim.fc.from_numpy(fc); sim.f.from_numpy(f)
+    sim.drag_interp()
+    F = sim.force.to_numpy()
+
+    # only link is East: F = c_i (f_in + f_out) = (1,0,0)*(0.3+0.2)
+    assert np.isclose(F[0], 0.5, atol=1e-6)
+    assert np.isclose(F[1], 0.0, atol=1e-6)
+    assert np.isclose(F[2], 0.0, atol=1e-6)
+
+# test 14: inlet_neem imposes u=(U,0,0) on the x=0 plane
+def test_inlet_neem(sim):
+    U = 0.1
+    sim.solid.from_numpy(np.zeros((N, N, N), np.int32))
+    f = np.tile(L3.W[:, None, None, None], (1, N, N, N)).astype(np.float32)  # rest state
+    sim.f.from_numpy(f)
+    sim.inlet_neem(U)
+    sim.macroscopic()
+    u = sim.u.to_numpy()
+    assert np.allclose(u[0, 0], U, atol=1e-3)   # x-vel imposed
+    assert np.allclose(u[1, 0], 0, atol=1e-3)
+    assert np.allclose(u[2, 0], 0, atol=1e-3)
+
+# test 15: inlet_neem_open drives open rows, leaves solid inlet columns alone
+def test_inlet_neem_open(sim):
+    U = 0.1
+    solid = np.zeros((N, N, N), np.int32)
+    solid[0:2, 0:4, :] = 1                       # a solid block spanning the inlet columns
+    sim.solid.from_numpy(solid)
+    f = np.tile(L3.W[:, None, None, None], (1, N, N, N)).astype(np.float32)
+    sim.f.from_numpy(f)
+    marker = sim.f.to_numpy()[:, 0, 2, 0].copy() # a solid inlet cell, pre-call
+    sim.inlet_neem_open(U)
+    g = sim.f.to_numpy()
+    # open row untouched-by-solid gets the velocity
+    sim.macroscopic(); u = sim.u.to_numpy()
+    assert np.allclose(u[0, 0, 6, :], U, atol=1e-3)   # open row (j=6 > solid)
+    # solid inlet column skipped
+    assert np.allclose(g[:, 0, 2, 0], marker, atol=1e-6)
+
+# test 16: outlet copies the second-to-last plane onto the last
+def test_outlet(sim):
+    f = rng.uniform(0.5, 1.5, (L3.Q, N, N, N)).astype(np.float32)
+    sim.f.from_numpy(f)
+    sim.outlet()
+    g = sim.f.to_numpy()
+    
+    assert np.allclose(g[:, -1, :, :], g[:, -2, :, :])   # zero-gradient at exit
+    assert np.allclose(g[:, :-1, :, :], f[:, :-1, :, :]) # interior untouched
+
+# test 17: collide_full with TRT+LES+forcing together conserves mass, runs finite
+def test_collide_full_combined(sim):
+    f = rng.uniform(0.5, 1.5, (L3.Q, N, N, N)).astype(np.float32)
+    sim.f.from_numpy(f)
+    sim.collide_full(0.8, 0.1, 1e-6, 1)          # cs>0, gx>0, trt=1 all on
+    g = sim.f.to_numpy()
+
+    assert np.isfinite(g).all()
+    assert np.isclose(g.sum(), f.sum(), rtol=1e-4)   # mass conserved
