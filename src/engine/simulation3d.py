@@ -289,4 +289,19 @@ class Simulation3D:
                             self.force[0] += 2.0 * self.f[q,i,j,k] * self.E[q,0]
                             self.force[1] += 2.0 * self.f[q,i,j,k] * self.E[q,1]
                             self.force[2] += 2.0 * self.f[q,i,j,k] * self.E[q,2]
-    
+
+    # momentum exchange for interpolated walls: sum c_i (f_in + f_out)
+    # call AFTER bounce_back_interp, so f holds the reconstructed reflection
+    @ti.kernel
+    def drag_interp(self):
+        for c in range(L3.D):
+            self.force[c] = 0.0
+        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
+            for d in range(self.Q):
+                if self.q[d, i, j, k] > 0.0:          # same link set Bouzidi uses
+                    ob = self.OPP[d]
+                    fin  = self.fc[d, i, j, k]        # post-collision, into the wall
+                    fout = self.f[ob, i, j, k]        # reconstructed reflection
+                    self.force[0] += (fin + fout) * self.E[d, 0]
+                    self.force[1] += (fin + fout) * self.E[d, 1]
+                    self.force[2] += (fin + fout) * self.E[d, 2]    

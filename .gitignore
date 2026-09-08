@@ -27,6 +27,10 @@ outputs/
 *.stl
 *.obj
 
+# Claude Code (local agent config / working agreement)
+.claude/
+CLAUDE.md
+
 # Editor / OS
 .vscode/
 .idea/

@@ -32,13 +32,13 @@ def main():
     for s in range(steps):
         sim.collide_trt(tau)
         sim.fc.copy_from(sim.f)        # snapshot post-collision
-        sim.drag()          # force measured post collision
         sim.stream()
         sim.inlet(U)        # equilibrium inlet: stable at free-slip corners (NEEM diverges there)
         sim.outlet()
         sim.free_slip_y()
         sim.free_slip_z()
         sim.bounce_back_interp()
+        sim.drag_interp()
 
         if s % check_every == 0:
             fnp = sim.f.to_numpy()

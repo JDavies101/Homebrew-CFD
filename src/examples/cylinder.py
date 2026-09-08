@@ -35,12 +35,12 @@ def main():
     for s in range(steps):
         sim.collide(tau)
         sim.fc.copy_from(sim.f)        # snapshot post-collision BEFORE streaming
-        sim.drag()          # force measured post collision
         sim.stream()
         sim.inlet_neem(U) # use Guo non-equilibrium extrapolation
         sim.outlet()
         sim.free_slip_y() # top/bottom now free-slip instead of periodic
         sim.bounce_back_interp()       # replaces bounce_back for the cylinder
+        sim.drag_interp()
 
         if s >= warmup and s % sample_every == 0:
             F = sim.force.to_numpy()
