@@ -114,7 +114,8 @@ class Simulation3D:
             s_minus = s_plus # trt = 0 -> BGK
             if trt == 1:
                 s_minus = 1.0 / (0.5 + (3.0 / 16.0) / (tau - 0.5))
-            prefac = 1.0 - 0.5 * s_plus # Guo prefactor
+            pre_plus = 1.0 - 0.5 * s_plus # Guo prefactor
+            pre_minus = 1.0 - 0.5 * s_minus
             for q in range(self.Q):
                 m = self.OPP[q]
                 if q <= m:                                   # each pair once
@@ -122,8 +123,10 @@ class Simulation3D:
                     even = self.W[q]*r*(1 + 4.5*eu*eu - 1.5*usqr)
                     odd  = self.W[q]*r*(3.0*eu)
                     eF, uF = self.E[q,0]*gx, ux*gx
-                    Sq = prefac*self.W[q]*(3.0*(eF - uF) + 9.0*eu*eF)
-                    Sm = prefac*self.W[q]*(3.0*(-eF - uF) + 9.0*eu*eF)   # opposite: eF,eu both flip
+                    sym  = self.W[q]*(9.0*eu*eF - 3.0*uF)
+                    asym = self.W[q]*(3.0*eF)
+                    Sq = pre_plus*sym + pre_minus*asym
+                    Sm = pre_plus*sym - pre_minus*asym
                     fq, fm = self.f[q,i,j,k], self.f[m,i,j,k]
                     fp, fmn = 0.5*(fq+fm), 0.5*(fq-fm)
                     self.f[q,i,j,k] = fq - s_plus*(fp-even) - s_minus*(fmn-odd) + Sq
