@@ -121,3 +121,43 @@ def test_LESTinyCSMatchesBGK(sim):
     f_check = sim.f.to_numpy()
 
     assert np.allclose(f_check, f_new, atol=1e-6)
+
+# test 10: Free slip y reflects y
+def test_freeYReflectY(sim):
+    rho = np.ones((N, N, N))
+    u = np.zeros((3, N, N, N))
+    u[0] = 0.08
+    u[1] = 0.05
+    eu = np.einsum("qc,cxyz->qxyz", L3.E, u)
+    usq = (u ** 2).sum(0)
+    f = (L3.W[:, None, None, None] * rho * (1 + (3 * eu) + (4.5 * eu ** 2) - (1.5 * usq))).astype(np.float32)
+
+    sim.f.from_numpy(f)
+    sim.free_slip_y()
+    sim.macroscopic()
+    uu = sim.u.to_numpy()
+
+    c = (N // 2, 0, N // 2) # a cell on the y=0 wall
+
+    assert np.isclose(uu[0][c],  0.08, atol=1e-5)   # tangential kept
+    assert np.isclose(uu[1][c], -0.05, atol=1e-5)   # normal flipped
+
+# test 11: Free slip z reflects z
+def test_freeZReflectZ(sim):
+    rho = np.ones((N, N, N))
+    u = np.zeros((3, N, N, N))
+    u[0] = 0.08
+    u[2] = 0.05
+    eu = np.einsum("qc,cxyz->qxyz", L3.E, u)
+    usq = (u ** 2).sum(0)
+    f = (L3.W[:, None, None, None] * rho * (1 + (3 * eu) + (4.5 * eu ** 2) - (1.5 * usq))).astype(np.float32)
+
+    sim.f.from_numpy(f)
+    sim.free_slip_z()
+    sim.macroscopic()
+    uu = sim.u.to_numpy()
+
+    c = (N // 2, N // 2, 0) # a cell on the y=0 wall
+    
+    assert np.isclose(uu[0][c],  0.08, atol=1e-5)   # tangential kept
+    assert np.isclose(uu[2][c], -0.05, atol=1e-5)   # normal flipped

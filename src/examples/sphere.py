@@ -5,6 +5,7 @@ from src.engine import lattice3d as L
 from src.post.progress import Progress
 from src.post.vtk import write_field
 from src.geometry.sphere import sphere
+from src.geometry.wall_fraction import wall_fraction_sphere
 
 D = 20                      # sphere diameter in cells
 nx = 384
@@ -24,18 +25,20 @@ A = np.pi * (D/2) ** 2                 # frontal area
 def main():
     sim = Simulation3D(nx, ny, nz, backend="cuda")
     sim.solid.from_numpy(sphere(nx, ny, nz, cx, cy, cz, D))
+    sim.q.from_numpy(wall_fraction_sphere(nx, ny, nz, cx, cy, cz, D/2))
     sim.f.from_numpy(np.tile(L.W[:, None, None, None], (1, nx, ny, nz)).astype(np.float32))
 
     prog = Progress(steps)
     for s in range(steps):
         sim.collide_trt(tau)
+        sim.fc.copy_from(sim.f)        # snapshot post-collision
         sim.drag()          # force measured post collision
         sim.stream()
         sim.inlet(U)        # equilibrium inlet: stable at free-slip corners (NEEM diverges there)
         sim.outlet()
         sim.free_slip_y()
         sim.free_slip_z()
-        sim.bounce_back()
+        sim.bounce_back_interp()
 
         if s % check_every == 0:
             fnp = sim.f.to_numpy()
