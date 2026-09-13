@@ -19,4 +19,5 @@ class Progress:
         print(msg, end="", flush=True)
 
     def done(self):
-        print()   # newline after the bar
+        el = time.time() - self.t0
+        print(f"\r[{'#'*30}] {self.total}/{self.total} 100.0%  {el:5.0f}s  ETA     0s")

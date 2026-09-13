@@ -97,8 +97,7 @@ class Simulation3D:
                 Qxz=0.0
                 Qyz=0.0
                 for q in range(self.Q):
-                    eu = self.E[q,0] * ux + self.E[q,1] * uy + self.E[q,2] * uz
-                    feq = self.W[q] * r * (1 + 3 * eu + 4.5 * eu * eu - 1.5 * usqr)
+                    feq = self.feq(q, r, ux, uy, uz, usqr)
                     neq = self.f[q,i,j,k] - feq
                     Qxx += self.E[q,0] * self.E[q,0] * neq
                     Qyy += self.E[q,1] * self.E[q,1] * neq
@@ -334,3 +333,26 @@ class Simulation3D:
                     self.force[0] += (fin + fout) * self.E[d, 0]
                     self.force[1] += (fin + fout) * self.E[d, 1]
                     self.force[2] += (fin + fout) * self.E[d, 2]    
+
+    @ti.func
+    def feq(self, q, r, ux, uy, uz, usqr):
+        eu = self.E[q,0] * ux + self.E[q,1] * uy + self.E[q,2] * uz
+        return self.W[q] * r * (1 + 3 * eu + 4.5 * eu * eu - 1.5 * usqr)
+    
+    @ti.kernel
+    def _init_eq(self):
+
+        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
+            r = self.rho[i, j, k]
+            ux = self.u[0, i, j, k]
+            uy = self.u[1, i, j, k]
+            uz = self.u[2, i, j, k]
+            usqr = ux * ux + uy * uy + uz * uz
+
+            for q in range(self.Q):
+                self.f[q, i, j, k] = self.feq(q, r, ux, uy, uz, usqr)
+    
+    def init_equilibrium(self, ux, uy, uz, rho=1.0):
+        self.u.from_numpy(np.stack([ux, uy, uz]).astype(np.float32))
+        self.rho.from_numpy(np.full((self.nx, self.ny, self.nz), rho, np.float32))
+        self._init_eq()

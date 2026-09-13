@@ -198,13 +198,42 @@ the previous separate kernels could not express.
 exchange for a Bouzidi wall (the full-way `2 c_i f_i` assumes reflection at the node). Both
 bodies then agree on a ~7-9% over-prediction, believed to be the discretization floor.
 
+**Forced plane channel + a TRT-forcing bug it caught.** Built as the log-law prerequisite, and
+it exposed a real defect in the composed Guo forcing: `collide_full` relaxed the whole force
+source with `s_plus`, but the antisymmetric (momentum-carrying) part must relax with `s_minus`.
+Invisible to the `s_minus=s_plus->BGK` parity test (at that limit the two prefactors coincide);
+only a forced channel comparing TRT to BGK magnitudes caught it - TRT peak -16%, disagreeing
+with BGK by ~18%. Fixed by splitting the source into symmetric/antisymmetric parts and relaxing
+each with its own rate. Golden oracle: forced Poiseuille now recovers the analytic parabola
+(R^2=1) under both operators, agreeing to ~0.6%, leaving a fixed ~0.33-cell body-force wall
+offset (Mach-independent -> pure discretization, ~0.4% at production delta). `test_channel.py`
+locks in TRT-vs-BGK peak agreement (fails on the bug, passes on the fix).
+
+**Turbulent channel Re_tau=180 (DNS, cs=0). Tripped and sustained.** Minimal Jimenez-Moin box
+(~120x130x60). Seeded IC = mean parabola + divergence-free streamwise rolls (from a
+streamfunction with a `(1-eta^2)^2` window so `u_y` and `u_z` both vanish at the wall) + streak
+modulation + broadband noise (the only x-dependent term, so it is what lets the x-invariant
+rolls break down to 3D). Smagorinsky OFF on purpose - static Smagorinsky over-damps and
+relaminarizes at this Re; TRT mandatory (tau~0.505). The flow trips, breaks down (`w'` grows
+from ~0 to O(u_tau)), and sustains the near-wall regeneration cycle over ~14 turnovers:
+U_c/u_tau = 17.6 (MKM ~18.3; minimal-box low is expected), rms(u,v,w)/u_tau = (1.31,0.59,0.67),
+correct anisotropy. This is trip/sustain confirmation, not yet validation - the mean log law
+and `u'_rms(y+)` profiles are the next step.
+
+**Equilibrium unified.** `feq` extracted as one `@ti.func` used by both `collide_full` and the
+new `init_equilibrium` (equilibrium IC from a prescribed velocity field), removing the
+duplicated equilibrium formula. Guarded by a collision-fixed-point test (init a moving
+equilibrium, collide with no force, `f` must be unchanged) - fails if the two feq ever drift.
+
 **Test coverage.** Every engine kernel and geometry function is unit-tested, including the
 Phase 3 additions: bounce_back_interp (q=0.5 -> halfway), drag_interp, inlet_neem and
 inlet_neem_open, the combined collide_full (TRT+LES+forcing at once), and the wall fractions
 (crossing points land on the surface). Tests have caught real bugs: free_slip_z using the y
 mirror table, a double relaxation in LES, a missing q load.
 
-*Remaining: wall functions (deferred until a case needs them); then the **Ahmed body** gate.
+*Remaining: log-law measurement (`<u>+(y+)` vs MKM, peak `u'_rms/u_tau ~ 2.65` at `y+~15`)
+to validate the channel; then raise Re / coarsen the near wall until wall resolution fails,
+and add wall functions to fix that *measured* failure; then the **Ahmed body** gate.
 Exit: Ahmed body Cd and wake match published data.*
 
 **Phase 4 - Automotive features.** STL import + voxelization of real parts, moving ground,

@@ -248,3 +248,31 @@ def test_collide_full_combined(sim):
 
     assert np.isfinite(g).all()
     assert np.isclose(g.sum(), f.sum(), rtol=1e-4)   # mass conserved
+
+# test 18: init_equilibrium sets the right moments (rho and u recovered)
+def test_init_equilibrium_moments(sim):
+    ux = np.full((N, N, N), 0.05, np.float32)
+    uy = np.full((N, N, N), -0.02, np.float32)
+    uz = np.full((N, N, N), 0.01, np.float32)
+    sim.solid.from_numpy(np.zeros((N, N, N), np.int32))
+    sim.init_equilibrium(ux, uy, uz)
+    sim.macroscopic()
+    rho, u = sim.rho.to_numpy(), sim.u.to_numpy()
+
+    assert np.allclose(rho, 1, atol=1e-5)
+    assert np.allclose(u[0], 0.05, atol=1e-5)
+    assert np.allclose(u[1], -0.02, atol=1e-5)
+    assert np.allclose(u[2], 0.01, atol=1e-5)
+
+# test 19: an equilibrium state is a collision fixed point (no force) -- this fails if
+# init_equilibrium's feq and collide_full's feq ever drift apart
+def test_equilibrium_is_collision_fixed_point(sim):
+    ux = (0.05 * (2 * rng.random((N, N, N)) - 1)).astype(np.float32)
+    uy = (0.05 * (2 * rng.random((N, N, N)) - 1)).astype(np.float32)
+    uz = (0.05 * (2 * rng.random((N, N, N)) - 1)).astype(np.float32)
+    sim.solid.from_numpy(np.zeros((N, N, N), np.int32))
+    sim.init_equilibrium(ux, uy, uz)
+    f0 = sim.f.to_numpy()
+    sim.collide(0.8)                                  # BGK, no force -> feq is the fixed point
+
+    assert np.allclose(sim.f.to_numpy(), f0, atol=1e-5)
