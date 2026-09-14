@@ -276,3 +276,47 @@ def test_equilibrium_is_collision_fixed_point(sim):
     sim.collide(0.8)                                  # BGK, no force -> feq is the fixed point
 
     assert np.allclose(sim.f.to_numpy(), f0, atol=1e-5)
+
+# test 20: nut_wall raises the local tau by 3*nu_t, at that node only, independent of LES.
+# Run at cs=0 so it fails if the augmentation is gated inside the LES branch.
+def test_nut_wall_augments_tau(sim):
+    tau0, nut = 0.8, 0.03
+    c = (8, 8, 8)
+    f0 = np.tile(L3.W[:, None, None, None], (1, N, N, N)).astype(np.float32)
+    f0[5][c] += 0.05                                   # a non-equilibrium perturbation at one node
+    sim.solid.from_numpy(np.zeros((N, N, N), np.int32))
+
+    sim.nut_wall.from_numpy(np.zeros((N, N, N), np.float32))
+    sim.f.from_numpy(f0); sim.collide_full(tau0, 0.0, 0.0, 0)
+    base = sim.f.to_numpy()
+
+    sim.f.from_numpy(f0); sim.collide_full(tau0 + 3 * nut, 0.0, 0.0, 0)   # raise tau0 by hand
+    manual = sim.f.to_numpy()
+
+    w = np.zeros((N, N, N), np.float32); w[c] = nut
+    sim.nut_wall.from_numpy(w)
+    sim.f.from_numpy(f0); sim.collide_full(tau0, 0.0, 0.0, 0)             # via the wall field
+    wm = sim.f.to_numpy()
+
+    assert np.allclose(wm[:, 8, 8, 8], manual[:, 8, 8, 8], atol=1e-6)     # nut_wall == raising tau0
+    assert np.allclose(wm[:, 0, 0, 0], base[:, 0, 0, 0], atol=1e-6)       # untouched elsewhere
+
+# test 21: wall_model sets nut_wall from the log-law u_tau at wall-adjacent nodes, gated on y+>30
+def test_wall_model(sim):
+    from src.turbulence.wall_function import friction_velocity
+    nu, y1 = 0.01, 10.0
+    solid = np.zeros((N, N, N), np.int32); solid[:, 0, :] = 1             # bottom wall row
+    sim.solid.from_numpy(solid)
+    u = np.zeros((3, N, N, N), np.float32)
+    u[0, 4, 1, 4] = 0.737                                                 # y+ ~ 50 (>30): engages
+    u[0, 6, 1, 6] = 0.02                                                  # y+ < 30: stays off
+    sim.u.from_numpy(u)
+    sim.nut_wall.from_numpy(np.ones((N, N, N), np.float32))               # nonzero -> check it resets
+    sim.wall_model(nu, y1)
+    nw = sim.nut_wall.to_numpy()
+
+    u_tau = friction_velocity(0.737, y1, nu)
+    expect = u_tau ** 2 * y1 / 0.737 - nu
+    assert np.isclose(nw[4, 1, 4], expect, rtol=1e-4)                     # engaged node
+    assert nw[6, 1, 6] == 0.0                                             # y+<30 -> off
+    assert nw[8, 8, 8] == 0.0                                             # interior (not adjacent) -> reset

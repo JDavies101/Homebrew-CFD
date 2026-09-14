@@ -217,8 +217,48 @@ rolls break down to 3D). Smagorinsky OFF on purpose - static Smagorinsky over-da
 relaminarizes at this Re; TRT mandatory (tau~0.505). The flow trips, breaks down (`w'` grows
 from ~0 to O(u_tau)), and sustains the near-wall regeneration cycle over ~14 turnovers:
 U_c/u_tau = 17.6 (MKM ~18.3; minimal-box low is expected), rms(u,v,w)/u_tau = (1.31,0.59,0.67),
-correct anisotropy. This is trip/sustain confirmation, not yet validation - the mean log law
-and `u'_rms(y+)` profiles are the next step.
+correct anisotropy.
+
+**Channel validated against the log law.** Time+plane-averaged mean and RMS profiles, folded
+about the centerline, in wall units (`delta_eff` from the laminar oracle, force-balance
+`u_tau`); measurement plots live in `src/post/plotting.plot_law_of_wall`. Over ~40 turnovers
+the mean **law of the wall is reproduced**: sublayer collapses onto `u+=y+`, a log region
+appears, and centerline **U+ = 18.3 matches MKM** (top/bottom asymmetry converged 10%->1.4%,
+confirming it was a statistics, not a symmetry, issue - the engine is provably symmetric from
+the laminar oracle). Second-order: `u'_rms` peak sits at the correct `y+~16` but reads ~3.2 vs
+MKM 2.65 - the known minimal-box over-prediction of fluctuation intensity (a single coherent
+streak pair, plus the burst-cycle plane-mean unsteadiness counted in the variance); it does not
+move with more averaging, so it is the box, not convergence. First-order (the part wall
+functions key off) validated; publication-grade second-order needs a full-size box.
+
+**Near-wall coarsening: the measured failure that motivates wall functions.** Holding Re_tau=180
+and shrinking `delta` (64->32->16, so the first node climbs y+ 2.3->4.7->9.4), comparing the
+resolved wall shear `sqrt(nu du/dy)` against the exact force-balance `u_tau`. The wall-resolved
+approach fails in two modes: (1) *accuracy* - wall-shear error grows -7.5% -> -12.3%, centerline
+U+ drifts 18.4 -> 17.4, and the `u'_rms` peak collapses 3.1 -> 2.3 as the near-wall cycle loses
+cells; (2) *feasibility* - at delta=16 (nu=4e-4, tau=0.501, s_plus~1.995) the DNS diverges
+outright. Coarsen the wall and the resolved solver first gets the wall stress wrong, then cannot
+run - exactly the case (measured, not assumed) for a wall function, which supplies tau_w from
+the log law instead of an under-resolved gradient.
+
+**Wall function - built (equilibrium log-law model).** `src/turbulence/wall_function.py`
+inverts the log law `u1 = u_tau*((1/kappa)ln(y1 u_tau/nu)+B)` for `u_tau` by Newton (viscous
+initial guess, guarded step); a `@ti.func` twin `wall_utau` lives in the engine for device use.
+The wall stress is imposed as a wall-adjacent eddy viscosity: `wall_model` finds fluid nodes
+next to a solid in the wall-normal direction, computes `u_tau` from the wall-parallel speed,
+and sets `nut_wall = u_tau^2 y1/u1 - nu` there (gated on `y+ > 30`, off below the log layer);
+`collide_full` adds `3*nut_wall` to the local tau. Validated: synthetic round-trip recovers
+`u_tau` to 1e-5 (isolates the Newton from "is the profile log?"); the augmentation equals
+raising tau0 by 3*nu_t at that node and nowhere else (checked at cs=0, so it is not gated
+inside the LES branch); `wall_model` matches the inversion and respects the y+ gate. Against
+the trusted Re_tau=180 DNS the inversion recovers `u_tau` to ~5% - the residual is that
+Re_tau=180 has essentially no clean log layer (30 < y+ < 0.15*Re_tau is empty), so the check
+node sits in the wake. The model only *engages* for a first node at y+>30, which the stable
+Re_tau=180 channel never reaches - so here it demonstrates parity (off = identical) and
+non-breakage, and its quantitative payoff (wall-shear error driven to zero) waits for the
+high-Re Ahmed body, where wall-resolving is impossible and the first node naturally sits in
+the log layer. Generalizing wall-normal detection beyond axis-aligned (y) walls is deferred to
+the geometry work (a wall-distance/normal field, like `q`).
 
 **Equilibrium unified.** `feq` extracted as one `@ti.func` used by both `collide_full` and the
 new `init_equilibrium` (equilibrium IC from a prescribed velocity field), removing the
@@ -231,10 +271,11 @@ inlet_neem_open, the combined collide_full (TRT+LES+forcing at once), and the wa
 (crossing points land on the surface). Tests have caught real bugs: free_slip_z using the y
 mirror table, a double relaxation in LES, a missing q load.
 
-*Remaining: log-law measurement (`<u>+(y+)` vs MKM, peak `u'_rms/u_tau ~ 2.65` at `y+~15`)
-to validate the channel; then raise Re / coarsen the near wall until wall resolution fails,
-and add wall functions to fix that *measured* failure; then the **Ahmed body** gate.
-Exit: Ahmed body Cd and wake match published data.*
+*Remaining: the **Ahmed body** gate - the first case where the wall function actually engages
+(first node in the log layer) and can be validated quantitatively (wall-shear error to zero,
+Cd and wake vs published data). Likely needs a more robust collision (regularized/MRT) for the
+low-nu stability the coarsening sweep exposed. Exit: Ahmed body Cd and wake match published
+data.*
 
 **Phase 4 - Automotive features.** STL import + voxelization of real parts, moving ground,
 rotating wheels, per-part force breakdown. *Exit: front-wing or full-car run with sane,

@@ -26,6 +26,7 @@ class Simulation3D:
         self.MIRROR_Z.from_numpy(L3.MIRROR_Z.astype(np.int32))
         self.q  = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))   # wall fractions (0 = not a boundary link)
         self.fc = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))   # post-collision snapshot (Bouzidi needs it)
+        self.nut_wall = ti.field(ti.f32, shape =(nx, ny, nz))
         # lattice constants as fields, built from the NumPy descriptor
         self.E   = ti.field(ti.i32, shape=(self.Q, self.D))
         self.E.from_numpy(L3.E.astype(np.int32))
@@ -108,6 +109,8 @@ class Simulation3D:
 
                 Qmag = ti.sqrt(Qxx * Qxx + Qyy * Qyy + Qzz * Qzz + 2 * (Qxy * Qxy + Qxz * Qxz + Qyz * Qyz))
                 tau = 0.5 * (tau0 + ti.sqrt(tau0 * tau0 + 18.0 * cs * cs * Qmag / r))
+            
+            tau += 3.0 * self.nut_wall[i,j,k]
 
             s_plus = 1.0 / tau
             s_minus = s_plus # trt = 0 -> BGK
@@ -132,6 +135,21 @@ class Simulation3D:
                     if q != m:
                         self.f[m,i,j,k] = fm - s_plus*(fp-even) + s_minus*(fmn-odd) + Sm
 
+    @ti.kernel
+    def wall_model(self, nu: ti.f32, y1: ti.f32):     # call AFTER macroscopic(), before collide
+        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
+            self.nut_wall[i, j, k] = 0.0                        # reset; nodes that drop out go back to 0
+            if 0 < j < self.ny - 1 and self.solid[i, j, k] == 0 \
+            and (self.solid[i, j-1, k] == 1 or self.solid[i, j+1, k] == 1):
+                ux = self.u[0, i, j, k]
+                uz = self.u[2, i, j, k]
+                u1 = ti.sqrt(ux*ux + uz*uz)                     # wall-parallel speed (y is wall-normal)
+                u_tau = self.wall_utau(u1, y1, nu)
+                yplus = y1 * u_tau / nu
+                if yplus > 30.0:                                # only where the log law is valid
+                    nu_eff = u_tau * u_tau * y1 / u1
+                    self.nut_wall[i, j, k] = ti.max(0.0, nu_eff - nu)       
+    
     # pull each population from its upstream neighbour into f_new
     @ti.kernel
     def _stream(self):
@@ -339,6 +357,22 @@ class Simulation3D:
         eu = self.E[q,0] * ux + self.E[q,1] * uy + self.E[q,2] * uz
         return self.W[q] * r * (1 + 3 * eu + 4.5 * eu * eu - 1.5 * usqr)
     
+    @ti.func
+    def wall_utau(self, u1, y1, nu):          # device twin of turbulence/wall_function.friction_velocity
+        u_tau = 0.0
+        if u1 > 0.0:
+            k = 0.41
+            B = 5.2
+            u_tau = ti.sqrt(nu * u1 / y1)                     # viscous initial guess
+            for _ in range(50):                                # bound must be a compile-time constant
+                f = u_tau * ((1.0/k) * ti.log(y1 * u_tau / nu) + B) - u1
+                if ti.abs(f) < 1e-8:
+                    break
+                fp = (1.0/k) * ti.log(y1 * u_tau / nu) + B + 1.0/k
+                nxt = u_tau - f / fp
+                u_tau = nxt if nxt > 0.0 else u_tau * 0.5
+        return u_tau
+
     @ti.kernel
     def _init_eq(self):
 

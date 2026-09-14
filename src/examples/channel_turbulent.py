@@ -6,7 +6,8 @@ from src.engine.simulation3d import Simulation3D
 from src.engine import lattice3d as L
 from src.post.progress import Progress
 from src.geometry.step import step
-import matplotlib.pyplot as plt
+from src.post.plotting import plot_law_of_wall
+from src.turbulence.wall_function import friction_velocity
 
 Re_tau = 180
 u_tau = 0.0045              # small -> U_c ~ 17.7 u_tau stays low Mach
@@ -28,13 +29,14 @@ a_noise = 0.05 * U_c        # broadband noise amplitude
 trt = 1
 cs = 0.0                    # DNS: Smagorinsky off (over-damps, relaminarizes at this Re)
 steps = round(600000 * delta / 64)       # ~constant turnovers across the delta sweep
-check_every = 2000
-warmup = steps // 4              # discard ~10 turnovers of transient
-sample_every = 200           # sample force every N steps (avoids per-step GPU sync)
+warmup = steps // 6            # discard ~10 turnovers of transient
+check_every = max(1, round(steps / 300))     # ~300 readouts, independent of run length
+turnover = delta / u_tau
+sample_every = max(1, round(turnover / 50))  # ~50 samples per eddy turnover; sample force every N steps (avoids per-step GPU sync)
 
 rng = np.random.default_rng(0)   # reproducible IC across trip attempts
 
-def add_rolls_and_streaks(u_x, u_y, u_z, ETA, Z):   # SSP seed: div-free rolls + streaks (Jake)
+def add_rolls_and_streaks(u_x, u_y, u_z, ETA, Z):   # SSP seed: div-free rolls + streaks
     A_psi = v_roll / beta
     window = (1 - ETA ** 2) ** 2
     u_y += -A_psi * beta * window * np.sin(beta * Z)
@@ -104,7 +106,7 @@ def main():
     prog.done()
 
     sum_ux  = np.array(sum_ux)     # (Nsamples, ny)  — or pass the list straight to np.mean
-    ubar      = np.mean(sum_ux,  axis=0)                     # (ny,) mean profile  -> the log law
+    ubar = np.mean(sum_ux,  axis=0)                     # (ny,) mean profile  -> the log law
     urms_prof = np.sqrt(np.mean(sum_uxx, axis=0) - ubar**2)  # variance about the space-time mean
     vrms_prof = np.sqrt(np.mean(sum_uyy, axis=0))
     wrms_prof = np.sqrt(np.mean(sum_uzz, axis=0))
@@ -128,9 +130,11 @@ def main():
     y_plus, u_plus = y_plus[sl], u_plus[sl]
     urms_p, vrms_p, wrms_p = urms_p[sl], vrms_p[sl], wrms_p[sl]
 
-    yp_ref = np.logspace(np.log10(y_plus.min()), np.log10(y_plus.max()), 200)
-    sublayer = yp_ref                               # u+ = y+
-    loglaw = np.log(yp_ref) / 0.41 + 5.2            # u+ = (1/kappa) ln y+ + B, kappa=0.41 B=5.2
+        
+    i = int(np.argmin(np.abs(y_plus - 40)))          # a node in the log layer
+    u1 = u_plus[i] * u_tau2                            # dimensional velocity there
+    y1 = y_plus[i] * nu / u_tau2                       # dimensional wall distance
+    print(f"wall-fn u_tau = {friction_velocity(u1, y1, nu):.5f}  vs force-balance {u_tau2:.5f}")
 
     ipk = int(urms_p.argmax())
     print(f"centerline U+   = {u_plus[-1]:.2f}         [MKM ~18.3]")
@@ -139,16 +143,8 @@ def main():
     print(f"wall-shear err  = {100*(u_tau_grad/u_tau2 - 1):+.1f}%          [->0 resolved, grows coarse]")
     print(f"top/bottom asym = {asym*100:.1f}%          [convergence, want a few %]")
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4))
-    ax1.semilogx(y_plus, u_plus, "o-", ms=3, label="LBM")
-    ax1.semilogx(yp_ref, sublayer, "k:", label="u+ = y+")
-    ax1.semilogx(yp_ref, loglaw, "k--", label="log law")
-    ax1.set(xlabel="y+", ylabel="u+", ylim=(0, 20), title="mean velocity"); ax1.legend()
-    ax2.semilogx(y_plus, urms_p, label="u'")
-    ax2.semilogx(y_plus, vrms_p, label="v'")
-    ax2.semilogx(y_plus, wrms_p, label="w'")
-    ax2.set(xlabel="y+", ylabel="rms / u_tau", title="fluctuations"); ax2.legend()
-    fig.tight_layout(); fig.savefig("results/channel_loglaw.png", dpi=130)
+    fig, _ = plot_law_of_wall(y_plus, u_plus, urms_p, vrms_p, wrms_p)
+    fig.savefig("results/channel_loglaw.png", dpi=130)
     print("wrote results/channel_loglaw.png")
 
 if __name__ == "__main__":
