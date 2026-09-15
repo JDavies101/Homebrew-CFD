@@ -27,6 +27,7 @@ class Simulation3D:
         self.q  = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))   # wall fractions (0 = not a boundary link)
         self.fc = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))   # post-collision snapshot (Bouzidi needs it)
         self.nut_wall = ti.field(ti.f32, shape =(nx, ny, nz))
+        self.body = ti.field(ti.i32, shape=(nx, ny, nz))
         # lattice constants as fields, built from the NumPy descriptor
         self.E   = ti.field(ti.i32, shape=(self.Q, self.D))
         self.E.from_numpy(L3.E.astype(np.int32))
@@ -351,6 +352,24 @@ class Simulation3D:
                     self.force[0] += (fin + fout) * self.E[d, 0]
                     self.force[1] += (fin + fout) * self.E[d, 1]
                     self.force[2] += (fin + fout) * self.E[d, 2]    
+
+    # drag on body only
+    @ti.kernel
+    def drag_body(self):
+        for c in range(L3.D): # reset accumulator
+            self.force[c] = 0.0
+        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
+            if self.solid[i,j,k] == 0:
+                for q in range(self.Q):
+                    ni = i + self.E[q,0]
+                    nj = j + self.E[q,1]
+                    nk = k + self.E[q,2]
+                    # if the neighbor is inside the body, then boundary link
+                    if 0 <= ni < self.nx and 0 <= nj < self.ny and 0 <= nk < self.nz:
+                        if self.body[ni, nj, nk] == 1:
+                            self.force[0] += 2.0 * self.f[q,i,j,k] * self.E[q,0]
+                            self.force[1] += 2.0 * self.f[q,i,j,k] * self.E[q,1]
+                            self.force[2] += 2.0 * self.f[q,i,j,k] * self.E[q,2]
 
     @ti.func
     def feq(self, q, r, ux, uy, uz, usqr):

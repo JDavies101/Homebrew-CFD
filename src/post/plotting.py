@@ -35,3 +35,28 @@ def plot_law_of_wall(y_plus, u_plus, urms, vrms, wrms):
     ax2.set(xlabel='y+', ylabel='rms / u_tau', title='fluctuations'); ax2.legend()
     fig.tight_layout()
     return fig, (ax1, ax2)
+
+# 2D slice of a solid mask for geometry checks. axis = the axis to slice through;
+# the two remaining axes become horizontal, vertical (origin lower, so up is up).
+def plot_mask_slice(solid, axis, index):
+    names = ['x', 'y', 'z']
+    sl = np.take(solid, index, axis=axis)          # 2D: the two axes that remain
+    h, v = [n for i, n in enumerate(names) if i != axis]
+    fig, ax = plt.subplots()
+    ax.imshow(sl.T, origin='lower', cmap='gray_r', interpolation='nearest', aspect='equal')
+    ax.set_xlabel(h); ax.set_ylabel(v)
+    return fig, ax
+
+# 2D slice of a velocity component (comp: 0=x,1=y,2=z), diverging about 0 so
+# backflow (negative) reads blue -> shows separation/recirculation at a glance.
+def plot_velocity_slice(u, axis, index, comp=0):
+    names = ['x', 'y', 'z']
+    sl = np.take(u[comp], index, axis=axis)        # 2D component field
+    h, v = [n for i, n in enumerate(names) if i != axis]
+    lim = float(np.nanmax(np.abs(sl))) or 1.0
+    fig, ax = plt.subplots()
+    im = ax.imshow(sl.T, origin='lower', cmap='RdBu_r', vmin=-lim, vmax=lim,
+                   interpolation='nearest', aspect='equal')
+    fig.colorbar(im, ax=ax, label=f'u_{names[comp]}')
+    ax.set_xlabel(h); ax.set_ylabel(v)
+    return fig, ax
