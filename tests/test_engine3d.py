@@ -320,3 +320,76 @@ def test_wall_model(sim):
     assert np.isclose(nw[4, 1, 4], expect, rtol=1e-4)                     # engaged node
     assert nw[6, 1, 6] == 0.0                                             # y+<30 -> off
     assert nw[8, 8, 8] == 0.0                                             # interior (not adjacent) -> reset
+
+# test 22: momentum conserved with regularization
+def test_regularization(sim):
+
+    f = rng.uniform(0.5, 1.5, (19, N, N, N)).astype(np.float32)
+    tau = rng.uniform(0.5, 1.5)
+    gx = 0.0
+    sim.f.from_numpy(f)
+    sim.collide_reg(tau, gx)
+    sim.stream()
+    f_new = sim.f.to_numpy()
+
+    assert np.allclose(f.sum(), f_new.sum())
+
+# test 23: regularized collision has the CORRECT shear viscosity.
+# A resolved, unforced shear wave u_x = U0 sin(k y) decays as exp(-nu k^2 t) with
+# nu = c_s^2 (tau-1/2). Isolates viscosity: no forcing (avoids the Guo coupling), fully
+# periodic (no walls), well-resolved (no ghost content) -> reg must match analytic and BGK.
+def test_reg_shear_viscosity():
+    nx, ny, nz = 4, 64, 4
+    tau = 0.6
+    nu_analytic = (tau - 0.5) / 3.0
+    k = 2 * np.pi / ny
+    U0 = 0.01
+    steps = 1500
+    yy = np.arange(ny)
+
+    def measured_nu(step_fn):
+        sim = Simulation3D(nx, ny, nz, "cpu")
+        sim.solid.from_numpy(np.zeros((nx, ny, nz), np.int32))     # no walls: fully periodic
+        ux = np.broadcast_to((U0 * np.sin(k * yy))[None, :, None],
+                             (nx, ny, nz)).astype(np.float32).copy()
+        zero = np.zeros((nx, ny, nz), np.float32)
+        sim.init_equilibrium(ux, zero.copy(), zero.copy())
+
+        def amp():
+            sim.macroscopic()
+            prof = sim.u.to_numpy()[0].mean(axis=(0, 2))          # u_x(y)
+            return 2.0 / ny * np.sum(prof * np.sin(k * yy))       # sin-mode amplitude
+
+        a0 = amp()
+        for _ in range(steps):
+            step_fn(sim)
+            sim.stream()
+        aT = amp()
+        return -np.log(aT / a0) / (k * k * steps)
+
+    nu_reg = measured_nu(lambda s: s.collide_reg(tau, 0.0))
+    nu_bgk = measured_nu(lambda s: s.collide(tau))
+
+    assert abs(nu_reg / nu_analytic - 1) < 0.03    # regularized viscosity is correct
+    assert abs(nu_reg / nu_bgk - 1) < 0.02         # and matches BGK on a resolved wave
+
+# test 24: wall_model detects a non-y wall normal and uses the wall-PARALLEL speed.
+# An x-normal wall: the model must drive off sqrt(uy^2+uz^2) and ignore the u_x normal
+# component -- otherwise the generalized normal detection is wrong.
+def test_wall_model_xwall():
+    from src.turbulence.wall_function import friction_velocity
+    sim = Simulation3D(N, N, N, "cpu")                           # own sim: test 23 re-inits Taichi
+    nu, y1 = 0.01, 10.0
+    solid = np.zeros((N, N, N), np.int32); solid[0, :, :] = 1     # wall at i=0 -> +x normal
+    sim.solid.from_numpy(solid)
+    u = np.zeros((3, N, N, N), np.float32)
+    u[0, 1, 5, 5] = 0.3                                           # normal component -> must be excluded
+    u[1, 1, 5, 5] = 0.737                                         # tangential (y): drives the model
+    sim.u.from_numpy(u)
+    sim.nut_wall.from_numpy(np.zeros((N, N, N), np.float32))
+    sim.wall_model(nu, y1)
+    nw = sim.nut_wall.to_numpy()
+
+    u_tau = friction_velocity(0.737, y1, nu)                     # from the tangential speed only
+    expect = u_tau ** 2 * y1 / 0.737 - nu
+    assert np.isclose(nw[1, 5, 5], expect, rtol=1e-4)            # normal component correctly excluded

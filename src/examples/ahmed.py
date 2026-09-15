@@ -13,15 +13,21 @@ nx = 6 * Lb                   # up + body + 4-length wake
 ny = round(3.75 * H)          # ~2.5 H of air above the body
 nz = round(3.667 * H)         # ~10% blockage
 U = 0.05                    # low Mach
-Re_H = 100                  # laminar-ish separated wake; machinery, not the reference Cd
+Re_H = 3000                  # laminar-ish separated wake; machinery, not the reference Cd
 nu = U * H / Re_H           # ~0.0053 -> tau ~0.516 (TRT)
 tau = 3*nu + 0.5
 A = Wb * H                 # frontal area for Cd
 T_ft = nx / U                        # flow-through time in steps (~14000 at H=32)
-warmup = round(5 * T_ft)             # establish flow + wake
-steps  = round(11 * T_ft)            # + ~6 flow-throughs (~30 shedding periods) to average
+#warmup = round(5 * T_ft)             # establish flow + wake
+#steps  = round(11 * T_ft)            # + ~6 flow-throughs (~30 shedding periods) to average
+warmup = round(1.5 * T_ft)
+steps  = round(3 * T_ft) 
 sample_every = 25   # sample force every N steps (avoids per-step GPU sync)
 check_every  = max(1, steps // 300) # progress readout interval
+cs = 0.0
+gx = 0.0
+trt = 1
+y1 = 0.5 # wall distance, halfway bounce back
 
 def main():
     sim = Simulation3D(nx, ny, nz, backend="cuda")
@@ -43,31 +49,30 @@ def main():
     cd = []
     prog = Progress(steps)
     for s in range(steps):
-
-        sim.collide_full(tau, 0, 0, 1)   # TRT
+        sim.macroscopic()
+        sim.wall_model(nu, y1)
+        #sim.collide_full(tau, cs, gx, trt)
+        sim.collide_reg(tau, gx)
         if s >= warmup and s % sample_every == 0:
-            sim.drag_body()                  # body-only momentum exchange
-        sim.drag_body()                  # body-only momentum exchange, pre-stream
+            sim.drag_body()                                          # only on sample steps now
+            cd.append(float(sim.force.to_numpy()[0]) / (0.5*U*U*A))
         sim.stream()
         sim.inlet_neem_open(U)           # reuse: drives open rows, skips the solid floor at the inlet
         sim.outlet()
         sim.free_slip_z()                # side walls
         sim.bounce_back()                # floor + ceiling + body
 
-        if s >= warmup and s % sample_every == 0:
-            cd.append(float(sim.force.to_numpy()[0]) / (0.5 * U*U * A))
-
         if s % check_every == 0:
             sim.macroscopic()
-            hmax = float(np.nanmax(np.abs(sim.u.to_numpy())))
-            prog.update(s, hmax)
-    
+            prog.update(s, float(np.nanmax(np.abs(sim.u.to_numpy()))))
+
+    prog.done()                          # finish the bar (newline) before any other output
     sim.macroscopic()
     u = sim.u.to_numpy()
     write_field("results/ahmed", sim.rho.to_numpy(), u)
     plot_velocity_slice(u, axis=2, index=nz//2, comp=0)[0].savefig("results/ahmed_wake.png", dpi=130)
-    prog.done()
     print("Cd =", np.mean(cd))
+    print("wall-engaged nodes:", int((sim.nut_wall.to_numpy() > 0).sum()))
 
 if __name__ == "__main__":
     main()

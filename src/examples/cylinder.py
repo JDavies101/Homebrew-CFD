@@ -52,10 +52,10 @@ def main():
             hmax = float(np.nanmax(np.abs(sim.u.to_numpy())))
             prog.update(s, hmax)
 
+    prog.done()                          # finish the bar (newline) before any other output
     sim.macroscopic()
     write_field("results/cylinder", sim.rho.to_numpy(), sim.u.to_numpy())
     u = sim.u.to_numpy()
-    prog.done()
     U_eff = float(u[0, cx, 20, nz//2])   # same x as cylinder, but near the wall, out of the wake
     print(f"U_eff = {U_eff:.4f}  ->  effective Re = {U_eff*D/nu:.0f}")
 

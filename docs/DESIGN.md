@@ -271,11 +271,42 @@ inlet_neem_open, the combined collide_full (TRT+LES+forcing at once), and the wa
 (crossing points land on the surface). Tests have caught real bugs: free_slip_z using the y
 mirror table, a double relaxation in LES, a missing q load.
 
-*Remaining: the **Ahmed body** gate - the first case where the wall function actually engages
-(first node in the log layer) and can be validated quantitatively (wall-shear error to zero,
-Cd and wake vs published data). Likely needs a more robust collision (regularized/MRT) for the
-low-nu stability the coarsening sweep exposed. Exit: Ahmed body Cd and wake match published
-data.*
+**Ahmed body - staged build toward the gate. IN PROGRESS.** Voxelized Ahmed (`src/geometry/ahmed.py`):
+box + 35deg rear slant + rounded nose, all dimensions derived from one height H so resolution
+scales cleanly. Wind-tunnel run (`src/examples/ahmed.py`): body-only drag via a separate
+`self.body` mask + `drag_body` (excludes the floor/ceiling walls from Cd), inlet_neem_open /
+outlet / free-slip sides / no-slip floor+ceiling+body, VTK + mid-span u_x wake PNG.
+- *Stage 1 (pipeline). DONE.* Runs stable at reduced Re_H=100 (the square nose diverged at
+  Re=300 on the tau->0.5 margin, so the nose was rounded), physical wake with a clear
+  recirculation bubble. Machinery, not Cd - same bar as the sphere.
+- *Stage 2 (stability ceiling). MEASURED.* TRT+LES ladder: cs=0.1 diverges at Re~300; cs=0.2
+  holds to ~2000 but only by over-dissipating (max|u| creeps to Ma~0.36). Reference Re~7.7e5 is
+  ~400x beyond that - cs-tuning cannot get there. Motivates the collision upgrade.
+
+**Regularized collision (Latt-Chopard). DONE.** `collide_reg(tau, gx)` rebuilds the
+non-equilibrium `f` from its stress tensor Pi only (`f_neq = 4.5 w_q Q_q:Pi`), discarding the
+ghost moments that blow up as tau->0.5. Clean stability with NO added viscosity, so the true Re
+is preserved (unlike heavy Smagorinsky). Ahmed ladder with `collide_reg`: clean and bounded to
+**Re~1000** (vs TRT's ~300), holds to ~3000 (Ma onset), diverges ~10000 - the new ceiling is
+resolution, not collision. Validated: mass conserved; **shear viscosity exact** on a resolved
+unforced decaying wave (matches analytic and BGK to <3%). Note: forced + regularized needs a
+Guo force-correction to Pi (regularization zeroes f_neq's -F/2 first moment) - deferred, since
+nothing regularized is forced here.
+
+**Wall function generalized + wired. DONE.** `wall_model` now finds the wall normal per node from
+the discrete solid gradient (`-sum c_q over solid neighbours`), so it works on any wall
+orientation (roof/floor/base/front/slant), using the wall-parallel speed and reducing exactly to
+the old y-normal case (test 21 still passes; a new x-wall test 24 checks the normal). Wired into
+the Ahmed loop (macroscopic -> wall_model(nu, 0.5) -> collide_reg), with `collide_reg` adding
+`3*nut_wall` to its local tau. Correctly dormant so far: at every stably-reachable Re the first
+node sits at y+<30, so the gate stays shut - it engages only at the high-Re regime the reference
+run targets.
+
+*Remaining: fold LES into `collide_reg` (regularized + Smagorinsky) so the under-resolved high-Re
+scales stay stable past the ~3000 resolution wall; that reaches the Re where y+>30 and the wall
+function engages. Then the **Ahmed body gate** - Cd and wake vs published (~0.29, Re-independent
+in the turbulent regime, the realistic single-GPU target rather than exactly 7.7e5). Exit: Ahmed
+Cd and wake match published data.*
 
 **Phase 4 - Automotive features.** STL import + voxelization of real parts, moving ground,
 rotating wheels, per-part force breakdown. *Exit: front-wing or full-car run with sane,

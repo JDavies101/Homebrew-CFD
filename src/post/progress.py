@@ -5,6 +5,7 @@ class Progress:
     def __init__(self, total):
         self.total = total
         self.t0 = time.time()
+        self.last_health = None
 
     # call once per step; `health` is an optional value to display (e.g. max|u|)
     def update(self, step, health=None):
@@ -15,9 +16,13 @@ class Progress:
         bar = "#" * int(30 * frac) + "-" * (30 - int(30 * frac))
         msg = f"\r[{bar}] {done}/{self.total} {frac*100:5.1f}%  {el:5.0f}s  ETA {eta:5.0f}s"
         if health is not None:
+            self.last_health = health
             msg += f"  max|u|={health:.3g}"
         print(msg, end="", flush=True)
 
     def done(self):
         el = time.time() - self.t0
-        print(f"\r[{'#'*30}] {self.total}/{self.total} 100.0%  {el:5.0f}s  ETA     0s")
+        msg = f"\r[{'#'*30}] {self.total}/{self.total} 100.0%  {el:5.0f}s  ETA     0s"
+        if self.last_health is not None:
+            msg += f"  max|u|={self.last_health:.3g}"   # keep the final reading visible
+        print(msg + " " * 10)                            # trailing spaces clear any leftover tail

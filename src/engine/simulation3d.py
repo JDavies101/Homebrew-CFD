@@ -71,6 +71,65 @@ class Simulation3D:
     def collide_les(self, tau: ti.f32, cs: ti.f32):
         self.collide_full(tau, cs,  0.0, 0)
 
+    @ti.kernel
+    def collide_reg(self, tau: ti.f32, gx: ti.f32):
+        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
+            # moments
+            r = 0.0
+            mx = 0.0
+            my = 0.0
+            mz = 0.0
+            for q in range(self.Q):
+                f = self.f[q, i, j, k]
+                r += f
+                mx += f * self.E[q, 0]
+                my += f * self.E[q, 1]
+                mz += f * self.E[q, 2]
+
+            ux = (mx + 0.5 * gx) / r # Guo half-force correction, same as collide_full
+            uy = my / r
+            uz = mz / r
+            usqr = ux * ux + uy * uy + uz * uz
+
+            # pass 1: non equilibrium stress tensor Pi = sum c_a c_b (f - feq)
+            Pxx = 0.0
+            Pyy = 0.0
+            Pzz = 0.0
+            Pxy = 0.0
+            Pxz = 0.0
+            Pyz = 0.0
+            for q in range(self.Q):
+                neq = self.f[q, i, j, k] - self.feq(q, r, ux, uy, uz, usqr)
+                Pxx += neq * self.E[q, 0] * self.E[q, 0]
+                Pyy += neq * self.E[q, 1] * self.E[q, 1]
+                Pzz += neq * self.E[q, 2] * self.E[q, 2]
+                Pxy += neq * self.E[q, 0] * self.E[q, 1]
+                Pxz += neq * self.E[q, 0] * self.E[q, 2]
+                Pyz += neq * self.E[q, 1] * self.E[q, 2]
+            
+            trace = Pxx + Pyy + Pzz
+
+            # pass 2: reconstruct f_neq from Pi only then relax
+            s = 1.0 / (tau + 3.0 * self.nut_wall[i, j, k])   # wall-model eddy viscosity raises local tau
+            pre = 1.0 - 0.5 * s # Guo prefactor; BGK single rate
+            for q in range(self.Q):
+                Hq = (self.E[q, 0] * self.E[q, 0] * Pxx + self.E[q, 1] * self.E[q, 1] * Pyy 
+                      + self.E[q, 2] * self.E[q, 2] * Pzz
+                      + 2.0 * (self.E[q, 0] * self.E[q, 1] * Pxy
+                               + self.E[q, 0] * self.E[q, 2] * Pxz
+                               + self.E[q, 1] * self.E[q, 2] * Pyz)
+                        - (1.0 / 3.0) * trace)
+                fneq_reg = 4.5 * self.W[q] * Hq # w_q/(2 c_s^4) = 4.5 w_q
+
+                eu = self.E[q, 0] * ux + self.E[q, 1] * uy + self.E[q, 2] * uz
+                eF = self.E[q, 0] * gx
+                uF = ux * gx
+                Sq = pre * self.W[q] * (3.0 * (eF - uF) + 9.0 * eu * eF) # Guo source (BGK form)
+
+                self.f[q, i, j, k] = self.feq(q, r, ux, uy, uz, usqr) + (1.0 - s) * fneq_reg + Sq
+
+        return
+    
     # one collision kernel: moments -> local tau (LES) -> TRT/BGK relax + Guo source
     # cs=0 disables LES, gx=0 disables forcing, trt=0 gives BGK
     @ti.kernel
@@ -137,20 +196,30 @@ class Simulation3D:
                         self.f[m,i,j,k] = fm - s_plus*(fp-even) + s_minus*(fmn-odd) + Sm
 
     @ti.kernel
-    def wall_model(self, nu: ti.f32, y1: ti.f32):     # call AFTER macroscopic(), before collide
+    def wall_model(self, nu: ti.f32, y1: ti.f32):
         for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
-            self.nut_wall[i, j, k] = 0.0                        # reset; nodes that drop out go back to 0
-            if 0 < j < self.ny - 1 and self.solid[i, j, k] == 0 \
-            and (self.solid[i, j-1, k] == 1 or self.solid[i, j+1, k] == 1):
-                ux = self.u[0, i, j, k]
-                uz = self.u[2, i, j, k]
-                u1 = ti.sqrt(ux*ux + uz*uz)                     # wall-parallel speed (y is wall-normal)
-                u_tau = self.wall_utau(u1, y1, nu)
-                yplus = y1 * u_tau / nu
-                if yplus > 30.0:                                # only where the log law is valid
-                    nu_eff = u_tau * u_tau * y1 / u1
-                    self.nut_wall[i, j, k] = ti.max(0.0, nu_eff - nu)       
-    
+            self.nut_wall[i, j, k] = 0.0
+            if self.solid[i, j, k] == 0:
+                # discrete inward normal: sum lattice vectors pointing at solid neighbors
+                gx = 0.0; gy = 0.0; gz = 0.0; nsolid = 0
+                for q in range(self.Q):
+                    ni = i + self.E[q,0]; nj = j + self.E[q,1]; nk = k + self.E[q,2]
+                    if 0 <= ni < self.nx and 0 <= nj < self.ny and 0 <= nk < self.nz:
+                        if self.solid[ni, nj, nk] == 1:
+                            gx += self.E[q,0]; gy += self.E[q,1]; gz += self.E[q,2]
+                            nsolid += 1
+                gmag = ti.sqrt(gx*gx + gy*gy + gz*gz)
+                if nsolid > 0 and gmag > 0.0:
+                    nxn = -gx/gmag; nyn = -gy/gmag; nzn = -gz/gmag      # normal into the fluid
+                    ux = self.u[0,i,j,k]; uy = self.u[1,i,j,k]; uz = self.u[2,i,j,k]
+                    udn = ux*nxn + uy*nyn + uz*nzn
+                    px = ux - udn*nxn; py = uy - udn*nyn; pz = uz - udn*nzn   # wall-parallel u
+                    u1 = ti.sqrt(px*px + py*py + pz*pz)
+                    u_tau = self.wall_utau(u1, y1, nu)
+                    yplus = y1 * u_tau / nu
+                    if yplus > 30.0 and u1 > 0.0:
+                        self.nut_wall[i,j,k] = ti.max(0.0, u_tau*u_tau*y1/u1 - nu)   
+        
     # pull each population from its upstream neighbour into f_new
     @ti.kernel
     def _stream(self):
