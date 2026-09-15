@@ -327,8 +327,9 @@ def test_regularization(sim):
     f = rng.uniform(0.5, 1.5, (19, N, N, N)).astype(np.float32)
     tau = rng.uniform(0.5, 1.5)
     gx = 0.0
+    cs = 0.0
     sim.f.from_numpy(f)
-    sim.collide_reg(tau, gx)
+    sim.collide_reg(tau, cs, gx)
     sim.stream()
     f_new = sim.f.to_numpy()
 
@@ -367,7 +368,7 @@ def test_reg_shear_viscosity():
         aT = amp()
         return -np.log(aT / a0) / (k * k * steps)
 
-    nu_reg = measured_nu(lambda s: s.collide_reg(tau, 0.0))
+    nu_reg = measured_nu(lambda s: s.collide_reg(tau, 0.0, 0.0))
     nu_bgk = measured_nu(lambda s: s.collide(tau))
 
     assert abs(nu_reg / nu_analytic - 1) < 0.03    # regularized viscosity is correct

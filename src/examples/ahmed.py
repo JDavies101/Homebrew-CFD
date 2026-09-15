@@ -13,7 +13,7 @@ nx = 6 * Lb                   # up + body + 4-length wake
 ny = round(3.75 * H)          # ~2.5 H of air above the body
 nz = round(3.667 * H)         # ~10% blockage
 U = 0.05                    # low Mach
-Re_H = 3000                  # laminar-ish separated wake; machinery, not the reference Cd
+Re_H = 30000                  # laminar-ish separated wake; machinery, not the reference Cd
 nu = U * H / Re_H           # ~0.0053 -> tau ~0.516 (TRT)
 tau = 3*nu + 0.5
 A = Wb * H                 # frontal area for Cd
@@ -24,7 +24,7 @@ warmup = round(1.5 * T_ft)
 steps  = round(3 * T_ft) 
 sample_every = 25   # sample force every N steps (avoids per-step GPU sync)
 check_every  = max(1, steps // 300) # progress readout interval
-cs = 0.0
+cs = 0.1
 gx = 0.0
 trt = 1
 y1 = 0.5 # wall distance, halfway bounce back
@@ -52,7 +52,7 @@ def main():
         sim.macroscopic()
         sim.wall_model(nu, y1)
         #sim.collide_full(tau, cs, gx, trt)
-        sim.collide_reg(tau, gx)
+        sim.collide_reg(tau, cs, gx)
         if s >= warmup and s % sample_every == 0:
             sim.drag_body()                                          # only on sample steps now
             cd.append(float(sim.force.to_numpy()[0]) / (0.5*U*U*A))

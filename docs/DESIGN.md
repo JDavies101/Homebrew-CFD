@@ -302,11 +302,21 @@ the Ahmed loop (macroscopic -> wall_model(nu, 0.5) -> collide_reg), with `collid
 node sits at y+<30, so the gate stays shut - it engages only at the high-Re regime the reference
 run targets.
 
-*Remaining: fold LES into `collide_reg` (regularized + Smagorinsky) so the under-resolved high-Re
-scales stay stable past the ~3000 resolution wall; that reaches the Re where y+>30 and the wall
-function engages. Then the **Ahmed body gate** - Cd and wake vs published (~0.29, Re-independent
-in the turbulent regime, the realistic single-GPU target rather than exactly 7.7e5). Exit: Ahmed
-Cd and wake match published data.*
+**LES + regularized + wall function, composed. DONE.** `collide_reg(tau, cs, gx)` folds
+Smagorinsky in via the stress Pi it already computes (cs=0 reduces exactly to the validated
+regularized scheme). The full stack now runs the Ahmed body stably to **Re_H=30000**
+(max|u|~0.08, clean; regularized-alone diverged ~10000, TRT+LES ~2000), with the wall function
+actively engaged (~1300 nodes at y+>30). All three - regularization (numerical stability), LES
+(subgrid turbulence), wall function (near-wall stress) - live at once. LES also cured the Ma
+creep at Re=3000 (max|u| 0.22 -> 0.08).
+
+*Remaining is accuracy, not machinery. Cd ~3.3 at Re=30000 is ~10x the reference ~0.29,
+dominated by ~10% blockage in a no-slip tunnel and the H=32 staircase (the cylinder already
+showed ~35% from staircasing alone). The **Ahmed gate** needs a resolution study (does Cd
+converge as H grows 32->48->64), lower blockage (bigger domain and/or free-slip tunnel walls
+instead of no-slip), and cleaner far-field BCs. Exit: Ahmed Cd and wake match published data
+(~0.29, Re-independent in the turbulent regime - the realistic single-GPU target rather than
+exactly 7.7e5).*
 
 **Phase 4 - Automotive features.** STL import + voxelization of real parts, moving ground,
 rotating wheels, per-part force breakdown. *Exit: front-wing or full-car run with sane,

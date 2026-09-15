@@ -72,7 +72,7 @@ class Simulation3D:
         self.collide_full(tau, cs,  0.0, 0)
 
     @ti.kernel
-    def collide_reg(self, tau: ti.f32, gx: ti.f32):
+    def collide_reg(self, tau0: ti.f32, cs: ti.f32, gx: ti.f32):
         for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
             # moments
             r = 0.0
@@ -110,7 +110,11 @@ class Simulation3D:
             trace = Pxx + Pyy + Pzz
 
             # pass 2: reconstruct f_neq from Pi only then relax
-            s = 1.0 / (tau + 3.0 * self.nut_wall[i, j, k])   # wall-model eddy viscosity raises local tau
+            tau = tau0
+            if cs > 0.0:                                     # LES: eddy-adjusted tau from stress magnitude
+                Qmag = ti.sqrt(Pxx*Pxx + Pyy*Pyy + Pzz*Pzz + 2.0*(Pxy*Pxy + Pxz*Pxz + Pyz*Pyz))
+                tau = 0.5 * (tau0 + ti.sqrt(tau0*tau0 + 18.0*cs*cs*Qmag / r))
+            s = 1.0 / (tau + 3.0 * self.nut_wall[i, j, k])   # LES + wall model + regularization, composed
             pre = 1.0 - 0.5 * s # Guo prefactor; BGK single rate
             for q in range(self.Q):
                 Hq = (self.E[q, 0] * self.E[q, 0] * Pxx + self.E[q, 1] * self.E[q, 1] * Pyy 
