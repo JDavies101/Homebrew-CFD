@@ -288,7 +288,18 @@ class Simulation3D:
                     t2 = self.f[q, i, self.ny-1, k]
                     self.f[q, i, self.ny - 1, k] = self.f[m, i , self.ny - 1, k]
                     self.f[m, i, self.ny - 1, k] = t2
-    
+
+    @ti.kernel
+    def free_slip_y_top(self):
+        for i, k in ti.ndrange(self.nx, self.nz):
+            for q in range(self.Q):
+                m = self.MIRROR_Y[q]
+                if q < m:
+                    # top wall j = ny - 1
+                    t = self.f[q, i, self.ny-1, k]
+                    self.f[q, i, self.ny - 1, k] = self.f[m, i , self.ny - 1, k]
+                    self.f[m, i, self.ny - 1, k] = t
+
     # free-slip z walls: specular reflection, mirrors the z component
     @ti.kernel
     def free_slip_z(self):
