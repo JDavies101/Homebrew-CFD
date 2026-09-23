@@ -39,29 +39,29 @@ def main():
             hmax = float(np.nanmax(np.abs(sim.u.to_numpy())))
             prog.update(s, hmax)
 
+    prog.done()
     sim.macroscopic()
-    ux = sim.u.to_numpy()[0, :, 1, nz//2]     # u_x along the floor
-    xs = x_step
-    sign = ux[xs:] > 0
-    i_re = xs + np.argmax(sign)               # first index where u_x > 0 after the step
-    x_r = i_re - x_step
 
     floor = sim.u.to_numpy()[0, x_step:, 1, nz//2]
     neg = np.where(floor < 0)[0]
+    x_r = -1
     if len(neg):
         i0 = neg[0]                                   # bubble start
         after = np.where(floor[i0:] > 0)[0]
         x_r = (i0 + after[0]) if len(after) else -1   # reattach = first positive after reversal
-        print(f"\nx_r/S = {x_r/S:.2f}")
     else:
-        print("\nno recirculation")
+        print("no recirculation")
     np.save("results/floor.npy", floor)
 
     u = sim.u.to_numpy()
     col = u[0, x_step-5, S+1:ny-1, :]      # open inlet rows, all z
     U_mean = float(col.mean())
     Re_eff = U_mean * 2*h / nu
-    print(f"U_mean = {U_mean:.4f}   Armaly Re = {Re_eff:.0f}   x_r/S = {x_r/S:.2f}")
+
+    if x_r > 0:
+        print(f"U_mean = {U_mean:.4f}   Armaly Re = {Re_eff:.0f}   x_r/S = {x_r/S:.2f}")
+    else:
+        print(f"U_mean = {U_mean:.4f}   Armaly Re = {Re_eff:.0f}")
 
 if __name__ == "__main__":
     main()

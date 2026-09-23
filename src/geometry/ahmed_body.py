@@ -41,7 +41,6 @@ def ahmed_body(nx, ny, nz, x0, H=48, phi=35):
                 # how far the fillet pushes the front face back, per axis (0 when that edge is far)
                 back_y = R - np.sqrt(R ** 2 - (R - dy) ** 2) if dy < R else 0
                 back_z = R - np.sqrt(R ** 2 - (R - dz) ** 2) if dz < R else 0
-                front_x = x0 + max(back_y, back_z)
 
                 if i < x0 + max(back_y, back_z):
                     solid[i, j, k] = 0

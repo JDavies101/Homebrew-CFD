@@ -180,6 +180,9 @@ validated by reducing exactly to the previous scheme (a golden-oracle parity tes
 - **LES Smagorinsky. DONE.** Local eddy viscosity from the non-equilibrium stress tensor
   `Q_ij` (no finite differences, fully local), giving a per-cell `tau`. Inactive on smooth
   flow (`|Q|=0`), active where strained. Parity test: `cs=0` reproduces BGK exactly.
+  Convention note: until the section-10 review the coefficient was 18 instead of the textbook
+  18*sqrt(2), so every cs quoted below (cs=0.1, 0.2, ...) is ~0.84x the textbook C_s. Code now
+  uses the textbook value.
 
 **Collision consolidation.** All variants are now one kernel, `collide_full(tau, cs, gx,
 trt)`, with thin Python wrappers (`collide`, `collide_forced`, `collide_trt`, `collide_les`)
@@ -205,9 +208,12 @@ Invisible to the `s_minus=s_plus->BGK` parity test (at that limit the two prefac
 only a forced channel comparing TRT to BGK magnitudes caught it - TRT peak -16%, disagreeing
 with BGK by ~18%. Fixed by splitting the source into symmetric/antisymmetric parts and relaxing
 each with its own rate. Golden oracle: forced Poiseuille now recovers the analytic parabola
-(R^2=1) under both operators, agreeing to ~0.6%, leaving a fixed ~0.33-cell body-force wall
-offset (Mach-independent -> pure discretization, ~0.4% at production delta). `test_channel.py`
-locks in TRT-vs-BGK peak agreement (fails on the bug, passes on the fix).
+(R^2=1) under both operators, agreeing to ~0.6%. A fixed ~0.33-cell wall offset remained
+(Mach- and resolution-independent) and was read at the time as a body-force effect; the code
+review later traced it to collision running on wall nodes (Guo force applied inside the wall,
+bounced populations mixed through feq). With walls skipped, TRT is exact at halfway:
+delta_fit 31.999, peak -0.07%. `test_channel.py` locks in TRT-vs-BGK peak agreement and now
+TRT vs analytic within 0.5%.
 
 **Turbulent channel Re_tau=180 (DNS, cs=0). Tripped and sustained.** Minimal Jimenez-Moin box
 (~120x130x60). Seeded IC = mean parabola + divergence-free streamwise rolls (from a
@@ -386,3 +392,34 @@ descriptor tests (weights sum to 1, opposites reverse, isotropy moments).
 - FP16 storage - how much accuracy do we trade for domain size? (measure in Phase 5).
 - Real F1 geometry source and its licensing (needed by Phase 4).
 - Cylinder Cd calibration: blockage, resolution, tau, MEM factor (Phase 2, in progress).
+
+## 10. Code-health backlog
+
+From the full code review. Done so far: wall nodes no longer collided (this was the
+"0.33-cell body-force wall offset" - TRT forced Poiseuille is now exact at halfway, delta_fit
+31.999, peak -0.07%); Smagorinsky now uses the textbook 18*sqrt(2) (old runs' cs=0.1 ~ 0.084
+now); per-cell conservation tests with the exact stream shift and Guo +F identities; vacuous
+LES assert replaced; Ahmed mask test; step.py dead x_r block removed; every example's progress
+bar now finishes at 100% (`prog.done()` right after the loop); stale 0.33/0.83 wall-offset
+comments and docs corrected.
+
+Open:
+- **step.py:** the inner `print(x_r/S)` (line 52) duplicates the final line and prints -1/S
+  when the flow reverses but never reattaches; reattachment isn't interpolated between cells.
+- **Re-confirm after the wall-node + sqrt(2) fixes:** the Re_tau=180 channel (U+, u'_rms) and
+  the Ahmed ladder were produced before both fixes. Quick reruns to check the numbers hold.
+- **2D engine:** check `src/engine/simulation.py` for the same collide-on-walls pattern (the 2D
+  Poiseuille validation took the walls from the fit, which would have hidden it).
+- **A. Memory:** `q` and `fc` are always allocated (152 of ~336 B/cell). Make them opt-in
+  (Bouzidi only) -> ~70M -> ~130M cells on 24 GB, H ~60 -> ~74.
+- **B. `ti.init` in `Simulation3D.__init__`:** a second instance wipes the first's fields
+  (the fragile test fixture). Init once per process.
+- **C. Ahmed loop speed:** full `macroscopic()` + full 19-neighbour `wall_model` scan every
+  step for ~1% of nodes. Precompute wall nodes + normals once, compute moments locally.
+- **D. Duplicated physics:** `inlet`/`inlet_neem`/`inlet_neem_open` inline the feq formula;
+  `inlet_neem` == `inlet_neem_open` when x=0 has no solid; `drag` vs `drag_body` differ only in
+  the mask; `collide_full`/`collide_reg` both build Pi (shared `@ti.func`).
+- **E. Small:** radius vs diameter across geometry APIs; `config/loader.py` + `cases/` unused;
+  `sphere.py` pulls all of f (~480 MB) for a NaN check; `channel_turbulent.py` collects unused
+  uc/urms/vrms/wrms; `next` shadows the builtin in `wall_function.py`; `. all` in
+  `lattice3d.py`; trailing `return` in `collide_reg`.

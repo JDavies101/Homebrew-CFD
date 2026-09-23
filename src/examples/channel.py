@@ -49,12 +49,13 @@ def main():
             hmax = float(np.nanmax(np.abs(sim.u.to_numpy())))
             prog.update(s, hmax)
 
+    prog.done()
     sim.macroscopic()
     prof = sim.u.to_numpy()[0].mean(axis=(0, 2))   # u_x averaged over x,z -> (ny,)
     r2, delta_fit, peak = fit_parabola(prof)
     U_analytic = gx * delta**2 / (2 * nu)
     op = "TRT" if TRT else "BGK"
-    print(f"\n[{op}]  R^2 = {r2:.6f}   delta_fit = {delta_fit:.3f} (nominal {delta:.1f})"
+    print(f"[{op}]  R^2 = {r2:.6f}   delta_fit = {delta_fit:.3f} (nominal {delta:.1f})"
           f"   peak = {peak:.5f}   analytic = {U_analytic:.5f}"
           f"   ({100*(peak/U_analytic - 1):+.2f}%)")
 

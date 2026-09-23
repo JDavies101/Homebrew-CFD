@@ -121,7 +121,7 @@ class Simulation3D:
             tau = tau0
             if cs > 0.0:                                     # LES: eddy-adjusted tau from stress magnitude
                 Qmag = ti.sqrt(Pxx*Pxx + Pyy*Pyy + Pzz*Pzz + 2.0*(Pxy*Pxy + Pxz*Pxz + Pyz*Pyz))
-                tau = 0.5 * (tau0 + ti.sqrt(tau0*tau0 + 18.0*cs*cs*Qmag / r))
+                tau = 0.5 * (tau0 + ti.sqrt(tau0*tau0 + 18.0 * ti.sqrt(2.0) *cs*cs*Qmag / r))
             s = 1.0 / (tau + 3.0 * self.nut_wall[i, j, k])   # LES + wall model + regularization, composed
             pre = 1.0 - 0.5 * s # Guo prefactor; BGK single rate
             for q in range(self.Q):
@@ -184,7 +184,7 @@ class Simulation3D:
                     Qyz += self.E[q,1] * self.E[q,2] * neq
 
                 Qmag = ti.sqrt(Qxx * Qxx + Qyy * Qyy + Qzz * Qzz + 2 * (Qxy * Qxy + Qxz * Qxz + Qyz * Qyz))
-                tau = 0.5 * (tau0 + ti.sqrt(tau0 * tau0 + 18.0 * cs * cs * Qmag / r))
+                tau = 0.5 * (tau0 + ti.sqrt(tau0 * tau0 + 18.0 * ti.sqrt(2.0) * cs * cs * Qmag / r))
             
             tau += 3.0 * self.nut_wall[i,j,k]
 
@@ -213,8 +213,8 @@ class Simulation3D:
 
     # log-law wall model: at fluid nodes touching solid, set nut_wall so the first node
     # carries tau_w = u_tau^2. only engages at y+ > 30 (below that the node is resolved)
-    # call after macroscopic(), before collide. y1 = first-node wall distance:
-    # 0.5 for halfway bounce-back, 0.83 in the forced channel (body-force offset)
+    # call after macroscopic(), before collide. y1 = first-node wall distance = 0.5
+    # (halfway bounce-back, now that wall nodes aren't collided)
     @ti.kernel
     def wall_model(self, nu: ti.f32, y1: ti.f32):
         for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):

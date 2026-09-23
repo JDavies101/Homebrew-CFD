@@ -3,7 +3,8 @@
 # BOTH collision operators. The parity test (s_minus=s_plus->BGK) is blind to the
 # Guo antisymmetric-source relaxation rate, so a bug there only shows up when TRT
 # and BGK are driven by the same force and their peaks are compared. They must
-# agree: forced Poiseuille is operator-independent up to the sub-cell wall offset.
+# agree: forced Poiseuille is operator-independent up to BGK's tau-dependent wall location.
+# TRT (Lambda=3/16) puts the wall exactly halfway, so its peak must hit g*delta^2/(2 nu).
 import numpy as np
 import pytest
 from src.engine.simulation3d import Simulation3D as S
@@ -11,9 +12,9 @@ from src.engine import lattice3d as L
 
 pytestmark = pytest.mark.slow
 
-nx, ny, nz = 8, 66, 8              # delta=32: the validated regime; at coarser
-tau = 0.8                          # delta the fixed sub-cell wall offset dominates
-nu = (tau - 0.5) / 3               # and swamps the tight magnitude thresholds
+nx, ny, nz = 8, 66, 8              # delta=32: the validated regime; BGK's tau-dependent
+tau = 0.8                          # wall shift is a smaller fraction of the peak here
+nu = (tau - 0.5) / 3
 delta = (ny - 2) / 2               # halfway walls: solid at j=0, j=ny-1
 g = 1e-6
 steps = 25000                      # ~6 viscous decay times at this delta
@@ -63,5 +64,6 @@ def test_trt_bgk_peaks_agree(fits):
 
 
 def test_peak_matches_analytic(fits):
-    # magnitude vs g*delta^2/(2 nu); loose enough to absorb the sub-cell wall offset
+    # magnitude vs g*delta^2/(2 nu). TRT is exact at halfway walls; this was +1.95% while
+    # wall nodes were being collided, so it catches that bug if it ever comes back
     assert abs(fits["trt"][1] / U_analytic - 1) < 0.005

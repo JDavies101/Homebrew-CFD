@@ -11,7 +11,7 @@ from src.turbulence.wall_function import friction_velocity
 
 Re_tau = 180
 u_tau = 0.0045              # small -> U_c ~ 17.7 u_tau stays low Mach
-delta = 64                  # half-height in cells; first node sits ~0.83 off the effective wall -> y+ ~2.3
+delta = 64                  # half-height in cells; first node sits 0.5 off the wall -> y+ ~1.4
 ny = 2 * delta + 2          # solid rows j=0, j=ny-1; halfway walls -> H = ny-2 = 2*delta
 nu = u_tau * delta / Re_tau # = 0.0016
 tau = 3 * nu + 0.5          # ~0.505, near 0.5 -> TRT mandatory, BGK would blow up
@@ -111,10 +111,10 @@ def main():
     vrms_prof = np.sqrt(np.mean(sum_uyy, axis=0))
     wrms_prof = np.sqrt(np.mean(sum_uzz, axis=0))
 
-    delta_eff = delta + 0.0                       # body-force wall offset (from the laminar oracle)
+    delta_eff = delta + 0.0                       # wall exactly halfway (the old +0.33 was wall nodes being collided)
     u_tau2 = np.sqrt(gx * delta_eff)               # friction velocity from the force balance (exact)
     u1 = 0.5 * (ubar[1] + ubar[-2])                # mean u_x at the first fluid node off each wall
-    d1 = delta_eff - (delta - 0.5)                 # its wall distance in cells (~0.83)
+    d1 = delta_eff - (delta - 0.5)                 # its wall distance in cells (0.5)
     u_tau_grad = np.sqrt(nu * u1 / d1)             # resolved wall shear: tau_w = nu * du/dy
     y_j = np.arange(ny) - (ny - 1) / 2.0
     d = delta_eff - np.abs(y_j)                     # wall distance in cells (<0 on the solid rows)
