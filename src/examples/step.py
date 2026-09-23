@@ -1,4 +1,4 @@
-# flow past a cylinder (Phase 2 gate): Re=100 -> Cd ~1.3-1.4, Strouhal ~0.16-0.20
+# backward-facing step (Armaly): reattachment length x_r/S at Re=100 (ref ~3, we get ~2.5)
 import numpy as np
 from src.engine.simulation3d import Simulation3D
 from src.engine import lattice3d as L

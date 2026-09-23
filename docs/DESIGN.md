@@ -310,13 +310,37 @@ actively engaged (~1300 nodes at y+>30). All three - regularization (numerical s
 (subgrid turbulence), wall function (near-wall stress) - live at once. LES also cured the Ma
 creep at Re=3000 (max|u| 0.22 -> 0.08).
 
-*Remaining is accuracy, not machinery. Cd ~3.3 at Re=30000 is ~10x the reference ~0.29,
-dominated by ~10% blockage in a no-slip tunnel and the H=32 staircase (the cylinder already
-showed ~35% from staircasing alone). The **Ahmed gate** needs a resolution study (does Cd
-converge as H grows 32->48->64), lower blockage (bigger domain and/or free-slip tunnel walls
-instead of no-slip), and cleaner far-field BCs. Exit: Ahmed Cd and wake match published data
-(~0.29, Re-independent in the turbulent regime - the realistic single-GPU target rather than
-exactly 7.7e5).*
+**Accuracy campaign - what it found.** Cd ~3.3 at Re=30000 is ~10x the reference ~0.29. The
+Ahmed body's low true Cd amplifies every absolute error (the ~35% staircase over-prediction
+that was tolerable on the cylinder is enormous on a 0.29 body). Three levers were tried:
+- *Resolution.* H=32 -> 48 at Re=3000 moved Cd 2.70 -> 2.27; first-order Richardson puts the
+  grid-converged value near ~1.4 - still ~5x high (rough: the H=32 point was a short run, the
+  H=48 point a converged one). Resolution is a real but secondary error. Worse, it is
+  hardware-capped: with q/fc/macroscopic fields allocated the 24 GB card holds ~70M cells,
+  about H~60; resolving the slant and wake well enough for ~0.3 needs H~150-300, i.e. a cluster.
+- *Free-slip far-field ceiling* (`free_slip_y_top`). Raised Cd 2.70 -> 2.98: a free-slip roof
+  meeting free-slip sides injects the same edge artifact the sphere showed. Needs corner
+  treatment before free-slip tunnel walls are usable. Kernel kept, not wired.
+- *Wall-stress validation in a coarse channel* (Re_tau=590, delta=16, first node y+~31).
+  Hit the wall-modeled-LES bind: cs=0.1 over-damps the near-wall log layer (static Smagorinsky
+  sees the mean shear) -> U+=14 vs ~21, the wall model's inverted u_tau comes out low, its y+
+  estimate falls under the gate and it never engages (wall on == wall off); cs=0 has no subgrid
+  dissipation and diverges. No static cs works. Needs a wall-aware SGS model (van Driest
+  damping, or WALE/Vreman). The wall function stays validated at the component level
+  (inversion round-trip, tau coupling, y- and x-wall tests). Same caveat applies to the Ahmed
+  wall model's engagement at Re=30000.
+
+**Decision.** The absolute Ahmed Cd is gated by hardware plus two research-grade modeling
+pieces, and the charter already says relative comparisons, not certification-grade absolute
+Cd. The written Phase-3 gate ("Cd matches published") contradicted that charter and the 24 GB
+budget flagged in section 1; it is replaced by a relative gate.
+
+*Remaining: the **slant-angle sweep** (25/30/35 deg, identical settings) as the relative-
+comparison gate. Pass = the Ahmed drag-crisis trend (Cd rising toward ~30 deg, dropping past
+it; at minimum 25 > 35). At H=32 the angles differ by only 1-3 cells in slant drop, so a flat
+result means "needs H=48," not "wrong physics." Deferred with known cause: van Driest / WALE
+SGS, free-slip corner treatment, forced+regularized Guo correction, SDF wall distance for
+non-axis-aligned walls.*
 
 **Phase 4 - Automotive features.** STL import + voxelization of real parts, moving ground,
 rotating wheels, per-part force breakdown. *Exit: front-wing or full-car run with sane,

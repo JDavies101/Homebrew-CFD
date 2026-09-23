@@ -1,5 +1,5 @@
 # 3D D3Q19 LBM solver, runs on cpu or cuda
-# geometry-agnostic: consumes solid/lid/q fields, does not build shapes
+# geometry-agnostic: consumes solid/body/lid/q fields, does not build shapes
 import taichi as ti
 import numpy as np
 from src.engine import lattice3d as L3
@@ -26,8 +26,8 @@ class Simulation3D:
         self.MIRROR_Z.from_numpy(L3.MIRROR_Z.astype(np.int32))
         self.q  = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))   # wall fractions (0 = not a boundary link)
         self.fc = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))   # post-collision snapshot (Bouzidi needs it)
-        self.nut_wall = ti.field(ti.f32, shape =(nx, ny, nz))
-        self.body = ti.field(ti.i32, shape=(nx, ny, nz))
+        self.nut_wall = ti.field(ti.f32, shape =(nx, ny, nz))  # wall-model eddy viscosity (0 away from walls)
+        self.body = ti.field(ti.i32, shape=(nx, ny, nz))       # body-only mask for drag (solid minus tunnel walls)
         # lattice constants as fields, built from the NumPy descriptor
         self.E   = ti.field(ti.i32, shape=(self.Q, self.D))
         self.E.from_numpy(L3.E.astype(np.int32))
@@ -54,7 +54,7 @@ class Simulation3D:
             self.u[1, i, j, k] = my / r
             self.u[2, i, j, k] = mz / r
 
-    # wrappers: each collision variant is a special case of collide_full
+    # wrappers: each of these is a special case of collide_full (collide_reg is separate)
     # plain BGK
     def collide(self, tau: ti.f32):
         self.collide_full(tau, 0.0, 0.0, 0)
@@ -71,6 +71,10 @@ class Simulation3D:
     def collide_les(self, tau: ti.f32, cs: ti.f32):
         self.collide_full(tau, cs,  0.0, 0)
 
+    # regularized collision: rebuild f_neq from the stress Pi only (drops the ghost moments
+    # that blow up as tau -> 0.5), then relax. single rate, no trt split
+    # cs=0 disables LES, gx=0 disables forcing. forced + regularized still needs the Guo
+    # correction to Pi (regularizing zeroes f_neq's -F/2 first moment), so keep gx=0 here
     @ti.kernel
     def collide_reg(self, tau0: ti.f32, cs: ti.f32, gx: ti.f32):
         for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
@@ -134,7 +138,7 @@ class Simulation3D:
 
         return
     
-    # one collision kernel: moments -> local tau (LES) -> TRT/BGK relax + Guo source
+    # one collision kernel: moments -> local tau (LES + wall model) -> TRT/BGK relax + Guo source
     # cs=0 disables LES, gx=0 disables forcing, trt=0 gives BGK
     @ti.kernel
     def collide_full(self, tau0: ti.f32, cs: ti.f32, gx: ti.f32, trt: ti.i32):
@@ -199,6 +203,10 @@ class Simulation3D:
                     if q != m:
                         self.f[m,i,j,k] = fm - s_plus*(fp-even) + s_minus*(fmn-odd) + Sm
 
+    # log-law wall model: at fluid nodes touching solid, set nut_wall so the first node
+    # carries tau_w = u_tau^2. only engages at y+ > 30 (below that the node is resolved)
+    # call after macroscopic(), before collide. y1 = first-node wall distance:
+    # 0.5 for halfway bounce-back, 0.83 in the forced channel (body-force offset)
     @ti.kernel
     def wall_model(self, nu: ti.f32, y1: ti.f32):
         for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
@@ -289,6 +297,8 @@ class Simulation3D:
                     self.f[q, i, self.ny - 1, k] = self.f[m, i , self.ny - 1, k]
                     self.f[m, i, self.ny - 1, k] = t2
 
+    # free-slip ceiling only (j = ny-1): far-field roof over a no-slip floor
+    # not wired into ahmed yet: meeting the free-slip sides it hits the corner artifact
     @ti.kernel
     def free_slip_y_top(self):
         for i, k in ti.ndrange(self.nx, self.nz):
@@ -369,6 +379,7 @@ class Simulation3D:
                 feq_n = self.W[q] * rn * (1+ 3 * eu_n + 4.5 * eu_n * eu_n - 1.5 * usqr_n)
                 self.f[q, 0, j, k] = feq_b + (self.f[q, 1, j, k] - feq_n)
 
+    # same as inlet_neem but only drives open columns, leaves solid at the inlet plane alone
     @ti.kernel
     def inlet_neem_open(self, U: ti.f32):
         for j, k in ti.ndrange(self.ny, self.nz):
@@ -437,7 +448,8 @@ class Simulation3D:
                     self.force[1] += (fin + fout) * self.E[d, 1]
                     self.force[2] += (fin + fout) * self.E[d, 2]    
 
-    # drag on body only
+    # same as drag but only links into the body, so tunnel walls don't pollute Cd
+    # call after collide, before stream
     @ti.kernel
     def drag_body(self):
         for c in range(L3.D): # reset accumulator
@@ -455,6 +467,7 @@ class Simulation3D:
                             self.force[1] += 2.0 * self.f[q,i,j,k] * self.E[q,1]
                             self.force[2] += 2.0 * self.f[q,i,j,k] * self.E[q,2]
 
+    # equilibrium, the one copy collide_full / collide_reg / _init_eq all use
     @ti.func
     def feq(self, q, r, ux, uy, uz, usqr):
         eu = self.E[q,0] * ux + self.E[q,1] * uy + self.E[q,2] * uz
@@ -476,6 +489,7 @@ class Simulation3D:
                 u_tau = nxt if nxt > 0.0 else u_tau * 0.5
         return u_tau
 
+    # fill f with feq from whatever is in rho and u
     @ti.kernel
     def _init_eq(self):
 
@@ -489,6 +503,7 @@ class Simulation3D:
             for q in range(self.Q):
                 self.f[q, i, j, k] = self.feq(q, r, ux, uy, uz, usqr)
     
+    # start from equilibrium at a prescribed velocity field (numpy in, fields loaded, kernel fills f)
     def init_equilibrium(self, ux, uy, uz, rho=1.0):
         self.u.from_numpy(np.stack([ux, uy, uz]).astype(np.float32))
         self.rho.from_numpy(np.full((self.nx, self.ny, self.nz), rho, np.float32))

@@ -1,5 +1,5 @@
 import numpy as np
-from src.geometry.ahmed import ahmed
+from src.geometry.ahmed_body import ahmed_body
 from src.post.plotting import plot_mask_slice, plot_velocity_slice
 from src.engine.simulation3d import Simulation3D
 from src.post.progress import Progress
@@ -20,19 +20,20 @@ A = Wb * H                 # frontal area for Cd
 T_ft = nx / U                        # flow-through time in steps (~14000 at H=32)
 #warmup = round(5 * T_ft)             # establish flow + wake
 #steps  = round(11 * T_ft)            # + ~6 flow-throughs (~30 shedding periods) to average
-warmup = round(1.5 * T_ft)
-steps  = round(3 * T_ft) 
+warmup = round(3 * T_ft)
+steps  = round(6 * T_ft) 
 sample_every = 25   # sample force every N steps (avoids per-step GPU sync)
 check_every  = max(1, steps // 300) # progress readout interval
 cs = 0.1
 gx = 0.0
 trt = 1
 y1 = 0.5 # wall distance, halfway bounce back
+phi = 25
 
 def main():
     sim = Simulation3D(nx, ny, nz, backend="cuda")
 
-    body = ahmed(nx, ny, nz, x0, H)
+    body = ahmed_body(nx, ny, nz, x0, H, phi)
 
     plot_mask_slice(body, axis=2, index=nz//2)[0].savefig("results/ahmed_xy.png")   # side view
     plot_mask_slice(body, axis=1, index=10)[0].savefig("results/ahmed_xz.png")      # plan view

@@ -2,8 +2,8 @@
 import numpy as np
 
 Q = 19 
-# lattice sound speed
-CS2 = 1.0 / 3.0 
+# lattice sound speed squared, c_s^2
+CS2 = 1.0 / 3.0
 D = 3 # dimension
 
 # int array of direction vectors

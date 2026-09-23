@@ -11,7 +11,7 @@ from src.turbulence.wall_function import friction_velocity
 
 Re_tau = 180
 u_tau = 0.0045              # small -> U_c ~ 17.7 u_tau stays low Mach
-delta = 64                  # half-height in cells; y+ at first node ~ 0.5*Re_tau/delta ~ 1.4
+delta = 64                  # half-height in cells; first node sits ~0.83 off the effective wall -> y+ ~2.3
 ny = 2 * delta + 2          # solid rows j=0, j=ny-1; halfway walls -> H = ny-2 = 2*delta
 nu = u_tau * delta / Re_tau # = 0.0016
 tau = 3 * nu + 0.5          # ~0.505, near 0.5 -> TRT mandatory, BGK would blow up
@@ -32,7 +32,7 @@ steps = round(600000 * delta / 64)       # ~constant turnovers across the delta 
 warmup = steps // 6            # discard ~10 turnovers of transient
 check_every = max(1, round(steps / 300))     # ~300 readouts, independent of run length
 turnover = delta / u_tau
-sample_every = max(1, round(turnover / 50))  # ~50 samples per eddy turnover; sample force every N steps (avoids per-step GPU sync)
+sample_every = max(1, round(turnover / 50))  # ~50 velocity snapshots per eddy turnover (each one is a GPU sync)
 
 rng = np.random.default_rng(0)   # reproducible IC across trip attempts
 

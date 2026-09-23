@@ -1,4 +1,4 @@
-# 2D field plots: velocity magnitude and streamlines
+# plots: 2D fields (speed, streamlines), channel law of the wall, 3D mask / velocity slices
 import numpy as np
 import matplotlib.pyplot as plt
 

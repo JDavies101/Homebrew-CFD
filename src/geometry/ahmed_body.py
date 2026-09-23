@@ -1,16 +1,18 @@
-# simplified blunt body
+# ahmed body mask: box + rounded nose + rear slant at phi, every size derived from height H
+# body only (no floor): the run adds tunnel walls so drag_body can tell them apart
+# staircased: no Bouzidi on the slant or nose yet, stilts omitted
 import numpy as np
 
-def ahmed(nx, ny, nz, x0, H=48):
+def ahmed(nx, ny, nz, x0, H=48, phi=35):
     solid = np.zeros((nx, ny, nz), np.int32)
     Hb = H # cells
     Lb = round(1044 / 288 * H)
     Wb = round(389 / 288 * H)
     R = round(100/288 * H)
     clear = round(50 / 288 * H)
-    slant_dx = round(182 / 288 * H)
-    slant_dy = round(slant_dx * np.tan(np.radians(35))) # sets exactly 35 degrees
-    
+    slant_len = round(222 / 288 * H)                        # slant surface length (fixed)
+    slant_dx  = round(slant_len * np.cos(np.radians(phi)))  # horizontal projection
+    slant_dy  = round(slant_len * np.sin(np.radians(phi)))  # vertical drop    
     # body floats above the clearance gap
     j_bot = clear + 1
 
