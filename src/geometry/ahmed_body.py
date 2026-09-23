@@ -3,7 +3,7 @@
 # staircased: no Bouzidi on the slant or nose yet, stilts omitted
 import numpy as np
 
-def ahmed(nx, ny, nz, x0, H=48, phi=35):
+def ahmed_body(nx, ny, nz, x0, H=48, phi=35):
     solid = np.zeros((nx, ny, nz), np.int32)
     Hb = H # cells
     Lb = round(1044 / 288 * H)

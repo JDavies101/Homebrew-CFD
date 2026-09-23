@@ -78,6 +78,10 @@ class Simulation3D:
     @ti.kernel
     def collide_reg(self, tau0: ti.f32, cs: ti.f32, gx: ti.f32):
         for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
+            
+            if self.solid[i, j, k] == 1 or self.lid[i, j, k] == 1:
+                continue        # wall nodes only hold bounced populations for one step, don't collide them
+            
             # moments
             r = 0.0
             mx = 0.0
@@ -143,6 +147,10 @@ class Simulation3D:
     @ti.kernel
     def collide_full(self, tau0: ti.f32, cs: ti.f32, gx: ti.f32, trt: ti.i32):
         for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
+            
+            if self.solid[i, j, k] == 1 or self.lid[i, j, k] == 1:
+                continue        # wall nodes only hold bounced populations for one step, don't collide them
+            
             r = 0.0
             mx = 0.0
             my = 0.0

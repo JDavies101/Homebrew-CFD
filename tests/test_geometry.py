@@ -5,6 +5,8 @@ from src.geometry.cylinder import cylinder
 from src.geometry.sphere import sphere
 from src.geometry.step import step
 from src.geometry.wall_fraction import wall_fraction_cylinder, wall_fraction_sphere
+import pytest
+from src.geometry.ahmed_body import ahmed_body
 
 # test 1: cylinder mask: right count, spans z, centered
 def test_cylinder_mask():
@@ -56,3 +58,30 @@ def test_wall_fraction_sphere():
     
     assert (bl > 0).all() and (bl <= 1).all()
     assert _check_on_surface(q, L.E, np.array([20, 20, 20]), 7) < 1e-4
+
+# test 5: ahmed mask, measured back from the array against the real body at H=48
+# (1044 x 288 x 389 mm -> 174 x 48 x 65 cells, 50 mm ground gap -> 8), slant matches phi
+@pytest.mark.parametrize("phi", [25, 30, 35])
+def test_ahmed_mask(phi):
+    nx, ny, nz, x0 = 300, 80, 100, 50
+    s = ahmed_body(nx, ny, nz, x0, H=48, phi=phi)
+    xs = np.where(s.any(axis=(1, 2)))[0]
+    js = np.where(s.any(axis=(0, 2)))[0]
+    ks = np.where(s.any(axis=(0, 1)))[0]
+
+    assert not s[:, 0, :].any()                                   # body only, the run adds the floor
+    assert xs.min() == x0 and xs.max() - xs.min() + 1 == 174      # length
+    assert js.min() == 9 and js.max() - js.min() + 1 == 48        # 8-cell gap, then 48 tall
+    assert ks.max() - ks.min() + 1 == 65                          # width
+    assert abs((ks.min() + ks.max()) / 2 - (nz - 1) / 2) <= 0.5   # centered spanwise
+
+    # nose: the leading bottom-side corner is carved, the middle of the front face isn't
+    assert s[xs.min(), js.min(), ks.min()] == 0
+    assert s[xs.min(), (js.min() + js.max()) // 2, nz // 2] == 1
+
+    # slant: over the rear half, mid-span column heights fall at tan(phi)
+    h = s[:, :, nz // 2].sum(axis=1)
+    rear = np.arange(xs.min() + 174 // 2, xs.max() + 1)
+    slant = rear[h[rear] < 48]
+    slope = np.polyfit(slant, h[slant], 1)[0]
+    assert abs(np.degrees(np.arctan(-slope)) - phi) < 1.5

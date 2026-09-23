@@ -111,7 +111,7 @@ def main():
     vrms_prof = np.sqrt(np.mean(sum_uyy, axis=0))
     wrms_prof = np.sqrt(np.mean(sum_uzz, axis=0))
 
-    delta_eff = delta + 0.33                       # body-force wall offset (from the laminar oracle)
+    delta_eff = delta + 0.0                       # body-force wall offset (from the laminar oracle)
     u_tau2 = np.sqrt(gx * delta_eff)               # friction velocity from the force balance (exact)
     u1 = 0.5 * (ubar[1] + ubar[-2])                # mean u_x at the first fluid node off each wall
     d1 = delta_eff - (delta - 0.5)                 # its wall distance in cells (~0.83)

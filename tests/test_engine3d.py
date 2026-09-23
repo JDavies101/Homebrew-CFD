@@ -13,6 +13,18 @@ mask[10, 10, 10] = 1
 def sim():
     return Simulation3D(N, N, N, "cpu")
 
+# per-cell mass and momentum, so conservation errors can't cancel across the field
+
+def _moments(f):
+    return f.sum(axis=0), np.einsum("qc, qxyz -> cxyz", L3.E, f)
+
+# load f on a clean slate: no walls, no wall model, so every cell collides
+def _load(sim, f):
+    sim.solid.from_numpy(np.zeros((N, N, N), np.int32))
+    sim.lid.from_numpy(np.zeros((N, N, N), np.int32))
+    sim.nut_wall.from_numpy(np.zeros((N, N, N), np.float32))
+    sim.f.from_numpy(f)
+
 # test 1: macroscopic rho and u
 def test_macroscopic3d(sim):
     sim.f.from_numpy(np.ones((L3.Q, N, N, N), np.float32))
@@ -28,16 +40,21 @@ def test_collide3d(sim):
     
     assert np.allclose(sim.f.to_numpy(), f, atol=1e-5)
 
-# test 3: mass conservation
+# test 3: BGK conserves mass and momentum per cell; periodic stream is an exact shift
 def test_conservation3d(sim):
     f = rng.uniform(0.5, 1.5, (19, N, N, N)).astype(np.float32)
-    tau = rng.uniform(0.5, 1.5)
-    sim.f.from_numpy(f)
-    sim.collide(tau)
-    sim.stream()
-    f_new = sim.f.to_numpy()
+    _load(sim, f)
+    sim.collide(rng.uniform(0.5, 1.5))
+    g = sim.f.to_numpy()
+    rho0, m0 = _moments(f)
+    rho1, m1 = _moments(g)
+    assert np.allclose(rho1, rho0, atol=1e-4)
+    assert np.allclose(m1, m0, atol=1e-4)
 
-    assert np.allclose(f.sum(), f_new.sum())
+    sim.stream()
+    h = sim.f.to_numpy()
+    for q in range(L3.Q):  # f_new[q](x) = f[q](x - e_q)
+        assert np.array_equal(h[q], np.roll(g[q], shift=tuple(L3.E[q]), axis=(0, 1, 2)))
 
 # test 4: bounce back
 def test_bounce3d(sim):
@@ -79,34 +96,27 @@ def test_inlet3d(sim):
     assert np.allclose(u[2, 0], 0, atol=1e-5)
     assert np.allclose(rho[0], 1, atol=1e-5)
 
-# test 7: TRT collision
+# test 7: TRT conserves mass and momentum per cell
 def test_collideTRT3d(sim):
     f = rng.uniform(0.5, 1.5, (19, N, N, N)).astype(np.float32)
-    tau = rng.uniform(0.5, 1.5)
-    sim.f.from_numpy(f)
-    sim.collide_trt(tau)
-    f_new = sim.f.to_numpy()
+    _load(sim, f)
+    sim.collide_trt(rng.uniform(0.5, 1.5))
+    rho0, m0 = _moments(f)
+    rho1, m1 = _moments(sim.f.to_numpy())
+    assert np.allclose(rho1, rho0, atol=1e-4)
+    assert np.allclose(m1, m0, atol=1e-4)
 
-    assert np.allclose(f.sum(), f_new.sum(), atol=1e-4)
-
-# test 8: LES collisions
+# test 8: LES is live (changes the result vs plain BGK) and still conserves per cell
 def test_LES3d(sim):
     f = rng.uniform(0.5, 1.5, (19, N, N, N)).astype(np.float32)
-    tau = rng.uniform(0.5, 1.5)
-    sim.f.from_numpy(f)
-    sim.collide(tau)
-    f_new = sim.f.to_numpy()
+    tau = rng.uniform(0.6, 1.5)
+    _load(sim, f); sim.collide(tau);           bgk = sim.f.to_numpy()
+    _load(sim, f); sim.collide_les(tau, 0.16); les = sim.f.to_numpy()
 
-    sim.f.from_numpy(f)
-    sim.collide_les(tau, 0.0)
-    f_check = sim.f.to_numpy()
-
-    sim.f.from_numpy(f)
-    sim.collide_les(tau, 0.16)
-    f_check2 = sim.f.to_numpy()
-
-    assert np.allclose(f_check.sum(), f_new.sum(), atol=1e-4)
-    assert np.allclose(f_check2.sum(), f.sum(), atol=1e-4)
+    assert not np.allclose(les, bgk, atol=1e-6)            # the LES branch actually did something
+    rho0, m0 = _moments(f); rho1, m1 = _moments(les)
+    assert np.allclose(rho1, rho0, atol=1e-4)
+    assert np.allclose(m1, m0, atol=1e-4)
 
 # test 9: LES BGK match
 def test_LESTinyCSMatchesBGK(sim):
@@ -239,15 +249,20 @@ def test_outlet(sim):
     assert np.allclose(g[:, -1, :, :], g[:, -2, :, :])   # zero-gradient at exit
     assert np.allclose(g[:, :-1, :, :], f[:, :-1, :, :]) # interior untouched
 
-# test 17: collide_full with TRT+LES+forcing together conserves mass, runs finite
+# test 17: TRT + LES + forcing together. mass exact per cell, and each cell's x-momentum
+# goes up by exactly gx per step (Guo). the old antisymmetric-rate bug breaks this
 def test_collide_full_combined(sim):
+    gx = 1e-2
     f = rng.uniform(0.5, 1.5, (L3.Q, N, N, N)).astype(np.float32)
-    sim.f.from_numpy(f)
-    sim.collide_full(0.8, 0.1, 1e-6, 1)          # cs>0, gx>0, trt=1 all on
+    _load(sim, f)
+    sim.collide_full(0.8, 0.1, gx, 1)
     g = sim.f.to_numpy()
+    rho0, m0 = _moments(f); rho1, m1 = _moments(g)
 
     assert np.isfinite(g).all()
-    assert np.isclose(g.sum(), f.sum(), rtol=1e-4)   # mass conserved
+    assert np.allclose(rho1, rho0, atol=1e-4)
+    assert np.allclose(m1[0] - m0[0], gx, atol=1e-4)
+    assert np.allclose(m1[1:], m0[1:], atol=1e-4)
 
 # test 18: init_equilibrium sets the right moments (rho and u recovered)
 def test_init_equilibrium_moments(sim):
@@ -276,6 +291,25 @@ def test_equilibrium_is_collision_fixed_point(sim):
     sim.collide(0.8)                                  # BGK, no force -> feq is the fixed point
 
     assert np.allclose(sim.f.to_numpy(), f0, atol=1e-5)
+
+# test 19b: collision skips wall nodes, so bounce-back hands populations back unchanged
+@pytest.mark.parametrize("kernel", ["full", "reg"])
+def test_collide_skip_walls(sim, kernel):
+    f = rng.uniform(0.5, 1.5, (L3.Q, N, N, N)).astype(np.float32)
+    solid = np.zeros((N, N, N), np.int32)
+    solid[8, 8, 8] = 1
+    sim.solid.from_numpy(solid)
+    sim.lid.from_numpy(np.zeros((N, N, N), np.int32))
+    sim.nut_wall.from_numpy(np.zeros((N, N, N), np.float32))
+    sim.f.from_numpy(f)
+    if kernel == "full":
+        sim.collide_full(0.8, 0.1, 1e-4, 1)
+    else:
+        sim.collide_reg(0.8, 0.1, 0.0)
+    g = sim.f.to_numpy()
+
+    assert np.array_equal(g[:, 8, 8, 8], f[:, 8, 8, 8])
+    assert not np.allclose(g[:, 0, 0, 0], f[:, 0, 0, 0])
 
 # test 20: nut_wall raises the local tau by 3*nu_t, at that node only, independent of LES.
 # Run at cs=0 so it fails if the augmentation is gated inside the LES branch.
@@ -321,19 +355,14 @@ def test_wall_model(sim):
     assert nw[6, 1, 6] == 0.0                                             # y+<30 -> off
     assert nw[8, 8, 8] == 0.0                                             # interior (not adjacent) -> reset
 
-# test 22: momentum conserved with regularization
+# test 22: regularized + LES conserves mass and momentum per cell
 def test_regularization(sim):
-
     f = rng.uniform(0.5, 1.5, (19, N, N, N)).astype(np.float32)
-    tau = rng.uniform(0.5, 1.5)
-    gx = 0.0
-    cs = 0.0
-    sim.f.from_numpy(f)
-    sim.collide_reg(tau, cs, gx)
-    sim.stream()
-    f_new = sim.f.to_numpy()
-
-    assert np.allclose(f.sum(), f_new.sum())
+    _load(sim, f)
+    sim.collide_reg(rng.uniform(0.6, 1.5), 0.1, 0.0)
+    rho0, m0 = _moments(f); rho1, m1 = _moments(sim.f.to_numpy())
+    assert np.allclose(rho1, rho0, atol=1e-4)
+    assert np.allclose(m1, m0, atol=1e-4)
 
 # test 23: regularized collision has the CORRECT shear viscosity.
 # A resolved, unforced shear wave u_x = U0 sin(k y) decays as exp(-nu k^2 t) with

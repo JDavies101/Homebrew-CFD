@@ -64,4 +64,4 @@ def test_trt_bgk_peaks_agree(fits):
 
 def test_peak_matches_analytic(fits):
     # magnitude vs g*delta^2/(2 nu); loose enough to absorb the sub-cell wall offset
-    assert abs(fits["trt"][1] / U_analytic - 1) < 0.03
+    assert abs(fits["trt"][1] / U_analytic - 1) < 0.005
