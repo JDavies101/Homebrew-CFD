@@ -23,7 +23,7 @@ check_every = 500           # progress + health readout interval
 A = np.pi * (D/2) ** 2                 # frontal area
 
 def main():
-    sim = Simulation3D(nx, ny, nz, backend="cuda")
+    sim = Simulation3D(nx, ny, nz, backend="cuda", interp=True)
     sim.solid.from_numpy(sphere(nx, ny, nz, cx, cy, cz, D))
     sim.q.from_numpy(wall_fraction_sphere(nx, ny, nz, cx, cy, cz, D/2))
     sim.f.from_numpy(np.tile(L.W[:, None, None, None], (1, nx, ny, nz)).astype(np.float32))

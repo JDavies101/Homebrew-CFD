@@ -24,7 +24,7 @@ check_every = 500           # progress readout interval
 A = D * nz                  # frontal area
 
 def main():
-    sim = Simulation3D(nx, ny, nz, backend="cuda")
+    sim = Simulation3D(nx, ny, nz, backend="cuda", interp=True)
     sim.solid.from_numpy(cylinder(nx, ny, nz, cx, cy, D/2))
     sim.q.from_numpy(wall_fraction_cylinder(nx, ny, nz, cx, cy, D/2))
     sim.f.from_numpy(np.tile(L.W[:, None, None, None], (1, nx, ny, nz)).astype(np.float32))

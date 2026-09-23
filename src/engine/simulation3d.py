@@ -7,7 +7,7 @@ from src.engine import lattice3d as L3
 @ti.data_oriented
 class Simulation3D:
     # allocate fields and load the lattice constants
-    def __init__(self, nx, ny, nz, backend="cpu"):
+    def __init__(self, nx, ny, nz, backend="cpu", interp=False):
         ti.init(arch=ti.cuda if backend == "cuda" else ti.cpu)
         self.Q = L3.Q
         self.D = L3.D
@@ -24,8 +24,9 @@ class Simulation3D:
         self.MIRROR_Y.from_numpy(L3.MIRROR_Y.astype(np.int32))
         self.MIRROR_Z = ti.field(ti.i32, shape=L3.Q)
         self.MIRROR_Z.from_numpy(L3.MIRROR_Z.astype(np.int32))
-        self.q  = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))   # wall fractions (0 = not a boundary link)
-        self.fc = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))   # post-collision snapshot (Bouzidi needs it)
+        if interp: # Bouzidi only: wall fractions + post-collision snapshot
+            self.q  = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))   # wall fractions (0 = not a boundary link)
+            self.fc = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))   # post-collision snapshot (Bouzidi needs it)
         self.nut_wall = ti.field(ti.f32, shape =(nx, ny, nz))  # wall-model eddy viscosity (0 away from walls)
         self.body = ti.field(ti.i32, shape=(nx, ny, nz))       # body-only mask for drag (solid minus tunnel walls)
         # lattice constants as fields, built from the NumPy descriptor

@@ -11,7 +11,7 @@ mask[10, 10, 10] = 1
 
 @pytest.fixture(scope="module")
 def sim():
-    return Simulation3D(N, N, N, "cpu")
+    return Simulation3D(N, N, N, "cpu", interp=True)
 
 # per-cell mass and momentum, so conservation errors can't cancel across the field
 
