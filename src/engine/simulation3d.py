@@ -3,12 +3,13 @@
 import taichi as ti
 import numpy as np
 from src.engine import lattice3d as L3
+from src.engine import runtime
 
 @ti.data_oriented
 class Simulation3D:
     # allocate fields and load the lattice constants
     def __init__(self, nx, ny, nz, backend="cpu", interp=False):
-        ti.init(arch=ti.cuda if backend == "cuda" else ti.cpu)
+        runtime.init(backend)
         self.Q = L3.Q
         self.D = L3.D
         self.nx, self.ny, self.nz = nx, ny, nz

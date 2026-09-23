@@ -277,7 +277,7 @@ inlet_neem_open, the combined collide_full (TRT+LES+forcing at once), and the wa
 (crossing points land on the surface). Tests have caught real bugs: free_slip_z using the y
 mirror table, a double relaxation in LES, a missing q load.
 
-**Ahmed body - staged build toward the gate. IN PROGRESS.** Voxelized Ahmed (`src/geometry/ahmed.py`):
+**Ahmed body - staged build toward the gate. IN PROGRESS.** Voxelized Ahmed (`src/geometry/ahmed_body.py`):
 box + 35deg rear slant + rounded nose, all dimensions derived from one height H so resolution
 scales cleanly. Wind-tunnel run (`src/examples/ahmed.py`): body-only drag via a separate
 `self.body` mask + `drag_body` (excludes the floor/ceiling walls from Cd), inlet_neem_open /
@@ -348,6 +348,15 @@ result means "needs H=48," not "wrong physics." Deferred with known cause: van D
 SGS, free-slip corner treatment, forced+regularized Guo correction, SDF wall distance for
 non-axis-aligned walls.*
 
+*Sweep, first pass (H=32, cs=0.1 old convention, run BEFORE the wall-node + sqrt(2) fixes):*
+25 -> Cd 3.2454, 30 -> 3.2328, 35 -> 3.2149. Monotonic, 0.9% spread, no peak - fails the
+meaningful gate (25 > 35 holds only by a margin smaller than an unmeasured error bar). Likely
+cause: flow separates at every angle on the coarse slant. Next, in order: (1) block-averaged
+error bars on Cd in `ahmed.py`; (2) check the 25 deg wake PNG for reattachment on the slant;
+(3) rerun at H=48 with the fixed engine (use cs=0.084 to match old runs, or accept the new
+convention and rerun all three); (4) if still flat, fall back to another relative test
+(rounded vs square nose, or a ground-clearance sweep).
+
 **Phase 4 - Automotive features.** STL import + voxelization of real parts, moving ground,
 rotating wheels, per-part force breakdown. *Exit: front-wing or full-car run with sane,
 stable coefficients.*
@@ -401,19 +410,25 @@ From the full code review. Done so far: wall nodes no longer collided (this was 
 now); per-cell conservation tests with the exact stream shift and Guo +F identities; vacuous
 LES assert replaced; Ahmed mask test; step.py dead x_r block removed; every example's progress
 bar now finishes at 100% (`prog.done()` right after the loop); stale 0.33/0.83 wall-offset
-comments and docs corrected.
+comments and docs corrected; step.py duplicate x_r print removed and final print guarded;
+`ahmed.py` geometry renamed `ahmed_body.py`. **A. Memory: DONE** - `Simulation3D(...,
+interp=False)` default; `q`/`fc` allocated only with `interp=True` (cylinder/sphere/test
+fixture pass it). ~70M -> ~130M cells on 24 GB. Verified: tests green, cylinder Cd 1.520 /
+St 0.165 unchanged. **B. `ti.init` once per process: DONE** - new `src/engine/runtime.py`
+(`init(backend)`: init once, no-op on same arch, `RuntimeError` on a switch); both constructors
+call it. Red first: the old code let a stale `f` handle read the new runtime's memory (a 4x4x4
+int32 array) - silent corruption, no error. `src/config/environment.py` untouched, but its test
+now runs the probe in a subprocess (its `ti.init(cuda)` would re-init Taichi behind `runtime`).
+Tests 25 (`test_second_instance_keeps_fixture`) and 26 (`test_runtime_rejects_switch`) added;
+test-ordering constraint gone. Trade-off: fields never freed within a process. Verified: full
+suite green.
 
-Open:
-- **step.py:** the inner `print(x_r/S)` (line 52) duplicates the final line and prints -1/S
-  when the flow reverses but never reattaches; reattachment isn't interpolated between cells.
-- **Re-confirm after the wall-node + sqrt(2) fixes:** the Re_tau=180 channel (U+, u'_rms) and
-  the Ahmed ladder were produced before both fixes. Quick reruns to check the numbers hold.
+Open (in order):
 - **2D engine:** check `src/engine/simulation.py` for the same collide-on-walls pattern (the 2D
   Poiseuille validation took the walls from the fit, which would have hidden it).
-- **A. Memory:** `q` and `fc` are always allocated (152 of ~336 B/cell). Make them opt-in
-  (Bouzidi only) -> ~70M -> ~130M cells on 24 GB, H ~60 -> ~74.
-- **B. `ti.init` in `Simulation3D.__init__`:** a second instance wipes the first's fields
-  (the fragile test fixture). Init once per process.
+- **Re-confirm after the wall-node + sqrt(2) fixes:** the Re_tau=180 channel (U+, u'_rms) and
+  the Ahmed ladder were produced before both fixes. Quick reruns to check the numbers hold.
+- **step.py:** reattachment isn't interpolated between cells (x_r/S quantized to 1/S).
 - **C. Ahmed loop speed:** full `macroscopic()` + full 19-neighbour `wall_model` scan every
   step for ~1% of nodes. Precompute wall nodes + normals once, compute moments locally.
 - **D. Duplicated physics:** `inlet`/`inlet_neem`/`inlet_neem_open` inline the feq formula;
@@ -423,3 +438,8 @@ Open:
   `sphere.py` pulls all of f (~480 MB) for a NaN check; `channel_turbulent.py` collects unused
   uc/urms/vrms/wrms; `next` shadows the builtin in `wall_function.py`; `. all` in
   `lattice3d.py`; trailing `return` in `collide_reg`.
+- **F. Idea: AA-pattern in-place streaming** - drops `f_new` (76 B/cell) for another ~40% more
+  cells. Bigger change (alternating even/odd kernels, boundaries must follow the pattern);
+  only if H=48+ runs hit the memory cap.
+
+After the backlog: resume the slant sweep follow-ups (section 7, Ahmed "Sweep, first pass").

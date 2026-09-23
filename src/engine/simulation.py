@@ -2,11 +2,12 @@
 import taichi as ti
 import numpy as np
 from src.engine import lattice as L
+from src.engine import runtime
 
 @ti.data_oriented
 class Simulation:
     def __init__(self, nx, ny, backend="cpu"):
-        ti.init(arch=ti.cuda if backend == "cuda" else ti.cpu)
+        runtime.init(backend)
         self.Q = L.Q
         self.D = L.D
         self.nx, self.ny = nx, ny

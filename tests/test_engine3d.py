@@ -3,6 +3,8 @@ import numpy as np
 import pytest
 from src.engine.simulation3d import Simulation3D
 from src.engine import lattice3d as L3
+from src.turbulence.wall_function import friction_velocity
+from src.engine import runtime 
 
 rng = np.random.default_rng(0)
 N = 16
@@ -337,7 +339,6 @@ def test_nut_wall_augments_tau(sim):
 
 # test 21: wall_model sets nut_wall from the log-law u_tau at wall-adjacent nodes, gated on y+>30
 def test_wall_model(sim):
-    from src.turbulence.wall_function import friction_velocity
     nu, y1 = 0.01, 10.0
     solid = np.zeros((N, N, N), np.int32); solid[:, 0, :] = 1             # bottom wall row
     sim.solid.from_numpy(solid)
@@ -407,8 +408,7 @@ def test_reg_shear_viscosity():
 # An x-normal wall: the model must drive off sqrt(uy^2+uz^2) and ignore the u_x normal
 # component -- otherwise the generalized normal detection is wrong.
 def test_wall_model_xwall():
-    from src.turbulence.wall_function import friction_velocity
-    sim = Simulation3D(N, N, N, "cpu")                           # own sim: test 23 re-inits Taichi
+    sim = Simulation3D(N, N, N, "cpu")                           # own sim: needs fresh zeroed fields
     nu, y1 = 0.01, 10.0
     solid = np.zeros((N, N, N), np.int32); solid[0, :, :] = 1     # wall at i=0 -> +x normal
     sim.solid.from_numpy(solid)
@@ -423,3 +423,17 @@ def test_wall_model_xwall():
     u_tau = friction_velocity(0.737, y1, nu)                     # from the tangential speed only
     expect = u_tau ** 2 * y1 / 0.737 - nu
     assert np.isclose(nw[1, 5, 5], expect, rtol=1e-4)            # normal component correctly excluded
+
+# test 25: second instance keeps the fixture
+def test_second_instance_keeps_fixture(sim):
+    sim.f.fill(1.0)
+    s2 = Simulation3D(4, 4, 4, "cpu")
+    
+    assert not hasattr(s2, "q")
+    assert not hasattr(s2, "fc")
+    assert np.all(sim.f.to_numpy() == 1.0)
+
+# test 26: runtime rejects switch
+def test_runtime_rejects_switch(sim):
+    with pytest.raises(RuntimeError):
+        runtime.init("cuda")

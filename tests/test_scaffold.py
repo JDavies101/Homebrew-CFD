@@ -1,8 +1,8 @@
 # scaffold checks: packages import, env probe runs, config validates
 from pathlib import Path
-
+import subprocess
+import sys
 import pytest
-
 from src.config import environment, loader
 
 CASES_DIR = Path(__file__).resolve().parent.parent / "cases"
@@ -17,11 +17,17 @@ def test_packages_import():
 
 
 def test_environment_check_runs():
-    """Environment probe returns a report and never raises (CI-safe)."""
-    report = environment.check_environment()
-    assert isinstance(report.ready, bool)
-    assert isinstance(report.notes, list)
-
+    """Environment probe runs in its own process: its ti.init(cuda) must not
+    re-init Taichi underneath the test session's runtime."""
+    code = (
+        "from src.config.environment import check_environment as c; "
+        "r = c(); "
+        "assert isinstance(r.ready, bool) and isinstance(r.notes, list)"
+    )
+    r = subprocess.run([sys.executable, "-c", code],
+                       cwd=CASES_DIR.parent, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    
 
 def test_config_defaults_valid():
     """Default RunConfig passes its own validation."""
