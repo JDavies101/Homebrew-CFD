@@ -421,11 +421,15 @@ int32 array) - silent corruption, no error. `src/config/environment.py` untouche
 now runs the probe in a subprocess (its `ti.init(cuda)` would re-init Taichi behind `runtime`).
 Tests 25 (`test_second_instance_keeps_fixture`) and 26 (`test_runtime_rejects_switch`) added;
 test-ordering constraint gone. Trade-off: fields never freed within a process. Verified: full
-suite green.
+suite green. **2D collide-on-walls: DONE** - both 2D paths collided wall nodes
+(`src/lbm` `collide`/`collide_forced`, and `Simulation.collide`); parity and fit-root tests hid
+it. Red first: new `test_poiseuille.py::test_wall_location` pins the walls at 0.5 / ny-1.5 at
+the BGK magic tau = 1/2 + sqrt(3)/4 (halfway bounce-back exact) - fitted wall was at 0.084, a
+0.42-cell offset. Fix: optional `solid` mask (wall nodes keep their populations, no force);
+Taichi 2D skips solid/lid like 3D. Cavity test/demo/parity pass the full mask. Verified: wall
+location within 0.01, Ghia still within 5%, suite green.
 
 Open (in order):
-- **2D engine:** check `src/engine/simulation.py` for the same collide-on-walls pattern (the 2D
-  Poiseuille validation took the walls from the fit, which would have hidden it).
 - **Re-confirm after the wall-node + sqrt(2) fixes:** the Re_tau=180 channel (U+, u'_rms) and
   the Ahmed ladder were produced before both fixes. Quick reruns to check the numbers hold.
 - **step.py:** reattachment isn't interpolated between cells (x_r/S quantized to 1/S).

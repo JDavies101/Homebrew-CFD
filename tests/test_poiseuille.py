@@ -9,7 +9,7 @@ pytestmark = pytest.mark.slow
 
 nx = 8
 ny = 32
-tau = 0.8
+tau = 0.5 + np.sqrt(3) / 4    # BGK magic: halfway bounce-back exact for Poiseuille
 g = 1e-6
 steps = 40000
 nu = (tau - 0.5) / 3
@@ -52,3 +52,10 @@ def test_peak(profile):
     L = roots[1] - roots[0]
     u_max = g * L ** 2 / (8 * nu)
     assert abs(ux.max() - u_max) / u_max < 0.01
+
+# test 4: walls sit exactly at the halfway points (not taken from the fit)
+def test_wall_location(profile):
+    y, ux = profile
+    roots = np.sort(np.roots(np.polyfit(y, ux, 2)))
+    assert abs(roots[0] - 0.5) < 0.01
+    assert abs(roots[1] - (ny - 1.5)) < 0.01

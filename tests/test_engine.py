@@ -110,7 +110,7 @@ def test_cavity_parity(sim):
     # numpy oracle
     f_np = np_initial(N, N)
     for _ in range(steps):
-        f_np = np_collide(f_np, tau)            # from src.lbm.collision
+        f_np = np_collide(f_np, tau, solid)            # from src.lbm.collision
         f_np = np_stream(f_np)
         f_np = np_bounce_back(f_np, stationary)
         f_np = np_moving_wall(f_np, lid, U)

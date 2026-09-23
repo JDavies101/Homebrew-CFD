@@ -24,21 +24,24 @@ def body_force(g):
 
     return F
 
-def collide_forced(f, tau, F):
+def collide_forced(f, tau, F, solid=None):
 
     rho, u_raw = macroscopic(f)
     u = u_raw + F / (2 * rho)
     f_eq = equilibrium(rho, u)
     S = guo_source(u, F, tau)
 
-    return f - (1 / tau) * (f - f_eq) + S
+    f_coll = f - (1 / tau) * (f - f_eq) + S
+    if solid is not None:
+        f_coll = np.where(solid[None], f, f_coll)   # no relaxation, no force at walls
+    return f_coll
 
 def step(f, tau, solid, g=0):
 
     nx, ny = f.shape[1], f.shape[2]
     F = np.zeros((2, nx, ny))
     F[0] = g
-    f_coll = collide_forced(f, tau, F)
+    f_coll = collide_forced(f, tau, F, solid)
     f_str = stream(f_coll)    
     f_bc = bounce_back(f_str, solid)
 

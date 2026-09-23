@@ -44,6 +44,9 @@ class Simulation:
     @ti.kernel
     def collide(self, tau: ti.f32):
         for i, j in ti.ndrange(self.nx, self.ny):        # parallel over cells
+            
+            if self.solid[i, j] == 1 or self.lid[i, j] == 1:
+                continue        # wall nodes only hold bounced populations; don't collide them
 
             r = 0.0; mx = 0.0; my = 0.0
             for q in range(self.Q):

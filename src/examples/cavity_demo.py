@@ -24,7 +24,7 @@ def profile():
 
     f = initial(N, N)
     for _ in range(steps):
-        f = collide(f, tau)            # from src.lbm.collision
+        f = collide(f, tau, solid)            # from src.lbm.collision
         f = stream(f)
         f = bounce_back(f, stationary)
         f = moving_wall(f, lid, U)
