@@ -437,3 +437,15 @@ def test_second_instance_keeps_fixture(sim):
 def test_runtime_rejects_switch(sim):
     with pytest.raises(RuntimeError):
         runtime.init("cuda")
+
+# test 27: fast wall model matches slow wall model
+def test_wall_model_matches(sim):
+    solid = np.zeros((N, N, N), np.int32); solid[:, 0, :] = 1
+    sim.solid.from_numpy(solid)
+    f = rng.uniform(0.9, 1.1, (L3.Q, N, N, N)).astype(np.float32)
+    sim.f.from_numpy(f); sim.nut_wall.from_numpy(np.zeros((N,N,N), np.float32))
+    sim.macroscopic(); sim.wall_model(0.01, 10.0)
+    slow = sim.nut_wall.to_numpy().copy()
+    sim.nut_wall.from_numpy(np.zeros((N,N,N), np.float32))
+    sim.build_wall_list(); sim.wall_model_fast(0.01, 10.0)
+    assert np.allclose(sim.nut_wall.to_numpy(), slow, atol=1e-6)

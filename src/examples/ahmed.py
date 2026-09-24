@@ -64,7 +64,9 @@ def main():
     solid = body.copy()
     solid[:, 0, :] = 1
     solid[:, -1, :] = 1   # + floor & ceiling (no-slip)
-    sim.solid.from_numpy(solid); sim.body.from_numpy(body)
+    sim.solid.from_numpy(solid)
+    sim.body.from_numpy(body)
+    sim.build_wall_list()
 
     sim.init_equilibrium(np.full((nx, ny, nz), U, np.float32),   # u_x = U everywhere
                      np.zeros((nx, ny, nz), np.float32),
@@ -77,8 +79,8 @@ def main():
     cd = []
     prog = Progress(steps)
     for s in range(steps):
-        sim.macroscopic()
-        sim.wall_model(nu, y1)
+        #sim.macroscopic()
+        sim.wall_model_fast(nu, y1)
         sim.collide_reg(tau, cs, gx)
         if s >= warmup and s % mean_every == 0:
             sim.macroscopic()

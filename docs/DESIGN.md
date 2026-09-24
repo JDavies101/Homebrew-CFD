@@ -457,7 +457,13 @@ int32 array) - silent corruption, no error. `src/config/environment.py` untouche
 now runs the probe in a subprocess (its `ti.init(cuda)` would re-init Taichi behind `runtime`).
 Tests 25 (`test_second_instance_keeps_fixture`) and 26 (`test_runtime_rejects_switch`) added;
 test-ordering constraint gone. Trade-off: fields never freed within a process. Verified: full
-suite green. **2D collide-on-walls: DONE** - both 2D paths collided wall nodes
+suite green. **C. Ahmed loop speed: DONE** - precomputed wall-node list + normals
+(`build_wall_list`, geometry-static, vectorized), new `wall_model_fast` loops only wall-adjacent
+nodes with local moments; dropped the redundant per-step `macroscopic()` (collide_reg computes
+its own moments). ~20% faster (997 s vs 1240 s, H=32 phi=25). `wall_model` kept for tests 21/24;
+bit-identity guard `test_wall_model_matches` (fast vs slow, 1e-6). Run-level Cd 0.7444 vs 0.7422
+baseline - within +/-0.003 error bars (changed FP op order decorrelates the chaotic trajectory;
+time-mean unchanged). **2D collide-on-walls: DONE** - both 2D paths collided wall nodes
 (`src/lbm` `collide`/`collide_forced`, and `Simulation.collide`); parity and fit-root tests hid
 it. Red first: new `test_poiseuille.py::test_wall_location` pins the walls at 0.5 / ny-1.5 at
 the BGK magic tau = 1/2 + sqrt(3)/4 (halfway bounce-back exact) - fitted wall was at 0.084, a
@@ -471,8 +477,6 @@ contaminated the momentum-exchange drag itself (consistent with the flat first-p
 
 Open (in order):
 - **step.py:** reattachment isn't interpolated between cells (x_r/S quantized to 1/S).
-- **C. Ahmed loop speed:** full `macroscopic()` + full 19-neighbour `wall_model` scan every
-  step for ~1% of nodes. Precompute wall nodes + normals once, compute moments locally.
 - **D. Duplicated physics:** `inlet`/`inlet_neem`/`inlet_neem_open` inline the feq formula;
   `inlet_neem` == `inlet_neem_open` when x=0 has no solid; `drag` vs `drag_body` differ only in
   the mask; `collide_full`/`collide_reg` both build Pi (shared `@ti.func`).

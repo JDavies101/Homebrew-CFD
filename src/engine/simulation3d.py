@@ -242,6 +242,74 @@ class Simulation3D:
                     if yplus > 30.0 and u1 > 0.0:
                         self.nut_wall[i,j,k] = ti.max(0.0, u_tau*u_tau*y1/u1 - nu)   
         
+
+    @ti.kernel
+    def wall_model_fast(self, nu: ti.f32, y1: ti.f32):
+        for m in range(self.n_wall):
+            i = self.wall_ijk[m, 0]
+            j = self.wall_ijk[m, 1]
+            k = self.wall_ijk[m, 2]
+            r = 0.0
+            mx = 0.0
+            my = 0.0
+            mz = 0.0
+
+            for q in range(self.Q):
+                f = self.f[q, i, j, k]
+                r += f
+                mx += f * self.E[q, 0]
+                my += f * self.E[q, 1]
+                mz += f * self.E[q, 2]
+
+            ux = mx / r
+            uy = my / r
+            uz = mz / r
+            nxn = self.wall_n[m, 0]
+            nyn = self.wall_n[m, 1]
+            nzn = self.wall_n[m, 2]
+            udn = ux * nxn + uy * nyn + uz * nzn
+            px = ux - udn * nxn
+            py = uy - udn * nyn
+            pz = uz - udn * nzn
+            u1 = ti.sqrt(px * px + py * py + pz * pz)
+            u_tau = self.wall_utau(u1, y1, nu)
+            yplus = y1 * u_tau / nu
+            val = 0.0
+            if yplus > 30.0 and u1 > 0.0:
+                val = ti.max(0.0, u_tau * u_tau * y1 / u1 - nu)
+            
+            self.nut_wall[i, j, k] = val
+
+    def build_wall_list(self):
+        solid = self.solid.to_numpy()
+        E = L3.E
+        nx, ny, nz = self.nx, self.ny, self.nz
+
+        def shift(a, s):                       # a[c] -> a[c+s], zero-filled out of bounds
+            out = np.zeros_like(a)
+            src = tuple(slice(max(v, 0), a.shape[d] + min(v, 0)) for d, v in enumerate(s))
+            dst = tuple(slice(max(-v, 0), a.shape[d] - max(v, 0)) for d, v in enumerate(s))
+            out[dst] = a[src]
+            return out
+
+        g = np.zeros((3, nx, ny, nz))
+        nsolid = np.zeros((nx, ny, nz), np.int32)
+        for q in range(self.Q):
+            nbr = shift(solid, E[q])           # 1 where the E[q] neighbour is solid, in bounds
+            nsolid += nbr
+            for d in range(3):
+                g[d] += E[q, d] * nbr
+
+        gmag = np.sqrt((g * g).sum(axis=0))
+        cand = (solid == 0) & (nsolid > 0) & (gmag > 0.0)
+        ijk = np.argwhere(cand).astype(np.int32)                    # (M,3)
+        normals = (-g[:, cand] / gmag[cand]).T.astype(np.float32)   # (M,3)
+
+        M = ijk.shape[0]
+        self.n_wall = M
+        self.wall_ijk = ti.field(ti.i32, shape=(M, 3)); self.wall_ijk.from_numpy(ijk)
+        self.wall_n   = ti.field(ti.f32, shape=(M, 3)); self.wall_n.from_numpy(normals)
+    
     # pull each population from its upstream neighbour into f_new
     @ti.kernel
     def _stream(self):
