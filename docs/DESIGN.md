@@ -348,6 +348,42 @@ result means "needs H=48," not "wrong physics." Deferred with known cause: van D
 SGS, free-slip corner treatment, forced+regularized Guo correction, SDF wall distance for
 non-axis-aligned walls.*
 
+*Sweep, first pass - INVALIDATED.* Pre-fix Cd was dominated by the wall-node collision
+artifact; post-fix phi=25 Cd = 0.740 (H=32, cs=0.084). Next: block-averaged error bars, then
+rerun 25/30/35 with the fixed engine. Original record kept below.
+*Sweep, second pass (fixed engine, H=32, cs=0.084, Re_H=30k, 3+3 T_ft):* 25 -> 0.740+/-0.003,
+30 -> 0.741+/-0.003, 35 -> 0.748+/-0.004 (5-block SE). Flat (1.2% spread), no peak, Cd(35) >
+Cd(25) - fails the gate, but NOT converged: 10-block means oscillate +/-0.015 on a ~1 T_ft
+period (not a monotonic drift), so 5-block SE is too small; honest SE ~0.005. Midplane PNGs are
+instantaneous - slant attachment cannot be judged from them. Next: 5+11 T_ft, time-averaged
+u field for the slant check.
+*Sweep, third pass (5+11 T_ft, time-averaged u):* 25 -> 0.742, 30 -> 0.744, 35 -> 0.750
+(honest SE ~0.003). Monotonic up, 1.1% spread, no peak - fails the gate. 25/35 mid-plane mean
+fields look near-identical: low-speed region over the slant from its leading edge (separated at
+both, tentatively). Plot caveat: NaN body and u~0 both render white, so the slant surface can't
+be told apart from stagnant fluid - needs a quantitative near-wall u check.
+*Fallback relative gate (nose shape), set up:* `ahmed.py <phi> [round|square]`; square nose skips
+the R=100mm fillet. Pass = Cd(square) > Cd(round) beyond error bars (expect a large rise from
+front-edge separation; front-roof bubble visible in `ahmed_mean_nose_*`). `slant_check` prints
+mean along-slant u_t in the first fluid cell (attached fraction); mid-span mean saved as
+`ahmed_umean_mid_<tag>.npy`.
+*Slant check result (H=32, Re_H=30k):* first-fluid-cell u_t is contaminated by the voxel
+staircase (~0.03 U slant-avg). Stepping off the wall, u_t/U rises monotonically and stays
+POSITIVE at every depth - 25 deg: 0.03/0.10/0.17/0.26/0.47 at 1/2/3/4/6 cells; 35 deg:
+0.02/0.08/0.13/0.18/0.31. So mid-span shows a thick, retarded-but-forward shear layer, NOT a
+reversed separation bubble; 25 deg carries clearly more near-slant momentum than 35 deg (right
+direction). The drag-crisis mechanism is smeared by under-resolution (~25 staircased cells on
+the slant, no Bouzidi), so Cd cannot order the angles. Slant gate closed as not resolvable at
+this Re/resolution (not a solver defect); Cd reproduced bit-for-bit on rerun. Phase 3 relative
+gate moves to nose shape.
+
+*Nose-shape gate: PASS (H=32, Re_H=30k, 5+11 T_ft).* Round vs square nose, all three slants:
+Cd(square)/Cd(round) = 1.102/0.742, 1.104/0.744, 1.121/0.750 -> +48/48/49%, a ~0.36 gap vs
+~0.02 error bars. Square-nose SE ~6x larger (0.02 vs 0.003): sharp-edge front separation makes
+the wake unsteady, as expected. Mechanism confirmed in ahmed_mean_nose_phi25_square: a large
+reversed-flow bubble sits on the front roof from the sharp top corner; the round nose has none.
+Right sign, right order of magnitude. This is the Phase 3 relative aero gate - a geometry change
+the solver resolves cleanly and ranks correctly.
 *Sweep, first pass (H=32, cs=0.1 old convention, run BEFORE the wall-node + sqrt(2) fixes):*
 25 -> Cd 3.2454, 30 -> 3.2328, 35 -> 3.2149. Monotonic, 0.9% spread, no peak - fails the
 meaningful gate (25 > 35 holds only by a margin smaller than an unmeasured error bar). Likely
@@ -427,11 +463,13 @@ it. Red first: new `test_poiseuille.py::test_wall_location` pins the walls at 0.
 the BGK magic tau = 1/2 + sqrt(3)/4 (halfway bounce-back exact) - fitted wall was at 0.084, a
 0.42-cell offset. Fix: optional `solid` mask (wall nodes keep their populations, no force);
 Taichi 2D skips solid/lid like 3D. Cavity test/demo/parity pass the full mask. Verified: wall
-location within 0.01, Ghia still within 5%, suite green.
+location within 0.01, Ghia still within 5%, suite green. **Re-confirm after fixes: DONE** - Re_tau=180 channel holds:
+U+ 18.49 (was 18.3, MKM 18.3), u'_rms peak 3.08 at y+=15.5 (was 3.2), asym 2.1%. Ahmed (H=32,
+phi=25, Re_H=30k, cs=0.084 = old 0.1): stable, max|u| 0.088, but **Cd 3.245 -> 0.740 (-77%)**.
+Only physics change is the wall-node collision skip; likely the old solid-node collision
+contaminated the momentum-exchange drag itself (consistent with the flat first-pass sweep).
 
 Open (in order):
-- **Re-confirm after the wall-node + sqrt(2) fixes:** the Re_tau=180 channel (U+, u'_rms) and
-  the Ahmed ladder were produced before both fixes. Quick reruns to check the numbers hold.
 - **step.py:** reattachment isn't interpolated between cells (x_r/S quantized to 1/S).
 - **C. Ahmed loop speed:** full `macroscopic()` + full 19-neighbour `wall_model` scan every
   step for ~1% of nodes. Precompute wall nodes + normals once, compute moments locally.

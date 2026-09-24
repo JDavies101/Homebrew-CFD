@@ -3,7 +3,7 @@
 # staircased: no Bouzidi on the slant or nose yet, stilts omitted
 import numpy as np
 
-def ahmed_body(nx, ny, nz, x0, H=48, phi=35):
+def ahmed_body(nx, ny, nz, x0, H=48, phi=35, nose="round"):   # nose: "round" (R=100mm) or "square"
     solid = np.zeros((nx, ny, nz), np.int32)
     Hb = H # cells
     Lb = round(1044 / 288 * H)
@@ -32,8 +32,8 @@ def ahmed_body(nx, ny, nz, x0, H=48, phi=35):
         top_j = j_top - round(slant_dy * (i - (x_rear - slant_dx)) / slant_dx)
         solid[i, j_bot : top_j, k0 : k1] = 1
 
-    # rounding nose
-    for i in range(x0, x0 + R):
+    # rounding nose (square nose: keep the sharp box front)
+    for i in range(x0, x0 + R if nose == "round" else x0):
         for j in range(j_bot, j_top):
             for k in range(k0, k1):
                 dy = min(j - j_bot, (j_top - 1) - j)  # distance to nearest top/bottom edge

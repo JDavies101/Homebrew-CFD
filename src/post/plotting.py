@@ -55,7 +55,8 @@ def plot_velocity_slice(u, axis, index, comp=0):
     h, v = [n for i, n in enumerate(names) if i != axis]
     lim = float(np.nanmax(np.abs(sl))) or 1.0
     fig, ax = plt.subplots()
-    im = ax.imshow(sl.T, origin='lower', cmap='RdBu_r', vmin=-lim, vmax=lim,
+    cmap = plt.get_cmap('RdBu_r').copy(); cmap.set_bad('0.45')   # NaN = solid, grey
+    im = ax.imshow(sl.T, origin='lower', cmap=cmap, vmin=-lim, vmax=lim,
                    interpolation='nearest', aspect='equal')
     fig.colorbar(im, ax=ax, label=f'u_{names[comp]}')
     ax.set_xlabel(h); ax.set_ylabel(v)
