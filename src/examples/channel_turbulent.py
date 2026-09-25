@@ -28,6 +28,7 @@ a_noise = 0.05 * U_c        # broadband noise amplitude
 
 trt = 1
 cs = 0.0                    # DNS: Smagorinsky off (over-damps, relaminarizes at this Re)
+cw = 0.5
 steps = round(600000 * delta / 64)       # ~constant turnovers across the delta sweep
 warmup = steps // 6            # discard ~10 turnovers of transient
 check_every = max(1, round(steps / 300))     # ~300 readouts, independent of run length
@@ -76,6 +77,8 @@ def main():
     sum_uzz = []
     prog = Progress(steps)
     for s in range(steps):
+        sim.macroscopic()
+        sim.les_wale(cw)
         sim.collide_full(tau, cs, gx, trt)
         sim.stream()
         sim.bounce_back()
