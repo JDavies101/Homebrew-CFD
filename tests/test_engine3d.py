@@ -5,6 +5,7 @@ from src.engine.simulation3d import Simulation3D
 from src.engine import lattice3d as L3
 from src.turbulence.wall_function import friction_velocity
 from src.engine import runtime 
+from src.geometry.sponge import sponge
 
 rng = np.random.default_rng(0)
 N = 16
@@ -499,3 +500,11 @@ def test_les_wale_zero_on_quiescent(sim):
     sim.les_wale(0.5)
 
     assert np.allclose(sim.nut_les.to_numpy(), 0.0)
+
+# test 31: sponge is zero interior and max on boundary planes
+def test_sponge_profile():
+    
+    s = sponge(40, 10, 30, width=8, nu_max=0.02)
+    assert np.isclose(s[0, 5, 15], 0.02)
+    assert np.isclose(s[20, 5, 15], 0.0)
+    assert np.isclose(s[20, 5, 0], 0.02)

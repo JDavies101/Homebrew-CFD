@@ -5,6 +5,8 @@ from src.engine.simulation3d import Simulation3D
 from src.post.progress import Progress
 from src.post.vtk import write_field
 import sys
+from src.geometry.sponge import sponge
+from src.post.run_log import RunRecord
 
 H = 32                      # small for iteration; go to 48 for real runs
 Lb = round(1044/288 * H)
@@ -25,13 +27,17 @@ steps  = round(11 * T_ft)            # + ~6 flow-throughs (~30 shedding periods)
 #steps  = round(6 * T_ft) 
 sample_every = 25   # sample force every N steps (avoids per-step GPU sync)
 check_every  = max(1, steps // 300) # progress readout interval
-cs = 0.084
+sgs = sys.argv[3] if len(sys.argv) > 3 else "smag"      # "smag" or "wale"
+cs = 0.084 if sgs == "smag" else 0.0
+cw = 0.5
 gx = 0.0
 trt = 1
 y1 = 0.5 # wall distance, halfway bounce back
+sponge_width = 8                    # absorbing layer at inlet/outlet/side walls, cells
+sponge_nu = 0.02                    # peak sponge viscosity; 0.0 disables the sponge
 phi = int(sys.argv[1]) if len(sys.argv) > 1 else 25   # slant angle, deg
 nose = sys.argv[2] if len(sys.argv) > 2 else "round"   # "round" or "square"
-tag = f"phi{phi}" + ("" if nose == "round" else f"_{nose}")   # output-file suffix
+tag = f"phi{phi}" + ("" if nose == "round" else f"_{nose}") + ("" if sgs == "smag" else f"_{sgs}")
 
 # block-averaged mean and standard error of a correlated series
 def block_stats(x, nb):
@@ -68,6 +74,9 @@ def main():
     sim.body.from_numpy(body)
     sim.build_wall_list()
 
+    if sponge_nu > 0.0:
+        sim.nut_sponge.from_numpy(sponge(nx, ny, nz, width=sponge_width, nu_max=sponge_nu))
+
     sim.init_equilibrium(np.full((nx, ny, nz), U, np.float32),   # u_x = U everywhere
                      np.zeros((nx, ny, nz), np.float32),
                      np.zeros((nx, ny, nz), np.float32))
@@ -77,9 +86,17 @@ def main():
     mean_every = 500
 
     cd = []
+    run = RunRecord("ahmed", sim, steps=steps, u_ref=U, nu=nu, tau=round(tau, 6), Re=Re_H,
+                    geometry=f"H={H} phi={phi} {nose}", warmup=warmup, avg_Tft=round((steps - warmup) / T_ft, 1),
+                    collision="regularized", sgs=f"smag cs={cs}" if sgs == "smag" else f"wale cw={cw}",
+                    wall_model="log-law y+>30", walls="staircase BB", forcing="none",
+                    boundaries="NEEM-open inlet / zero-grad outlet / free-slip z / no-slip floor+ceiling",
+                    sponge=f"width {sponge_width}, nu_max {sponge_nu}" if sponge_nu > 0.0 else "none")
     prog = Progress(steps)
     for s in range(steps):
-        #sim.macroscopic()
+        if sgs == "wale":
+            sim.macroscopic()               # WALE needs current u (not needed on the smag path)
+            sim.les_wale(cw)
         sim.wall_model_fast(nu, y1)
         sim.collide_reg(tau, cs, gx)
         if s >= warmup and s % mean_every == 0:
@@ -100,6 +117,7 @@ def main():
             prog.update(s, float(np.nanmax(np.abs(sim.u.to_numpy()))))
 
     prog.done()                          # finish the bar (newline) before any other output
+    run.stop()
     sim.macroscopic()
 
     u_mean = u_sum / n_u
@@ -126,6 +144,17 @@ def main():
     h = len(cd) // 2
     print(f"drift: 1st half {cd[:h].mean():.4f}, 2nd half {cd[h:].mean():.4f}")
     print("wall-engaged nodes:", int((sim.nut_wall.to_numpy() > 0).sum()))
+
+    if sgs == "wale":
+        sim.macroscopic()
+        sim.les_wale(cw)
+        nl = sim.nut_les.to_numpy()
+        fl = sim.solid.to_numpy() == 0
+        print(f"nut_les/nu: mean {nl[fl].mean() / nu:.2f}  max {nl[fl].max() / nu:.2f}")
+
+    m5, se5 = block_stats(cd, 5)
+    run.finish(metric="Cd", value=round(float(m5), 4), se=round(float(se5), 4),
+               drift_1st=round(float(cd[:h].mean()), 4), drift_2nd=round(float(cd[h:].mean()), 4))
 
 if __name__ == "__main__":
     main()

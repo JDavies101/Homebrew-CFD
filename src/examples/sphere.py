@@ -6,6 +6,7 @@ from src.post.progress import Progress
 from src.post.vtk import write_field
 from src.geometry.sphere import sphere
 from src.geometry.wall_fraction import wall_fraction_sphere
+from src.post.run_log import RunRecord
 
 D = 20                      # sphere diameter in cells
 nx = 384
@@ -28,6 +29,9 @@ def main():
     sim.q.from_numpy(wall_fraction_sphere(nx, ny, nz, cx, cy, cz, D/2))
     sim.f.from_numpy(np.tile(L.W[:, None, None, None], (1, nx, ny, nz)).astype(np.float32))
 
+    run = RunRecord("sphere", sim, steps=steps, u_ref=U, nu=nu, tau=round(tau, 6), Re=Re,
+                    geometry=f"D={D}", collision="TRT", sgs="none", walls="Bouzidi",
+                    boundaries="equilibrium inlet / zero-grad outlet / free-slip y,z", forcing="none")
     prog = Progress(steps)
     for s in range(steps):
         sim.collide_trt(tau)
@@ -51,9 +55,11 @@ def main():
                       f"x[{w[:,0].min()}-{w[:,0].max()}] "
                       f"y[{w[:,1].min()}-{w[:,1].max()}] "
                       f"z[{w[:,2].min()}-{w[:,2].max()}]")
+                run.finish(metric="blow-up step", value=s, status="bad", reason="NaN/inf in f")
                 return
             prog.update(s, float(hi))
     prog.done()
+    run.stop()
 
     # steady flow -> single force reading
     sim.macroscopic()
@@ -66,6 +72,7 @@ def main():
     cd_ref = (24/Re_eff)*(1 + 0.15*Re_eff**0.687)        # Schiller-Naumann at the MEASURED Re
     print(f"U_eff = {U_eff:.4f}  ->  effective Re = {Re_eff:.0f}")
     print(f"Cd = {cd:.3f}   [Schiller-Naumann at Re={Re_eff:.0f} ~ {cd_ref:.2f}]")
+    run.finish(metric="Cd", value=round(cd, 4), reference=round(cd_ref, 4), other=f"Re_eff {Re_eff:.0f}")
 
 if __name__ == "__main__":
     main()

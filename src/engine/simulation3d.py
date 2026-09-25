@@ -30,6 +30,7 @@ class Simulation3D:
             self.fc = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))   # post-collision snapshot (Bouzidi needs it)
         self.nut_wall = ti.field(ti.f32, shape =(nx, ny, nz))  # wall-model eddy viscosity (0 away from walls)
         self.nut_les = ti.field(ti.f32, shape=(nx, ny, nz)) # WALE subgrid eddy viscosity (0 until les_wale runs)
+        self.nut_sponge = ti.field(ti.f32, shape=(nx, ny, nz))   # absorbing-layer viscosity, set once, 0 by default
         self.body = ti.field(ti.i32, shape=(nx, ny, nz))       # body-only mask for drag (solid minus tunnel walls)
         # lattice constants as fields, built from the NumPy descriptor
         self.E   = ti.field(ti.i32, shape=(self.Q, self.D))
@@ -117,7 +118,7 @@ class Simulation3D:
             if cs > 0.0:                                     # LES: eddy-adjusted tau from stress magnitude
                 Qmag = ti.sqrt(Pxx*Pxx + Pyy*Pyy + Pzz*Pzz + 2.0*(Pxy*Pxy + Pxz*Pxz + Pyz*Pyz))
                 tau = 0.5 * (tau0 + ti.sqrt(tau0*tau0 + 18.0 * ti.sqrt(2.0) *cs*cs*Qmag / r))
-            s = 1.0 / (tau + 3.0 * (self.nut_wall[i, j, k] + self.nut_les[i, j, k]))   # LES + wall model + regularization, composed
+            s = 1.0 / (tau + 3.0 * (self.nut_wall[i, j, k] + self.nut_les[i, j, k] + self.nut_sponge[i, j, k]))
             pre = 1.0 - 0.5 * s # Guo prefactor; BGK single rate
             for q in range(self.Q):
                 Hq = (self.E[q, 0] * self.E[q, 0] * Pxx + self.E[q, 1] * self.E[q, 1] * Pyy 
@@ -168,7 +169,7 @@ class Simulation3D:
                 Qmag = ti.sqrt(Qxx * Qxx + Qyy * Qyy + Qzz * Qzz + 2 * (Qxy * Qxy + Qxz * Qxz + Qyz * Qyz))
                 tau = 0.5 * (tau0 + ti.sqrt(tau0 * tau0 + 18.0 * ti.sqrt(2.0) * cs * cs * Qmag / r))
             
-            tau += 3.0 * (self.nut_wall[i,j,k] + self.nut_les[i,j,k])
+            tau += 3.0 * (self.nut_wall[i, j, k] + self.nut_les[i, j, k] + self.nut_sponge[i, j, k])
 
             s_plus = 1.0 / tau
             s_minus = s_plus # trt = 0 -> BGK

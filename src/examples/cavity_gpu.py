@@ -4,6 +4,7 @@ from src.engine.simulation import Simulation
 from src.engine import lattice as L
 from src.post import plotting
 import matplotlib.pyplot as plt
+from src.post.run_log import RunRecord
 
 N = 128
 U = 0.1
@@ -24,11 +25,16 @@ def main():
 
     # init at rest equilibrium, then run
     sim.f.from_numpy(np.tile(L.W[:, None, None], (1, N, N)).astype(np.float32))
+    run = RunRecord("cavity_2d_gpu", sim, steps=steps, u_ref=U, nu=nu, tau=round(tau, 6), Re=Re,
+                    geometry=f"N={N}", collision="BGK", sgs="none", walls="staircase BB",
+                    boundaries="moving lid / no-slip walls", forcing="none")
     sim.run(steps, tau, U)
+    run.stop()
 
     # read velocity, reuse your plotting
     sim.macroscopic()
     u = sim.u.to_numpy()
+    run.finish(metric="u_min/U centerline", value=round(float(u[0, N // 2, :].min() / U), 4), reference=-0.2109)
     plotting.plot_velocity_magnitude(u)
     plt.savefig("src/examples/results/velocity_magnitude_gpu.png")
     plotting.plot_streamlines(u)

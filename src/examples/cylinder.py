@@ -6,6 +6,7 @@ from src.post.progress import Progress
 from src.post.vtk import write_field
 from src.geometry.wall_fraction import wall_fraction_cylinder
 from src.geometry.cylinder import cylinder
+from src.post.run_log import RunRecord
 
 D = 45                      # cylinder diameter in cells
 nx = 1800
@@ -31,6 +32,9 @@ def main():
 
     cd_samples = []
     fy_history = []
+    run = RunRecord("cylinder", sim, steps=steps, u_ref=U, nu=nu, tau=round(tau, 6), Re=Re,
+                    geometry=f"D={D}", warmup=warmup, collision="BGK", sgs="none", walls="Bouzidi",
+                    boundaries="NEEM inlet / zero-grad outlet / free-slip y / periodic z", forcing="none")
     prog = Progress(steps)
     for s in range(steps):
         sim.collide(tau)
@@ -53,6 +57,7 @@ def main():
             prog.update(s, hmax)
 
     prog.done()                          # finish the bar (newline) before any other output
+    run.stop()
     sim.macroscopic()
     write_field("results/cylinder", sim.rho.to_numpy(), sim.u.to_numpy())
     u = sim.u.to_numpy()
@@ -71,6 +76,7 @@ def main():
     print(f"Re = {Re}, D = {D}, tau = {tau:.3f}, blockage = {D/ny:.1%}")
     print(f"Cd (time-averaged) = {cd:.3f}   [reference ~1.3-1.4]")
     print(f"Strouhal = {strouhal:.3f}        [reference ~0.16-0.20]")
+    run.finish(metric="Cd", value=round(cd, 4), reference=1.4, other=f"St {strouhal:.3f}; U_eff {U_eff:.4f}")
 
 if __name__ == "__main__":
     main()

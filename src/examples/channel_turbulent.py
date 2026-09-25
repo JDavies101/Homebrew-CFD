@@ -8,6 +8,7 @@ from src.post.progress import Progress
 from src.geometry.step import step
 from src.post.plotting import plot_law_of_wall
 from src.turbulence.wall_function import friction_velocity
+from src.post.run_log import RunRecord
 
 Re_tau = 180
 u_tau = 0.0045              # small -> U_c ~ 17.7 u_tau stays low Mach
@@ -77,6 +78,11 @@ def main():
     sum_uxx = []
     sum_uyy = []
     sum_uzz = []
+    run = RunRecord("channel_turbulent", sim, steps=steps, u_ref=U_c, nu=nu, tau=round(tau, 6), Re=Re_tau,
+                    geometry=f"delta={delta} (Re_tau {Re_tau})", warmup=warmup, reference=18.3 if Re_tau == 180 else 20.8,
+                    collision="regularized" if op == "reg" else "TRT (collide_full)",
+                    sgs=f"smag cs={cs}" if sgs == "smag" else f"wale cw={cw}", wall_model="off",
+                    walls="halfway BB", boundaries="periodic x,z / no-slip y walls", forcing="body force gx")
     prog = Progress(steps)
     for s in range(steps):
         sim.macroscopic()
@@ -103,6 +109,7 @@ def main():
             prog.update(s, hmax)
 
     prog.done()
+    run.stop()
 
     sim.les_wale(cw)                                  # refresh on the final field
     nl = sim.nut_les.to_numpy()
@@ -150,6 +157,10 @@ def main():
     fig, _ = plot_law_of_wall(y_plus, u_plus, urms_p, vrms_p, wrms_p)
     fig.savefig(f"results/channel_loglaw_{Re_tau}_{sgs}.png", dpi=130)
     print(f"wrote results/channel_loglaw_{Re_tau}_{sgs}.png")
+
+    run.finish(metric="U+ centerline", value=round(float(u_plus[-1]), 2),
+               other=(f"u'rms {urms_p[ipk]:.2f} @ y+{y_plus[ipk]:.1f}; "
+                      f"wall-shear {100 * (u_tau_grad / u_tau2 - 1):+.1f}%; asym {asym * 100:.1f}%"))
 
 if __name__ == "__main__":
     main()

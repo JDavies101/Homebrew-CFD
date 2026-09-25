@@ -5,6 +5,7 @@ from src.engine import lattice3d as L
 from src.post.progress import Progress
 from src.post.vtk import write_field
 from src.geometry.step import step
+from src.post.run_log import RunRecord
 
 S = 30
 ny = int(S/0.485) + 2      # gives ER ~ 1.94
@@ -25,6 +26,9 @@ def main():
     sim.solid.from_numpy(step(nx, ny, nz, x_step, S))
     sim.f.from_numpy(np.tile(L.W[:,None,None,None], (1,nx,ny,nz)).astype(np.float32))
     
+    run = RunRecord("step", sim, steps=steps, u_ref=U, nu=nu, tau=round(tau, 6), Re=Re,
+                    geometry=f"S={S} ER~1.94", collision="TRT", sgs="none", walls="staircase BB",
+                    boundaries="NEEM-open inlet / zero-grad outlet / no-slip walls / periodic z", forcing="none")
     prog = Progress(steps)
     for s in range(steps):
         sim.collide_trt(tau)
@@ -40,6 +44,7 @@ def main():
             prog.update(s, hmax)
 
     prog.done()
+    run.stop()
     sim.macroscopic()
 
     floor = sim.u.to_numpy()[0, x_step:, 1, nz//2]
@@ -68,6 +73,8 @@ def main():
         print(f"U_mean = {U_mean:.4f}   Armaly Re = {Re_eff:.0f}   x_r/S = {x_r/S:.2f}")
     else:
         print(f"U_mean = {U_mean:.4f}   Armaly Re = {Re_eff:.0f}")
+    run.finish(metric="x_r/S", value=round(x_r / S, 3) if x_r > 0 else "none", reference=3.0,
+               other=f"Armaly Re {Re_eff:.0f}; U_mean {U_mean:.4f}")
 
 if __name__ == "__main__":
     main()

@@ -4,6 +4,7 @@ from src.engine.simulation3d import Simulation3D
 from src.engine import lattice3d as L
 from src.post.progress import Progress
 from src.geometry.step import step
+from src.post.run_log import RunRecord
 
 S = 0                       # S=0 -> step() gives the two no-slip wall rows only
 ny = 66
@@ -38,6 +39,9 @@ def main():
     sim.solid.from_numpy(step(nx, ny, nz, x_step, S))
     sim.f.from_numpy(np.tile(L.W[:,None,None,None], (1,nx,ny,nz)).astype(np.float32))
     
+    run = RunRecord("channel_laminar", sim, steps=steps, tau=round(tau, 6),
+                    geometry=f"delta={delta}", collision="TRT" if TRT else "BGK", sgs="none",
+                    walls="halfway BB", boundaries="periodic x,z / no-slip y walls", forcing="body force gx")
     prog = Progress(steps)
     for s in range(steps):
         sim.collide_full(tau, 0.0, gx, TRT)
@@ -50,6 +54,7 @@ def main():
             prog.update(s, hmax)
 
     prog.done()
+    run.stop()
     sim.macroscopic()
     prof = sim.u.to_numpy()[0].mean(axis=(0, 2))   # u_x averaged over x,z -> (ny,)
     r2, delta_fit, peak = fit_parabola(prof)
@@ -58,6 +63,8 @@ def main():
     print(f"[{op}]  R^2 = {r2:.6f}   delta_fit = {delta_fit:.3f} (nominal {delta:.1f})"
           f"   peak = {peak:.5f}   analytic = {U_analytic:.5f}"
           f"   ({100*(peak/U_analytic - 1):+.2f}%)")
+    run.finish(metric="peak u", value=round(float(peak), 6), reference=round(float(U_analytic), 6),
+               other=f"R^2 {r2:.6f}; delta_fit {delta_fit:.3f} (nominal {delta:.1f})")
 
 if __name__ == "__main__":
     main()
