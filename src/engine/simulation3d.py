@@ -425,9 +425,8 @@ class Simulation3D:
     def inlet(self, U: ti.f32):
         for j, k in ti.ndrange(self.ny, self.nz):
             for q in range(self.Q):
-                eu = self.E[q,0] * U # u = (U,0,0) so e*u = E[q,0] * U
-                usqr = U * U
-                self.f[q,0,j,k] = self.W[q] * (1+ 3 * eu + 4.5 * eu * eu - 1.5 * usqr)
+                # inlet body:
+                self.f[q, 0, j, k] = self.feq(q, 1.0, U, 0.0, 0.0, U * U)
     
     # Guo non-equilibrium extrapolation inlet: equilibrium at the imposed U with
     # rho taken from x=1, plus the neighbour non-equilibrium part
@@ -435,6 +434,7 @@ class Simulation3D:
     @ti.kernel
     def inlet_neem(self, U: ti.f32):
         for j, k in ti.ndrange(self.ny, self.nz):
+            self._neem_column(j, k, U)
             # neighbor (x = 1) moments
             rn = 0.0
             mx = 0.0
@@ -451,10 +451,8 @@ class Simulation3D:
             usqr_n = ux * ux + uy * uy + uz * uz
             usqr_b = U * U
             for q in range(self.Q):
-                eu_b = self.E[q,0] * U # imposed u = (U, 0, 0)
-                feq_b = self.W[q] * rn * (1 + 3 * eu_b + 4.5 * eu_b * eu_b - 1.5 * usqr_b)
-                eu_n = self.E[q,0] * ux + self.E[q,1] * uy + self.E[q,2] * uz
-                feq_n = self.W[q] * rn * (1+ 3 * eu_n + 4.5 * eu_n * eu_n - 1.5 * usqr_n)
+                feq_b = self.feq(q, rn, U, 0.0, 0.0, usqr_b)
+                feq_n = self.feq(q, rn, ux, uy, uz, usqr_n)
                 self.f[q, 0, j, k] = feq_b + (self.f[q, 1, j, k] - feq_n)
 
     # same as inlet_neem but only drives open columns, leaves solid at the inlet plane alone
@@ -462,6 +460,7 @@ class Simulation3D:
     def inlet_neem_open(self, U: ti.f32):
         for j, k in ti.ndrange(self.ny, self.nz):
             if self.solid[0, j, k] == 0 and self.solid[1, j, k] == 0:   # open column only
+                self._neem_column(j, k, U)
                 # neighbor (x = 1) moments
                 rn = 0.0
                 mx = 0.0
@@ -484,6 +483,26 @@ class Simulation3D:
                     feq_n = self.W[q] * rn * (1+ 3 * eu_n + 4.5 * eu_n * eu_n - 1.5 * usqr_n)
                     self.f[q, 0, j, k] = feq_b + (self.f[q, 1, j, k] - feq_n)
 
+    @ti.func
+    def _neem_column(self, j, k, U):
+        rn = 0.0
+        mx = 0.0
+        my = 0.0
+        mz = 0.0
+        for q in range(self.Q):
+            rn += self.f[q, 1, j, k]
+            mx += self.f[q, 1, j, k] * self.E[q,0]
+            my += self.f[q, 1, j, k] * self.E[q,1]
+            mz += self.f[q, 1, j, k] * self.E[q,2]
+        ux = mx / rn
+        uy = my / rn
+        uz = mz / rn
+        usqr_n = ux * ux + uy * uy + uz * uz
+        for q in range(self.Q):
+            feq_b = self.feq(q, rn, U, 0.0, 0.0, U * U)
+            feq_n = self.feq(q, rn, ux, uy, uz, usqr_n)
+            self.f[q, 0, j, k] = feq_b + (self.f[q, 1, j, k] - feq_n)
+    
     # zero-gradient outlet: copy the second-to-last plane onto the last
     @ti.kernel
     def outlet(self):
@@ -495,20 +514,7 @@ class Simulation3D:
     # call after collide, before stream
     @ti.kernel
     def drag(self):
-        for c in range(L3.D): # reset accumulator
-            self.force[c] = 0.0
-        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
-            if self.solid[i,j,k] == 0:
-                for q in range(self.Q):
-                    ni = i + self.E[q,0]
-                    nj = j + self.E[q,1]
-                    nk = k + self.E[q,2]
-                    # if the neighbor is inside the domain and solid, then boundary link
-                    if 0 <= ni < self.nx and 0 <= nj < self.ny and 0 <= nk < self.nz:
-                        if self.solid[ni, nj, nk] == 1:
-                            self.force[0] += 2.0 * self.f[q,i,j,k] * self.E[q,0]
-                            self.force[1] += 2.0 * self.f[q,i,j,k] * self.E[q,1]
-                            self.force[2] += 2.0 * self.f[q,i,j,k] * self.E[q,2]
+        self._drag_mask(0)
 
     # momentum exchange for interpolated walls: sum c_i (f_in + f_out)
     # call AFTER bounce_back_interp, so f holds the reconstructed reflection
@@ -524,26 +530,29 @@ class Simulation3D:
                     fout = self.f[ob, i, j, k]        # reconstructed reflection
                     self.force[0] += (fin + fout) * self.E[d, 0]
                     self.force[1] += (fin + fout) * self.E[d, 1]
-                    self.force[2] += (fin + fout) * self.E[d, 2]    
+                    self.force[2] += (fin + fout) * self.E[d, 2] 
+
+    # momentum-exchange force; use_body=1 sums only body links (Cd), 0 sums all solid links
+    @ti.func
+    def _drag_mask(self, use_body: ti.i32):
+        for c in range(L3.D):
+            self.force[c] = 0.0
+        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
+            if self.solid[i, j, k] == 0:
+                for q in range(self.Q):
+                    ni = i + self.E[q, 0]; nj = j + self.E[q, 1]; nk = k + self.E[q, 2]
+                    if 0 <= ni < self.nx and 0 <= nj < self.ny and 0 <= nk < self.nz:
+                        hit = (self.body[ni, nj, nk] == 1) if use_body else (self.solid[ni, nj, nk] == 1)
+                        if hit:
+                            self.force[0] += 2.0 * self.f[q, i, j, k] * self.E[q, 0]
+                            self.force[1] += 2.0 * self.f[q, i, j, k] * self.E[q, 1]
+                            self.force[2] += 2.0 * self.f[q, i, j, k] * self.E[q, 2]
 
     # same as drag but only links into the body, so tunnel walls don't pollute Cd
     # call after collide, before stream
     @ti.kernel
     def drag_body(self):
-        for c in range(L3.D): # reset accumulator
-            self.force[c] = 0.0
-        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
-            if self.solid[i,j,k] == 0:
-                for q in range(self.Q):
-                    ni = i + self.E[q,0]
-                    nj = j + self.E[q,1]
-                    nk = k + self.E[q,2]
-                    # if the neighbor is inside the body, then boundary link
-                    if 0 <= ni < self.nx and 0 <= nj < self.ny and 0 <= nk < self.nz:
-                        if self.body[ni, nj, nk] == 1:
-                            self.force[0] += 2.0 * self.f[q,i,j,k] * self.E[q,0]
-                            self.force[1] += 2.0 * self.f[q,i,j,k] * self.E[q,1]
-                            self.force[2] += 2.0 * self.f[q,i,j,k] * self.E[q,2]
+        self._drag_mask(1)
 
     # equilibrium, the one copy collide_full / collide_reg / _init_eq all use
     @ti.func

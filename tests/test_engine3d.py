@@ -449,3 +449,14 @@ def test_wall_model_matches(sim):
     sim.nut_wall.from_numpy(np.zeros((N,N,N), np.float32))
     sim.build_wall_list(); sim.wall_model_fast(0.01, 10.0)
     assert np.allclose(sim.nut_wall.to_numpy(), slow, atol=1e-6)
+
+# test 28: drag_body matches manual
+def test_drag_body_matches_manual(sim):
+    solid = np.zeros((N, N, N), np.int32)
+    body = np.zeros((N, N, N), np.int32)
+    solid[8, 8, 8] = 1; body[8, 8, 8] = 1                 # one body voxel = one solid voxel
+    sim.solid.from_numpy(solid); sim.body.from_numpy(body)
+    sim.f.from_numpy(rng.uniform(0.9, 1.1, (L3.Q, N, N, N)).astype(np.float32))
+    sim.drag(); a = sim.force.to_numpy().copy()
+    sim.drag_body(); b = sim.force.to_numpy()
+    assert np.allclose(a, b)                               # body==solid here -> identical force
