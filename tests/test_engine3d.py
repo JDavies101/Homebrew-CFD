@@ -460,3 +460,42 @@ def test_drag_body_matches_manual(sim):
     sim.drag(); a = sim.force.to_numpy().copy()
     sim.drag_body(); b = sim.force.to_numpy()
     assert np.allclose(a, b)                               # body==solid here -> identical force
+
+# test 29: WALE matches numpy
+def test_les_wale_matches_numpy(sim):
+    sim.solid.from_numpy(np.zeros((N, N, N), np.int32))
+    sim.lid.from_numpy(np.zeros((N, N, N), np.int32))
+    u = rng.uniform(-0.05, 0.05, (3, N, N, N)).astype(np.float32)
+    sim.u.from_numpy(u)
+    cw = 0.5
+    delta = 1.0
+    eps = 1e-12
+    sim.les_wale(cw)
+    got = sim.nut_les.to_numpy()
+
+    # numpy reference: same WALE formula on the same u
+    u64 = u.astype(np.float64)
+    g = np.zeros((3, 3, N, N, N))
+    for a in range(3):
+        for b in range(3):
+            g[a, b] = np.gradient(u64[a], axis=b)          # d u_a / d x_b, unit spacing
+    S = 0.5 * (g + g.transpose(1, 0, 2, 3, 4))             # symmetric strain
+    gsq = np.einsum("ac...,cb...->ab...", g, g)            # g . g
+    tr = gsq[0, 0] + gsq[1, 1] + gsq[2, 2]
+    Sd = 0.5 * (gsq + gsq.transpose(1, 0, 2, 3, 4))
+    for a in range(3):
+        Sd[a, a] -= tr / 3.0                               # traceless
+    SS = np.einsum("ab...,ab...->...", S, S)
+    SdSd = np.einsum("ab...,ab...->...", Sd, Sd)
+    nut_ref = (cw * delta) ** 2 * SdSd ** 1.5 / (SS ** 2.5 + SdSd ** 1.25 + eps)
+
+    assert np.allclose(got[1:-1, 1:-1, 1:-1], nut_ref[1:-1, 1:-1, 1:-1], atol=1e-6)
+
+# test 30: WALE zero when no flow
+def test_les_wale_zero_on_quiescent(sim):
+    sim.solid.from_numpy(np.zeros((N, N, N), np.int32))
+    sim.lid.from_numpy(np.zeros((N, N, N), np.int32))
+    sim.u.from_numpy(np.zeros((3, N, N, N), np.float32))
+    sim.les_wale(0.5)
+
+    assert np.allclose(sim.nut_les.to_numpy(), 0.0)

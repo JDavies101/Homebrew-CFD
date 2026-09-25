@@ -29,6 +29,7 @@ class Simulation3D:
             self.q  = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))   # wall fractions (0 = not a boundary link)
             self.fc = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))   # post-collision snapshot (Bouzidi needs it)
         self.nut_wall = ti.field(ti.f32, shape =(nx, ny, nz))  # wall-model eddy viscosity (0 away from walls)
+        self.nut_les = ti.field(ti.f32, shape=(nx, ny, nz)) # WALE subgrid eddy viscosity (0 until les_wale runs)
         self.body = ti.field(ti.i32, shape=(nx, ny, nz))       # body-only mask for drag (solid minus tunnel walls)
         # lattice constants as fields, built from the NumPy descriptor
         self.E   = ti.field(ti.i32, shape=(self.Q, self.D))
@@ -111,7 +112,7 @@ class Simulation3D:
             if cs > 0.0:                                     # LES: eddy-adjusted tau from stress magnitude
                 Qmag = ti.sqrt(Pxx*Pxx + Pyy*Pyy + Pzz*Pzz + 2.0*(Pxy*Pxy + Pxz*Pxz + Pyz*Pyz))
                 tau = 0.5 * (tau0 + ti.sqrt(tau0*tau0 + 18.0 * ti.sqrt(2.0) *cs*cs*Qmag / r))
-            s = 1.0 / (tau + 3.0 * self.nut_wall[i, j, k])   # LES + wall model + regularization, composed
+            s = 1.0 / (tau + 3.0 * (self.nut_wall[i, j, k] + self.nut_les[i, j, k]))   # LES + wall model + regularization, composed
             pre = 1.0 - 0.5 * s # Guo prefactor; BGK single rate
             for q in range(self.Q):
                 Hq = (self.E[q, 0] * self.E[q, 0] * Pxx + self.E[q, 1] * self.E[q, 1] * Pyy 
@@ -160,7 +161,7 @@ class Simulation3D:
                 Qmag = ti.sqrt(Qxx * Qxx + Qyy * Qyy + Qzz * Qzz + 2 * (Qxy * Qxy + Qxz * Qxz + Qyz * Qyz))
                 tau = 0.5 * (tau0 + ti.sqrt(tau0 * tau0 + 18.0 * ti.sqrt(2.0) * cs * cs * Qmag / r))
             
-            tau += 3.0 * self.nut_wall[i,j,k]
+            tau += 3.0 * (self.nut_wall[i,j,k] + self.nut_les[i,j,k])
 
             s_plus = 1.0 / tau
             s_minus = s_plus # trt = 0 -> BGK
@@ -251,6 +252,54 @@ class Simulation3D:
                 val = ti.max(0.0, u_tau * u_tau * y1 / u1 - nu)
             
             self.nut_wall[i, j, k] = val
+
+    @ti.kernel
+    def les_wale(self, cw: ti.f32):
+        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
+            self.nut_les[i, j, k] = 0.0
+            if self.solid[i, j, k] == 1 or self.lid[i, j, k] == 1:
+                continue
+
+            up_x = self._uvec(i, j, k, 1, 0, 0)
+            dn_x = self._uvec(i, j, k, -1, 0, 0)
+            up_y = self._uvec(i, j, k, 0, 1, 0)
+            dn_y = self._uvec(i, j, k, 0, -1, 0)
+            up_z = self._uvec(i, j, k, 0, 0, 1)
+            dn_z = self._uvec(i, j, k, 0, 0, -1)
+
+            g = ti.Matrix.zero(ti.f32, 3, 3)          # g[a, b] = d u_a / d x_b
+            for a in ti.static(range(3)):
+                g[a, 0] = 0.5 * (up_x[a] - dn_x[a])
+                g[a, 1] = 0.5 * (up_y[a] - dn_y[a])
+                g[a, 2] = 0.5 * (up_z[a] - dn_z[a])
+
+            S = 0.5 * (g + g.transpose())             # symmetric strain
+            gsq = g @ g                               # g . g
+            tr = gsq.trace()
+            Sd = 0.5 * (gsq + gsq.transpose()) - (tr / 3.0) * ti.Matrix.identity(ti.f32, 3)
+
+            SS = (S * S).sum()                        # S : S
+            SdSd = (Sd * Sd).sum()                    # Sd : Sd
+
+            delta = 1.0
+            eps = 1e-12
+            self.nut_les[i, j, k] = (cw * delta) ** 2 * SdSd ** 1.5 / (SS ** 2.5 + SdSd ** 1.25 + eps)
+
+    @ti.func
+    def _uvec(self, i, j, k, di, dj, dk):
+        # velocity at neighbour (i+di, j+dj, k+dk): out of domain -> clamp to (i,j,k);
+        # solid -> zero (no-slip); else the stored velocity
+        ni = i + di
+        nj = j + dj
+        nk = k + dk
+        v = ti.Vector([0.0, 0.0, 0.0])
+        if ni < 0 or ni >= self.nx or nj < 0 or nj >= self.ny or nk < 0 or nk >= self.nz:
+            v = ti.Vector([self.u[0, i, j, k], self.u[1, i, j, k], self.u[2, i, j, k]])
+        elif self.solid[ni, nj, nk] == 1:
+            v = ti.Vector([0.0, 0.0, 0.0])
+        else:
+            v = ti.Vector([self.u[0, ni, nj, nk], self.u[1, ni, nj, nk], self.u[2, ni, nj, nk]])
+        return v
 
     def build_wall_list(self):
         solid = self.solid.to_numpy()
