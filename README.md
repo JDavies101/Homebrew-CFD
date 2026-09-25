@@ -19,8 +19,8 @@ aeroacoustics are all in reach of the same core.
 ## Approach in one paragraph
 
 The solver core is the **Lattice Boltzmann Method**. LBM is explicit, local, and
-embarrassingly parallel, so it maps to the GPU far better than a traditional
-pressure-solve Navier-Stokes code - and it is not a toy: **PowerFLOW, the industry-standard
+highly parallel, so it maps to the GPU far better than a traditional
+pressure-solve Navier-Stokes code: **PowerFLOW, the industry-standard
 automotive/F1 aero solver, is LBM.** Geometry is voxelized directly into the lattice, which
 sidesteps the painful body-fitted meshing that FVM requires - so a new shape is a new mesh
 import, not a new solver. Turbulence is handled with a Large-Eddy Simulation (LES) subgrid
@@ -45,8 +45,7 @@ much new machinery each needs on top of today's engine:
 
 **Out of scope, by design.** Standard LBM is low-Mach and incompressible (Ma < ~0.3). High-
 speed compressible flow, shocks, and reacting/detonation flow are a fundamentally different
-solver class - this engine is not the tool for them, and the validation-first charter means
-we say so rather than stretch it.
+solver class - this engine is not the tool for them.
 
 ## Honest accuracy expectation
 
