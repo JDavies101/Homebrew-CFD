@@ -48,7 +48,13 @@ def main():
     if len(neg):
         i0 = neg[0]                                   # bubble start
         after = np.where(floor[i0:] > 0)[0]
-        x_r = (i0 + after[0]) if len(after) else -1   # reattach = first positive after reversal
+        if len(after):
+            ip = i0 + after[0]                        # first positive cell after reversal
+            a = floor[ip - 1]                         # last non-positive sample (<= 0)
+            b = floor[ip]                             # first positive sample (> 0)
+            x_r = (ip - 1) + (-a) / (b - a)           # linear zero-crossing, sub-cell
+        else:
+            x_r = -1
     else:
         print("no recirculation")
     np.save("results/floor.npy", floor)

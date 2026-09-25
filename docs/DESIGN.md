@@ -473,7 +473,14 @@ via array_equal on reg + full) plus tests 6/7/8/9/14/15/22/23 green. **E. Small:
 blow-up; dropped `channel_turbulent`'s unused per-step uc/urms/vrms/wrms; `next`->`u_next`
 in `wall_function`; `. all`->`.all` in `lattice3d`; dead trailing `return` in `collide_reg`.
 KEPT: `config/loader.py` + `cases/` - unused by the solver but `test_scaffold.py` depends on
-them, so not "dead"; leave until that test is reworked. **2D collide-on-walls: DONE** - both 2D paths collided wall nodes
+them, so not "dead"; leave until that test is reworked. **step.py: DONE** - reattachment x_r is now a
+linear sub-cell zero-crossing between the last-negative and first-positive floor samples,
+not quantized to whole cells.
+
+Backlog status: A, B, C, D, E and step.py all closed; 2D collide-on-walls and the
+channel/Ahmed re-confirms done; Phase 3 relative gate passed (nose shape). Only F remains,
+deferred by design until an H=48+ run hits the 24 GB cap - at which point the memory
+pressure also gives the AA rewrite a concrete validation target (full ladder re-run). **2D collide-on-walls: DONE** - both 2D paths collided wall nodes
 (`src/lbm` `collide`/`collide_forced`, and `Simulation.collide`); parity and fit-root tests hid
 it. Red first: new `test_poiseuille.py::test_wall_location` pins the walls at 0.5 / ny-1.5 at
 the BGK magic tau = 1/2 + sqrt(3)/4 (halfway bounce-back exact) - fitted wall was at 0.084, a
@@ -486,8 +493,7 @@ Only physics change is the wall-node collision skip; likely the old solid-node c
 contaminated the momentum-exchange drag itself (consistent with the flat first-pass sweep).
 
 Open (in order):
-- **step.py:** reattachment isn't interpolated between cells (x_r/S quantized to 1/S).
-- **F. Idea: AA-pattern in-place streaming** - drops `f_new` (76 B/cell) for another ~40% more
+- **F. DEFERRED (only when memory-bound).** AA-pattern in-place streaming - drops `f_new` (76 B/cell) for ~40% more
   cells. Bigger change (alternating even/odd kernels, boundaries must follow the pattern);
   only if H=48+ runs hit the memory cap.
 
