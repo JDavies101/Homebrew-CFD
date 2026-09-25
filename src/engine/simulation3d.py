@@ -102,21 +102,8 @@ class Simulation3D:
             usqr = ux * ux + uy * uy + uz * uz
 
             # pass 1: non equilibrium stress tensor Pi = sum c_a c_b (f - feq)
-            Pxx = 0.0
-            Pyy = 0.0
-            Pzz = 0.0
-            Pxy = 0.0
-            Pxz = 0.0
-            Pyz = 0.0
-            for q in range(self.Q):
-                neq = self.f[q, i, j, k] - self.feq(q, r, ux, uy, uz, usqr)
-                Pxx += neq * self.E[q, 0] * self.E[q, 0]
-                Pyy += neq * self.E[q, 1] * self.E[q, 1]
-                Pzz += neq * self.E[q, 2] * self.E[q, 2]
-                Pxy += neq * self.E[q, 0] * self.E[q, 1]
-                Pxz += neq * self.E[q, 0] * self.E[q, 2]
-                Pyz += neq * self.E[q, 1] * self.E[q, 2]
-            
+            P = self._stress(i, j, k, r, ux, uy, uz, usqr)
+            Pxx = P[0]; Pyy = P[1]; Pzz = P[2]; Pxy = P[3]; Pxz = P[4]; Pyz = P[5]
             trace = Pxx + Pyy + Pzz
 
             # pass 2: reconstruct f_neq from Pi only then relax
@@ -169,21 +156,8 @@ class Simulation3D:
 
             tau = tau0
             if cs > 0.0:
-                Qxx=0.0
-                Qyy=0.0
-                Qzz=0.0
-                Qxy=0.0
-                Qxz=0.0
-                Qyz=0.0
-                for q in range(self.Q):
-                    feq = self.feq(q, r, ux, uy, uz, usqr)
-                    neq = self.f[q,i,j,k] - feq
-                    Qxx += self.E[q,0] * self.E[q,0] * neq
-                    Qyy += self.E[q,1] * self.E[q,1] * neq
-                    Qzz += self.E[q,2] * self.E[q,2] * neq
-                    Qxy += self.E[q,0] * self.E[q,1] * neq
-                    Qxz += self.E[q,0] * self.E[q,2] * neq
-                    Qyz += self.E[q,1] * self.E[q,2] * neq
+                Q = self._stress(i, j, k, r, ux, uy, uz, usqr)
+                Qxx = Q[0]; Qyy = Q[1]; Qzz = Q[2]; Qxy = Q[3]; Qxz = Q[4]; Qyz = Q[5]
 
                 Qmag = ti.sqrt(Qxx * Qxx + Qyy * Qyy + Qzz * Qzz + 2 * (Qxy * Qxy + Qxz * Qxz + Qyz * Qyz))
                 tau = 0.5 * (tau0 + ti.sqrt(tau0 * tau0 + 18.0 * ti.sqrt(2.0) * cs * cs * Qmag / r))
@@ -560,6 +534,24 @@ class Simulation3D:
         eu = self.E[q,0] * ux + self.E[q,1] * uy + self.E[q,2] * uz
         return self.W[q] * r * (1 + 3 * eu + 4.5 * eu * eu - 1.5 * usqr)
     
+    @ti.func
+    def _stress(self, i, j, k, r, ux, uy, uz, usqr):
+        Pxx = 0.0
+        Pyy = 0.0
+        Pzz = 0.0
+        Pxy = 0.0
+        Pxz = 0.0
+        Pyz = 0.0
+        for q in range(self.Q):
+            neq = self.f[q, i, j, k] - self.feq(q, r, ux, uy, uz, usqr)
+            Pxx += neq * self.E[q, 0] * self.E[q, 0]
+            Pyy += neq * self.E[q, 1] * self.E[q, 1]
+            Pzz += neq * self.E[q, 2] * self.E[q, 2]
+            Pxy += neq * self.E[q, 0] * self.E[q, 1]
+            Pxz += neq * self.E[q, 0] * self.E[q, 2]
+            Pyz += neq * self.E[q, 1] * self.E[q, 2]
+        return ti.Vector([Pxx, Pyy, Pzz, Pxy, Pxz, Pyz])
+
     @ti.func
     def wall_utau(self, u1, y1, nu):          # device twin of turbulence/wall_function.friction_velocity
         u_tau = 0.0
