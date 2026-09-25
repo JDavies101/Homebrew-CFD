@@ -166,7 +166,7 @@ Cd (1.89->1.83). 44 fast tests total; validation cases marked `slow`.
 *Exit met. Deferred to Phase 3: interpolated bounce-back (staircase Cd),
 free-slip corner treatment (sphere), MRT/regularized collision (high-Re stability).*
 
-**Phase 3 - Turbulence + walls. IN PROGRESS.** Three of the core operators are in, each
+**Phase 3 - Turbulence + walls. DONE (relative gate passed).** Three of the core operators are in, each
 validated by reducing exactly to the previous scheme (a golden-oracle parity test):
 
 - **TRT collision. DONE.** Two-relaxation-time: even/odd split about `OPP`, with `s_plus`
@@ -277,7 +277,7 @@ inlet_neem_open, the combined collide_full (TRT+LES+forcing at once), and the wa
 (crossing points land on the surface). Tests have caught real bugs: free_slip_z using the y
 mirror table, a double relaxation in LES, a missing q load.
 
-**Ahmed body - staged build toward the gate. IN PROGRESS.** Voxelized Ahmed (`src/geometry/ahmed_body.py`):
+**Ahmed body - staged build toward the gate. DONE.** Voxelized Ahmed (`src/geometry/ahmed_body.py`):
 box + 35deg rear slant + rounded nose, all dimensions derived from one height H so resolution
 scales cleanly. Wind-tunnel run (`src/examples/ahmed.py`): body-only drag via a separate
 `self.body` mask + `drag_body` (excludes the floor/ceiling walls from Cd), inlet_neem_open /
@@ -393,12 +393,66 @@ error bars on Cd in `ahmed.py`; (2) check the 25 deg wake PNG for reattachment o
 convention and rerun all three); (4) if still flat, fall back to another relative test
 (rounded vs square nose, or a ground-clearance sweep).
 
-**Phase 4 - Automotive features.** STL import + voxelization of real parts, moving ground,
-rotating wheels, per-part force breakdown. *Exit: front-wing or full-car run with sane,
-stable coefficients.*
+**Phase 3 close-out.** Gate met: the relative aero gate (nose-shape, square vs round, +48%
+Cd, correct sign and mechanism) passed. All core operators done and unit-tested: TRT,
+Bouzidi interpolated bounce-back, LES Smagorinsky (textbook constant), regularized collision,
+generalized log-law wall function, unified `feq`/collision/`_stress`, and the full
+regularized+LES+wall-function stack stable on the Ahmed body to Re_H=30000. Validation ladder
+green: Poiseuille, cavity (Ghia), cylinder (Cd 1.576, St 0.165), sphere (Bouzidi), backward-
+facing step, Re_tau=180 channel (U+ 18.5), Ahmed stability + nose gate.
 
-**Phase 5 - Interactivity & sweeps.** Live viewer, parameter sweeps, A/B comparison
-tables, mixed-precision for larger domains.
+*Carried forward (known, deferred by decision - none block the Phase 3 gate):*
+- Absolute Ahmed Cd - out of charter (hardware-bound at 24 GB; needs H~150-300 = cluster).
+- Free-slip corner artifact - `free_slip_y_top` built but unwired; Ahmed uses no-slip tunnel
+  walls instead. Needs corner treatment before free-slip far-field walls are usable.
+- Wall-aware SGS (van Driest / WALE / Vreman) - static Smagorinsky over-damps the near-wall
+  log layer, so the wall model can't engage cleanly at high Re. Needed for trustworthy
+  wall-modeled car surfaces.
+- SDF wall-distance field - wall normals come from the discrete solid gradient today; an SDF
+  gives both sub-cell `q` and normals for arbitrary (STL) surfaces.
+- Forced + regularized Guo correction to Pi - deferred (nothing regularized is forced yet).
+- Second-order channel turbulence (`u'_rms`) - minimal-box high; needs a full-size box.
+
+**Phase 4 - Automotive features. NEXT.** Turn the validated solver into a car-aero tool. Real
+geometry, real road boundary conditions, part-resolved forces. Same charter as Phase 3:
+relative comparisons and credible trends, not certification-grade absolute Cd. Staged:
+
+- *4.0 Foundations (the Phase-3 carry-forwards that Phase 4 depends on).* SDF wall-distance
+  field from geometry, feeding both Bouzidi `q` and per-node wall normals; a wall-aware SGS
+  (WALE or van Driest) so the wall model engages on real surfaces at high Re. *Gate: WALE
+  reproduces the Re_tau=180 channel law-of-wall as well as cs=0 DNS, and engages (wall on !=
+  wall off) in the Re_tau=590 coarse-wall case that static Smagorinsky failed.*
+- *4.1 STL import + voxelization.* Read a triangle mesh, voxelize to the solid mask plus the
+  per-link `q` field via the SDF (so curved car surfaces are not staircased). *Gate: an STL of
+  a sphere/cylinder recovers the analytic-mask Cd/St (validation by reduction).*
+- *4.2 Moving ground + rotating wheels.* Generalize the moving-wall velocity BC to the floor
+  (belt at inlet U) and to wheel surfaces (local tangential speed). *Gate: moving belt removes
+  the floor boundary layer (measured vs static floor); a spinning cylinder shows the expected
+  Magnus lift sign.*
+- *4.3 Per-part force breakdown.* Multiple named body masks, each with its own momentum-
+  exchange sum. *Gate: per-part forces sum to the single-mask `drag_body` within rounding.*
+- *4.4 Integration run.* A front wing (simplest real part) or full car. *Exit: sane, stable
+  coefficients + a relative gate - e.g. a wing-angle or ride-height sweep with the expected
+  monotonic downforce / ground-effect trend.*
+
+**Phase 5 - Interactivity & sweeps.** Taichi GGUI live viewer (in-run visualization, no
+export round-trip), parameter sweeps, A/B comparison tables, mixed-precision for larger
+domains. Refactor F (AA-pattern in-place streaming, section 10) lands here or in Phase 4 the
+moment a real car domain exceeds the 24 GB cap - it is the memory headroom the bigger runs need.
+
+**Phase 6 - Application (UI).** A standalone setup / run-control / post app: load an STL,
+assign boundary conditions, set domain/Re, launch, monitor live, and A/B compare - wrapping the
+validated engine so a case does not need a hand-edited example script. Likely Streamlit (the
+stack already used for the F1 race simulator) plus a 3D viewer; ParaView stays for heavy post.
+
+**Scope note - one engine, many problems.** The core is a general incompressible / low-Mach
+LBM solver; external aero (F1 the flagship) is the first domain, not the boundary. Same core,
+added incrementally with its own validation each time: internal duct/HVAC flow (new BCs only),
+heat transfer (a second thermal distribution), aeroacoustics (near-field direct + a far-field
+FW-H analogy; ties to the aeroacoustics work). **Future branch:** multiphase / free-surface
+(Shan-Chen or color-gradient) - a major addition, tracked, not near-term. **Out of scope by
+design:** high-Mach / compressible / reacting-detonation flow is a different solver class and
+is deliberately not pursued here - it would break the validation-first charter.
 
 Each phase ends only when its validation gate passes. Docs and tests are updated within
 the same phase, not after.
