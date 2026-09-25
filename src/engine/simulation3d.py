@@ -128,8 +128,6 @@ class Simulation3D:
                 Sq = pre * self.W[q] * (3.0 * (eF - uF) + 9.0 * eu * eF) # Guo source (BGK form)
 
                 self.f[q, i, j, k] = self.feq(q, r, ux, uy, uz, usqr) + (1.0 - s) * fneq_reg + Sq
-
-        return
     
     # one collision kernel: moments -> local tau (LES + wall model) -> TRT/BGK relax + Guo source
     # cs=0 disables LES, gx=0 disables forcing, trt=0 gives BGK
@@ -527,6 +525,19 @@ class Simulation3D:
     @ti.kernel
     def drag_body(self):
         self._drag_mask(1)
+
+    # blow-up probe: max |f| over the field, forced huge on any NaN. a cheap GPU
+    # reduction so the health check never pulls the whole f array on the healthy path
+    @ti.kernel
+    def f_absmax(self) -> ti.f32:
+        hi = 0.0
+        for q, i, j, k in self.f:
+            v = self.f[q, i, j, k]
+            if v != v:
+                ti.atomic_max(hi, 1e30)
+            else:
+                ti.atomic_max(hi, ti.abs(v))
+        return hi
 
     # equilibrium, the one copy collide_full / collide_reg / _init_eq all use
     @ti.func

@@ -70,10 +70,6 @@ def main():
     u_x, u_y, u_z = initial_velocity()
     sim.init_equilibrium(u_x, u_y, u_z)
 
-    uc = []
-    urms = []
-    vrms = []
-    wrms = []
     sum_ux = []
     sum_uxx = []
     sum_uyy = []
@@ -87,12 +83,6 @@ def main():
         if s >= warmup and s % sample_every == 0:
             sim.macroscopic()
             u = sim.u.to_numpy()
-            uc.append(float(u[0][:, ny // 2, :].mean()))          # centerline mean u_x
-            up = u[0] - u[0].mean(axis=(0, 2), keepdims=True) # fluctuation off x-z mean profile
-            urms.append(float(np.sqrt((up ** 2).mean())) / u_tau)
-            vrms.append(float(np.sqrt((u[1] ** 2).mean())) / u_tau)
-            wrms.append(float(np.sqrt((u[2] ** 2).mean())) / u_tau)
-
             sum_ux.append(u[0].mean(axis=(0, 2)))
             sum_uxx.append((u[0] ** 2).mean(axis=(0, 2)))
             sum_uyy.append((u[1] ** 2).mean(axis=(0, 2)))

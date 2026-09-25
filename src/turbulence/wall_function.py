@@ -16,8 +16,8 @@ def friction_velocity(u1, y1, nu, k=0.41, B=5.2, iters=50, atol=1e-8):
             break
 
         f_prime = (1 / k) * np.log(y1 * u_tau / nu) + B + 1 / k
-        next = u_tau - f / f_prime
+        u_next = u_tau - f / f_prime
 
-        u_tau = next if next > 0 else u_tau / 2 # guard the proposed value
+        u_tau = u_next if u_next > 0 else u_tau / 2 # guard the proposed value
     
     return u_tau

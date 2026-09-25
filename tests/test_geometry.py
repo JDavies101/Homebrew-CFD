@@ -18,7 +18,7 @@ def test_cylinder_mask():
 
 # test 2: sphere mask: right volume, centered
 def test_sphere_mask():
-    s = sphere(40, 40, 40, 20, 20, 20, 14)                 # D=14 -> R=7
+    s = sphere(40, 40, 40, 20, 20, 20, 7)                  # r=7
     
     assert s[20, 20, 20] == 1 and s[0, 0, 0] == 0
     assert abs(s.sum() - 4/3*np.pi*7**3) / (4/3*np.pi*7**3) < 0.05

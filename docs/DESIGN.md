@@ -467,7 +467,13 @@ time-mean unchanged). **D. Duplicated physics: DONE** - inlet family uses `feq`
 and a shared `_neem_column` @ti.func; `drag`/`drag_body` share a `_drag_mask` @ti.func
 (use_body flag); `collide_full` (LES branch) and `collide_reg` share a `_stress` @ti.func for
 the non-eq stress tensor. All no-op numerically: bit-identity guards (drag test; collide golden
-via array_equal on reg + full) plus tests 6/7/8/9/14/15/22/23 green. **2D collide-on-walls: DONE** - both 2D paths collided wall nodes
+via array_equal on reg + full) plus tests 6/7/8/9/14/15/22/23 green. **E. Small: DONE**
+(mostly) - `sphere` now takes radius like `cylinder`/`wall_fraction_*` (mask identical);
+`sphere.py` health check uses a new `f_absmax` GPU reduction, full `f` pulled only on
+blow-up; dropped `channel_turbulent`'s unused per-step uc/urms/vrms/wrms; `next`->`u_next`
+in `wall_function`; `. all`->`.all` in `lattice3d`; dead trailing `return` in `collide_reg`.
+KEPT: `config/loader.py` + `cases/` - unused by the solver but `test_scaffold.py` depends on
+them, so not "dead"; leave until that test is reworked. **2D collide-on-walls: DONE** - both 2D paths collided wall nodes
 (`src/lbm` `collide`/`collide_forced`, and `Simulation.collide`); parity and fit-root tests hid
 it. Red first: new `test_poiseuille.py::test_wall_location` pins the walls at 0.5 / ny-1.5 at
 the BGK magic tau = 1/2 + sqrt(3)/4 (halfway bounce-back exact) - fitted wall was at 0.084, a
@@ -481,10 +487,6 @@ contaminated the momentum-exchange drag itself (consistent with the flat first-p
 
 Open (in order):
 - **step.py:** reattachment isn't interpolated between cells (x_r/S quantized to 1/S).
-- **E. Small:** radius vs diameter across geometry APIs; `config/loader.py` + `cases/` unused;
-  `sphere.py` pulls all of f (~480 MB) for a NaN check; `channel_turbulent.py` collects unused
-  uc/urms/vrms/wrms; `next` shadows the builtin in `wall_function.py`; `. all` in
-  `lattice3d.py`; trailing `return` in `collide_reg`.
 - **F. Idea: AA-pattern in-place streaming** - drops `f_new` (76 B/cell) for another ~40% more
   cells. Bigger change (alternating even/odd kernels, boundaries must follow the pattern);
   only if H=48+ runs hit the memory cap.

@@ -24,7 +24,7 @@ A = np.pi * (D/2) ** 2                 # frontal area
 
 def main():
     sim = Simulation3D(nx, ny, nz, backend="cuda", interp=True)
-    sim.solid.from_numpy(sphere(nx, ny, nz, cx, cy, cz, D))
+    sim.solid.from_numpy(sphere(nx, ny, nz, cx, cy, cz, D/2))
     sim.q.from_numpy(wall_fraction_sphere(nx, ny, nz, cx, cy, cz, D/2))
     sim.f.from_numpy(np.tile(L.W[:, None, None, None], (1, nx, ny, nz)).astype(np.float32))
 
@@ -41,17 +41,18 @@ def main():
         sim.drag_interp()
 
         if s % check_every == 0:
-            fnp = sim.f.to_numpy()
-            nan_cells = np.isnan(fnp).any(axis=0)
-            if nan_cells.any():                     # localize the first NaNs
-                w = np.argwhere(nan_cells)
+            hi = sim.f_absmax()                      # cheap GPU reduction, no full copy
+            if not np.isfinite(hi) or hi > 1e29:     # NaN/inf: pull f once to localize
                 prog.done()
-                print(f"NaN at step {s}: {len(w)} cells  "
+                fnp = sim.f.to_numpy()
+                bad = ~np.isfinite(fnp).all(axis=0)
+                w = np.argwhere(bad)
+                print(f"blow-up at step {s}: {len(w)} cells  "
                       f"x[{w[:,0].min()}-{w[:,0].max()}] "
                       f"y[{w[:,1].min()}-{w[:,1].max()}] "
                       f"z[{w[:,2].min()}-{w[:,2].max()}]")
                 return
-            prog.update(s, float(np.abs(fnp).max()))
+            prog.update(s, float(hi))
     prog.done()
 
     # steady flow -> single force reading

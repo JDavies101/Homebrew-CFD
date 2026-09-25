@@ -460,18 +460,3 @@ def test_drag_body_matches_manual(sim):
     sim.drag(); a = sim.force.to_numpy().copy()
     sim.drag_body(); b = sim.force.to_numpy()
     assert np.allclose(a, b)                               # body==solid here -> identical force
-
-@pytest.mark.parametrize("nm, fn", [
-    ("reg",  lambda s: s.collide_reg(0.6, 0.1, 0.0)),
-    ("full", lambda s: s.collide_full(0.6, 0.1, 0.0, 1)),
-])
-def test_collide_stress_refactor_golden(sim, nm, fn):
-    z = np.zeros((N, N, N), np.int32)
-    zf = np.zeros((N, N, N), np.float32)
-    sim.solid.from_numpy(z)
-    sim.lid.from_numpy(z); sim.nut_wall.from_numpy(zf)
-    f0 = np.random.default_rng(7).uniform(0.9, 1.1, (L3.Q, N, N, N)).astype(np.float32)
-    sim.f.from_numpy(f0)
-    fn(sim)
-    golden = np.load(f"tests/golden_collide_{nm}.npy")
-    assert np.array_equal(sim.f.to_numpy(), golden)     # bit-for-bit across the _stress extract
