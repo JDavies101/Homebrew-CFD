@@ -19,15 +19,17 @@ gx = u_tau ** 2 / delta     # tau_w = rho*g*delta  ->  u_tau = sqrt(g*delta)
 U_c = 17.7 * u_tau          # turbulent centerline from the log law (~0.08)
 nx = round(337 * delta / Re_tau)   # hold L_x+ ~ 337 as delta shrinks (coarsening sweep)
 nz = round(169 * delta / Re_tau)   # hold L_z+ ~ 169
+n_z = max(1, nz // 30)              # 2 pairs at Re_tau=180 (nz=60), 1 on the coarse box
 
-n_z = 2                     # spanwise roll pairs across the box
 beta = 2 * np.pi * n_z / nz
 v_roll = 0.10 * U_c         # roll (u_y) amplitude
 a_streak = 0.10 * U_c       # streak (u_x) amplitude
 a_noise = 0.05 * U_c        # broadband noise amplitude
 
 trt = 1
-cs = 0.0                    # DNS: Smagorinsky off (over-damps, relaminarizes at this Re)
+op = "full"                         # "reg" (collide_reg, needed near tau=0.5) or "full" (collide_full, the Re_tau=180 DNS)
+sgs = "wale"                        # "wale" or "smag"
+cs = 0.084 if sgs == "smag" else 0.0   # 0.084 = the old cs=0.1 that over-damped this case
 cw = 0.5
 steps = round(600000 * delta / 64)       # ~constant turnovers across the delta sweep
 warmup = steps // 6            # discard ~10 turnovers of transient
@@ -78,8 +80,12 @@ def main():
     prog = Progress(steps)
     for s in range(steps):
         sim.macroscopic()
-        sim.les_wale(cw)
-        sim.collide_full(tau, cs, gx, trt)
+        if sgs == "wale":
+            sim.les_wale(cw)
+        if op == "reg":
+            sim.collide_reg(tau, cs, gx)
+        else:
+            sim.collide_full(tau, cs, gx, trt)
         sim.stream()
         sim.bounce_back()
 
@@ -97,6 +103,11 @@ def main():
             prog.update(s, hmax)
 
     prog.done()
+
+    sim.les_wale(cw)                                  # refresh on the final field
+    nl = sim.nut_les.to_numpy()
+    fluid = sim.solid.to_numpy() == 0
+    print(f"nut_les/nu: mean {nl[fluid].mean() / nu:.2f}  max {nl[fluid].max() / nu:.2f}")
 
     sum_ux  = np.array(sum_ux)     # (Nsamples, ny)  — or pass the list straight to np.mean
     ubar = np.mean(sum_ux,  axis=0)                     # (ny,) mean profile  -> the log law
@@ -137,8 +148,8 @@ def main():
     print(f"top/bottom asym = {asym*100:.1f}%          [convergence, want a few %]")
 
     fig, _ = plot_law_of_wall(y_plus, u_plus, urms_p, vrms_p, wrms_p)
-    fig.savefig("results/channel_loglaw.png", dpi=130)
-    print("wrote results/channel_loglaw.png")
+    fig.savefig(f"results/channel_loglaw_{Re_tau}_{sgs}.png", dpi=130)
+    print(f"wrote results/channel_loglaw_{Re_tau}_{sgs}.png")
 
 if __name__ == "__main__":
     main()

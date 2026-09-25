@@ -422,6 +422,24 @@ relative comparisons and credible trends, not certification-grade absolute Cd. S
   (WALE or van Driest) so the wall model engages on real surfaces at high Re. *Gate: WALE
   reproduces the Re_tau=180 channel law-of-wall as well as cs=0 DNS, and engages (wall on !=
   wall off) in the Re_tau=590 coarse-wall case that static Smagorinsky failed.*
+  *4.0 progress - WALE.* `les_wale` kernel + `nut_les` field (composed into `collide_reg` /
+  `collide_full` as `tau += 3*nut_les`, same convention as `nut_wall`). Validated: exact NumPy
+  parity on a random field; zero on quiescent flow; Re_tau=180 channel unharmed (U+ 18.2 vs
+  18.3, wall-shear error -2.6%, u'_rms peak moved y+ 15.5 -> 12.7 at the same 3.11 - a small
+  buffer-layer contribution). High-Re channel attempt (Re_tau=590, delta=16) was not a valid
+  test: first node at y+ 18 is unresolved with the wall model gated off, and the 9x34x5 box
+  cannot sustain wall turbulence (fluctuations peak in the core). WALE ran stable and did not
+  over-damp (U+ 27 vs the ~21 log law; nut_les/nu mean 16), but the result is set by missing
+  wall stress, not the SGS model. Static Smagorinsky on collide_reg diverged there (unexplained,
+  invalid setup - logged, not chased). High-Re WALE validation moves to the Ahmed body
+  (unforced, wall model engaged). Follow-up if ever needed: a proper wall-modeled channel
+  (larger box, first node y+ > 30, wall model wired).
+  *Forced regularized collision - fixed.* Regularization dropped f_neq's -F/2 first moment
+  (the first-order Hermite term), over-driving forced flow: forced Poiseuille under
+  `collide_reg` peaked 13.5% high. Restored as `-1.5 w_q c_qx gx` in the reconstruction
+  (zero when unforced). Residual ~1% is non-monotone in resolution (-1.02% at ny=32, +0.99% at
+  ny=64), consistent with a fit/near-wall metric effect and below collide_reg's 3% viscosity
+  certification; test tolerance 2%. Follow-up: measure nu_eff from fitted curvature to pin it.
 - *4.1 STL import + voxelization.* Read a triangle mesh, voxelize to the solid mask plus the
   per-link `q` field via the SDF (so curved car surfaces are not staircased). *Gate: an STL of
   a sphere/cylinder recovers the analytic-mask Cd/St (validation by reduction).*
