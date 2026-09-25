@@ -104,7 +104,12 @@ class Simulation3D:
 
             # pass 1: non equilibrium stress tensor Pi = sum c_a c_b (f - feq)
             P = self._stress(i, j, k, r, ux, uy, uz, usqr)
-            Pxx = P[0]; Pyy = P[1]; Pzz = P[2]; Pxy = P[3]; Pxz = P[4]; Pyz = P[5]
+            Pxx = P[0]
+            Pyy = P[1]
+            Pzz = P[2]
+            Pxy = P[3]
+            Pxz = P[4]
+            Pyz = P[5]
             trace = Pxx + Pyy + Pzz
 
             # pass 2: reconstruct f_neq from Pi only then relax
@@ -121,7 +126,9 @@ class Simulation3D:
                                + self.E[q, 0] * self.E[q, 2] * Pxz
                                + self.E[q, 1] * self.E[q, 2] * Pyz)
                         - (1.0 / 3.0) * trace)
-                fneq_reg = 4.5 * self.W[q] * Hq # w_q/(2 c_s^4) = 4.5 w_q
+                # first-order Hermite term (a1 = -F/2) that regularization drops; restores f_neq's
+                # -F/2 first moment so the forced momentum balance matches the full-f scheme. F = (gx,0,0).
+                fneq_reg = 4.5 * self.W[q] * Hq - 1.5 * self.W[q] * self.E[q, 0] * gx
 
                 eu = self.E[q, 0] * ux + self.E[q, 1] * uy + self.E[q, 2] * uz
                 eF = self.E[q, 0] * gx
