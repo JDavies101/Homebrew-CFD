@@ -72,7 +72,7 @@ sphere, from a signed-distance field for arbitrary STL later).
 
 ## 5. Validation strategy (the heart of "accuracy first")
 
-We do not trust the solver on an F1 shape until it passes a ladder of cases with known
+The solver is not trusted on an F1 shape until it passes a ladder of cases with known
 answers. Two test tiers:
 
 **Tier A - unit tests (mechanics, fast, run every commit):**
@@ -92,7 +92,7 @@ answers. Two test tiers:
 | **Ahmed body** | **Automotive bluff-body wake, Cd** | **Standard car-aero benchmark** |
 
 The Ahmed body is the gate: it is the canonical automotive validation case. Only after it
-matches published Cd and wake structure do we run real F1 geometry. OpenFOAM provides an
+matches published Cd and wake structure is it run on real F1 geometry. OpenFOAM provides an
 independent FVM cross-check on selected cases.
 
 ## 6. Repository layout
@@ -468,7 +468,7 @@ same-dimension sets. Candidates, and what each is actually good for:
   *(D3Q19 done; Q15/Q27 planned as data-only additions.)*
 - **D2Q9** - the standard 2D NS stencil (done).
 - **D2Q5 / D3Q7** - *not* full fluid stencils. These are advection-diffusion lattices for
-  a scalar field (temperature, species). Useful later if we add heat transfer or passive
+  a scalar field (temperature, species). Useful later if heat transfer or passive
   scalars alongside the flow - a second distribution on a small stencil.
 - **Higher-order 2D (D2Q17, D2Q37) / 3D (D3Q39, D3Q41)** - needed only for thermal
   (compressible/high-Mach) or high-accuracy work. Overkill for incompressible aero;
@@ -488,7 +488,7 @@ descriptor tests (weights sum to 1, opposites reverse, isotropy moments).
   (LBM is memory-bound), decouples stability from viscosity, and Lambda=3/16 fixes the
   tau-dependent wall location. **Full MRT deferred** as a later option if TRT proves
   insufficient at extreme Re (it buys more control at ~10-25% cost and much more code).
-- FP16 storage - how much accuracy do we trade for domain size? (measure in Phase 5).
+- FP16 storage - how much accuracy is traded for domain size? (measure in Phase 5).
 - Real F1 geometry source and its licensing (needed by Phase 4).
 - Cylinder Cd calibration: blockage, resolution, tau, MEM factor (Phase 2, in progress).
 
