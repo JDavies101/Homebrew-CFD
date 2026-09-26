@@ -76,7 +76,7 @@ class Simulation3D:
     # cs=0 disables LES, gx=0 disables forcing. forced + regularized still needs the Guo
     # correction to Pi (regularizing zeroes f_neq's -F/2 first moment), so keep gx=0 here
     @ti.kernel
-    def collide_reg(self, tau0: ti.f32, cs: ti.f32, gx: ti.f32):
+    def _collide_reg(self, tau0: ti.f32, cs: ti.f32, gx: ti.f32, U_in: ti.f32, alpha: ti.f32, zon: ti.i32):
         for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
             
             if self.solid[i, j, k] == 1 or self.lid[i, j, k] == 1:
@@ -107,6 +107,39 @@ class Simulation3D:
                 tau = 0.5 * (tau0 + ti.sqrt(tau0*tau0 + 18.0 * ti.sqrt(2.0) *cs*cs*Qmag / r))
             s = 1.0 / (tau + 3.0 * (self.nut_wall[i, j, k] + self.nut_les[i, j, k] + self.nut_sponge[i, j, k]))
             pre = 1.0 - 0.5 * s # Guo prefactor; BGK single rate
+
+            # absorbing layers, fused (were sponge_relax / sponge_relax_mean): strengths for this column
+            sx = self.sigma[i, k]
+            sz = 0.0
+            if zon == 1:
+                sz = self.sigma_z[i, k]
+
+            # moments after collision (Guo: j = r u + F/2) and after the x layer, in closed form,
+            # because relaxing toward feq(1, U_in) moves (rho, j) toward (1, U_in) by the same fraction
+            jx = r * ux + 0.5 * gx
+            jy = r * uy
+            jz = r * uz
+            r1 = r + sx * (1.0 - r)
+            jx1 = jx + sx * (U_in - jx)
+            jy1 = jy * (1.0 - sx)
+            jz1 = jz * (1.0 - sx)
+
+            rb = 1.0
+            ubx = 0.0
+            uby = 0.0
+            ubz = 0.0
+
+            if sz > 0.0:
+                self.rho_bar[i, j, k] += alpha * (r1 - self.rho_bar[i, j, k])
+                self.u_bar[0, i, j, k] += alpha * (jx1 / r1 - self.u_bar[0, i, j, k])
+                self.u_bar[1, i, j, k] += alpha * (jy1 / r1 - self.u_bar[1, i, j, k])
+                self.u_bar[2, i, j, k] += alpha * (jz1 / r1 - self.u_bar[2, i, j, k])
+                rb = self.rho_bar[i, j, k]
+                ubx = self.u_bar[0, i, j, k]
+                uby = self.u_bar[1, i, j, k]
+                ubz = self.u_bar[2, i, j, k]
+            ub2 = ubx * ubx + uby * uby + ubz * ubz
+                                                 
             for q in range(self.Q):
                 Hq = (self.E[q, 0] * self.E[q, 0] * Pxx + self.E[q, 1] * self.E[q, 1] * Pyy 
                       + self.E[q, 2] * self.E[q, 2] * Pzz
@@ -123,7 +156,16 @@ class Simulation3D:
                 uF = ux * gx
                 Sq = pre * self.W[q] * (3.0 * (eF - uF) + 9.0 * eu * eF) # Guo source (BGK form)
 
-                self.f[q, i, j, k] = self.feq(q, r, ux, uy, uz, usqr) + (1.0 - s) * fneq_reg + Sq
+                fpost = self.feq(q, r, ux, uy, uz, usqr) + (1.0 - s) * fneq_reg + Sq
+                if sx > 0.0:
+                    fpost -= sx * (fpost - self.feq(q, 1.0, U_in, 0.0, 0.0, U_in * U_in))
+                if sz > 0.0:
+                    fpost -= sz * (fpost - self.feq(q, rb, ubx, uby, ubz, ub2))
+                self.f[q, i, j, k] = fpost
+
+    def collide_reg(self, tau0, cs, gx, U_in=0.0, alpha=0.0, zon=0):
+        # layers are applied only where sigma / sigma_z are nonzero (both default to 0)
+        self._collide_reg(tau0, cs, gx, U_in, alpha, zon)
     
     # one collision kernel: moments -> local tau (LES + wall model) -> TRT/BGK relax + Guo source
     # cs=0 disables LES, gx=0 disables forcing, trt=0 gives BGK

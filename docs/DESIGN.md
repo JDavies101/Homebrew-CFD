@@ -474,10 +474,12 @@ relative comparisons and credible trends, not certification-grade absolute Cd. S
   inlet/outlet, cosine ramp over 1 T_ft from rest, x relaxation layers 24 cells (free-stream
   target), z layers 12 cells (running-mean target from ramp end), sigma 0.1. Cd 0.700 +/- 0.002
   (floor-only reference 0.693), rho 0.983-1.009, 196 hot cells (none on z walls; 46 at the floor,
-  the rest at the nose gap and front roof), z-strip u_x matching the adjacent flow. Cost: 947
-  MLUPS vs ~1187 without layers/floor (the z-layers are a separate pass over ~20% of cells).
-  Open: fuse the layer relaxation into `collide_reg` to recover the ~17%; the nose gap remains
-  the stability-critical region at H = 32.
+  the rest at the nose gap and front roof), z-strip u_x matching the adjacent flow. As separate
+  kernels the layers cost ~20% (947 MLUPS vs ~1187); I then fused both into `collide_reg`
+  (post-collision moments after the x-layer in closed form, single write of f; test 33 checks
+  equality with the separate kernels). Run 47: Cd 0.701 +/- 0.001, 174 hot cells, 1183 MLUPS -
+  the full configuration now runs at the no-layer baseline speed. Open: the nose gap remains the
+  stability-critical region at H = 32.
 - *4.1 STL import + voxelization.* Read a triangle mesh, voxelize to the solid mask plus the
   per-link `q` field via the SDF (so curved car surfaces are not staircased). *Gate: an STL of
   a sphere/cylinder recovers the analytic-mask Cd/St (validation by reduction).*

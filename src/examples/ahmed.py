@@ -112,14 +112,12 @@ def main():
         sim.wall_model_fast(nu, y1)
         r = min(s / ramp, 1.0)
         U_in = U * 0.5 * (1.0 - np.cos(np.pi * r))
-        sim.collide_reg(tau, cs, gx)
-        sim.sponge_relax(U_in)
         if s == ramp:
             sim.macroscopic()
             sim.rho_bar.copy_from(sim.rho)
             sim.u_bar.copy_from(sim.u)
-        if s >= ramp:
-            sim.sponge_relax_mean(relax_alpha)
+        zon = 1 if s >= ramp else 0
+        sim.collide_reg(tau, cs, gx, U_in, relax_alpha, zon)
         if s >= warmup and s % mean_every == 0:
             sim.macroscopic()
             u_sum += sim.u.to_numpy()

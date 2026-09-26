@@ -508,3 +508,49 @@ def test_sponge_profile():
     assert np.isclose(s[0, 5, 15], 0.02)
     assert np.isclose(s[20, 5, 15], 0.0)
     assert np.isclose(s[20, 5, 0], 0.02)
+
+# test 32: pressure outlet sets rho = rho_out on the last plane, keeps the neighbour's velocity,
+# and leaves every other plane untouched
+def test_outlet_pressure_pins_density(sim):
+    sim.solid.from_numpy(np.zeros((N, N, N), np.int32))
+    f = rng.uniform(0.9, 1.1, (L3.Q, N, N, N)).astype(np.float32)
+    sim.f.from_numpy(f)
+    sim.outlet_pressure(1.0)
+    g = sim.f.to_numpy()
+    rho_b = g[:, -1].sum(axis=0)
+    u_b = np.einsum("qc,qjk->cjk", L3.E, g[:, -1]) / rho_b
+    u_n = np.einsum("qc,qjk->cjk", L3.E, g[:, -2]) / g[:, -2].sum(axis=0)
+    assert np.allclose(rho_b, 1.0, atol=1e-5)
+    assert np.allclose(u_b, u_n, atol=1e-5)
+    assert np.array_equal(g[:, :-1], f[:, :-1])
+
+# test 33: fused layers in collide_reg == old separate kernels (collide_reg -> sponge_relax -> sponge_relax_mean)
+def test_collide_reg_fused_layers():
+    n = 12
+    f0 = rng.uniform(0.5, 1.5, (19, n, n, n)).astype(np.float32)
+    sig = np.zeros((n, n), np.float32)
+    sig[:3, :] = 0.1
+    sigz = np.zeros((n, n), np.float32)
+    sigz[:, :3] = 0.07
+    U_in = 0.05
+    alpha = 0.01
+
+    old = Simulation3D(n, n, n, "cpu")
+    old.f.from_numpy(f0)
+    old.rho_bar.fill(1.0)
+    old.collide_reg(0.8, 0.0, 0.0)                     # layers off during the collide
+    old.sigma.from_numpy(sig)
+    old.sigma_z.from_numpy(sigz)
+    old.sponge_relax(U_in)
+    old.sponge_relax_mean(alpha)
+
+    new = Simulation3D(n, n, n, "cpu")
+    new.f.from_numpy(f0)
+    new.rho_bar.fill(1.0)
+    new.sigma.from_numpy(sig)
+    new.sigma_z.from_numpy(sigz)
+    new.collide_reg(0.8, 0.0, 0.0, U_in, alpha, 1)
+
+    assert np.allclose(new.f.to_numpy(), old.f.to_numpy(), atol=1e-6)
+    assert np.allclose(new.u_bar.to_numpy(), old.u_bar.to_numpy(), atol=1e-7)
+    assert np.allclose(new.rho_bar.to_numpy(), old.rho_bar.to_numpy(), atol=1e-7)
