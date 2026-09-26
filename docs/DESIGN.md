@@ -440,6 +440,44 @@ relative comparisons and credible trends, not certification-grade absolute Cd. S
   (zero when unforced). Residual ~1% is non-monotone in resolution (-1.02% at ny=32, +0.99% at
   ny=64), consistent with a fit/near-wall metric effect and below collide_reg's 3% viscosity
   certification; test tolerance 2%. Follow-up: measure nu_eff from fitted curvature to pin it.
+  *4.0 progress - WALE on Ahmed (round nose, Re_H 30k). Gate closed (run 46).* WALE engages the
+  wall model on the body (4664-4725 wall-engaged nodes vs 816 with Smagorinsky), but the first
+  runs were noisy: 1541 hot cells (|u| > 2 u_ref), rho 0.93-1.20 (run 21). A viscosity sponge
+  caused global mass accumulation and was removed; the NEEM pressure outlet `outlet_pressure`
+  pins the mean density (run 29: no drift, but 1271 hot cells, rho 0.88-1.13). I then isolated
+  the remaining noise one cause at a time:
+  - *SGS vs BC (run 30).* Smagorinsky on the same case gave 28 hot cells, so the z free-slip BC
+    was not at fault. WALE's out-of-domain clamp halved the edge gradient; I replaced it with a
+    one-sided difference (`_in_dom` divisor in `les_wale`). Correct, but no effect on the noise
+    (run 31).
+  - *Trapped acoustics (runs 31-37).* The upstream field carried lateral velocity ~0.2-0.3 U and
+    rho range 0.23 at the inlet, uniform in j/k: acoustic modes (du ~ c_s drho) reflected by a
+    closed box (velocity inlet, free-slip z, no-slip floor/ceiling, pressure outlet). tau0 =
+    0.50016 gives almost no molecular damping and WALE (by design) gives nut ~ 0 in near-pure
+    shear and uniform flow; Smagorinsky had been damping them as a side effect. Changes: start
+    from rest with a cosine inlet ramp over 1 T_ft (no effect alone), regularized NEEM inlet and
+    outlet (rebuild f_neq from Pi only; upstream hot 503 -> 192), and a relaxation absorbing
+    layer `sponge_relax` at the x ends (f -> f - sigma (f - feq(1, U_in)), 24 cells, sigma 0.1,
+    quadratic ramp). The x-layers dropped rho to 0.976-1.030 (run 37).
+  - *Ramp-end stability (runs 38-42).* Adding z-wall layers diverged at the end of the ramp. A NaN
+    locator showed growth starting in the nose ground-clearance gap (6 cells, i ~ 128, j 2-4), and
+    the x-only case survived the same transient only marginally (peak 0.45 = 9 U). A
+    Smagorinsky floor under WALE (cs = 0.04, additive via `collide_reg`) halved the peak and
+    made the x+z case stable (run 42).
+  - *Layer bias (runs 43-46).* z-layers relaxing to the free stream raised Cd from 0.693 to 0.780:
+    with ~10% blockage the bypass flow beside the body is faster than U, and forcing it to U adds
+    resistance. Relaxing instead toward a running mean (`sponge_relax_mean`, EMA alpha = 1/2000)
+    removes fluctuations without imposing a mean, but started from rest it locked the strips at
+    ~0.3 U (run 45, Cd 1.275): a mean-target layer has no restoring force. Switching it on at
+    the end of the ramp, with the mean copied from the current field, fixed it (run 46).
+  *Reference configuration (run 46):* WALE cw 0.5 + Smagorinsky floor cs 0.04, regularized NEEM
+  inlet/outlet, cosine ramp over 1 T_ft from rest, x relaxation layers 24 cells (free-stream
+  target), z layers 12 cells (running-mean target from ramp end), sigma 0.1. Cd 0.700 +/- 0.002
+  (floor-only reference 0.693), rho 0.983-1.009, 196 hot cells (none on z walls; 46 at the floor,
+  the rest at the nose gap and front roof), z-strip u_x matching the adjacent flow. Cost: 947
+  MLUPS vs ~1187 without layers/floor (the z-layers are a separate pass over ~20% of cells).
+  Open: fuse the layer relaxation into `collide_reg` to recover the ~17%; the nose gap remains
+  the stability-critical region at H = 32.
 - *4.1 STL import + voxelization.* Read a triangle mesh, voxelize to the solid mask plus the
   per-link `q` field via the SDF (so curved car surfaces are not staircased). *Gate: an STL of
   a sphere/cylinder recovers the analytic-mask Cd/St (validation by reduction).*

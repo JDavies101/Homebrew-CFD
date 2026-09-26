@@ -31,6 +31,10 @@ class Simulation3D:
         self.nut_wall = ti.field(ti.f32, shape =(nx, ny, nz))  # wall-model eddy viscosity (0 away from walls)
         self.nut_les = ti.field(ti.f32, shape=(nx, ny, nz)) # WALE subgrid eddy viscosity (0 until les_wale runs)
         self.nut_sponge = ti.field(ti.f32, shape=(nx, ny, nz))   # absorbing-layer viscosity, set once, 0 by default
+        self.sigma = ti.field(ti.f32, shape=(nx, nz))              # relaxation layer strength per (x, z) column, 0 by default
+        self.sigma_z = ti.field(ti.f32, shape=(nx, nz))            # z-layer strength (relaxes to running mean), 0 by default
+        self.rho_bar = ti.field(ti.f32, shape=(nx, ny, nz))        # running-mean density, z-layer target
+        self.u_bar   = ti.field(ti.f32, shape=(self.D, nx, ny, nz))  # running-mean velocity, z-layer target
         self.body = ti.field(ti.i32, shape=(nx, ny, nz))       # body-only mask for drag (solid minus tunnel walls)
         # lattice constants as fields, built from the NumPy descriptor
         self.E   = ti.field(ti.i32, shape=(self.Q, self.D))
@@ -44,19 +48,11 @@ class Simulation3D:
     @ti.kernel
     def macroscopic(self):
         for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):    # parallel over cells
-            r = 0.0
-            mx = 0.0
-            my = 0.0
-            mz = 0.0
-            for q in range(self.Q):            # serial: sum the 19 populations
-                r += self.f[q, i, j, k]
-                mx += self.f[q, i, j, k] * self.E[q, 0]
-                my += self.f[q, i, j, k] * self.E[q, 1]
-                mz += self.f[q, i, j, k] * self.E[q, 2]
-            self.rho[i, j, k] = r
-            self.u[0, i, j, k] = mx / r
-            self.u[1, i, j, k] = my / r
-            self.u[2, i, j, k] = mz / r
+            mom = self._moments(i, j, k, 0.0)
+            self.rho[i, j, k] = mom[0]
+            self.u[0, i, j, k] = mom[1]
+            self.u[1, i, j, k] = mom[2]
+            self.u[2, i, j, k] = mom[3]
 
     # wrappers: each of these is a special case of collide_full (collide_reg is separate)
     # plain BGK
@@ -87,21 +83,12 @@ class Simulation3D:
                 continue        # wall nodes only hold bounced populations for one step, don't collide them
             
             # moments
-            r = 0.0
-            mx = 0.0
-            my = 0.0
-            mz = 0.0
-            for q in range(self.Q):
-                f = self.f[q, i, j, k]
-                r += f
-                mx += f * self.E[q, 0]
-                my += f * self.E[q, 1]
-                mz += f * self.E[q, 2]
-
-            ux = (mx + 0.5 * gx) / r # Guo half-force correction, same as collide_full
-            uy = my / r
-            uz = mz / r
-            usqr = ux * ux + uy * uy + uz * uz
+            mom = self._moments(i, j, k, gx)
+            r = mom[0]
+            ux = mom[1]
+            uy = mom[2]
+            uz = mom[3]
+            usqr = mom[4]
 
             # pass 1: non equilibrium stress tensor Pi = sum c_a c_b (f - feq)
             P = self._stress(i, j, k, r, ux, uy, uz, usqr)
@@ -147,19 +134,12 @@ class Simulation3D:
             if self.solid[i, j, k] == 1 or self.lid[i, j, k] == 1:
                 continue        # wall nodes only hold bounced populations for one step, don't collide them
             
-            r = 0.0
-            mx = 0.0
-            my = 0.0
-            mz = 0.0
-            for q in range(self.Q):
-                r += self.f[q, i, j, k]
-                mx += self.f[q, i, j, k] * self.E[q, 0]
-                my += self.f[q, i, j, k] * self.E[q, 1]
-                mz += self.f[q, i, j, k] * self.E[q, 2]
-            ux = (mx + 0.5 * gx) / r
-            uy = my / r
-            uz = mz / r
-            usqr = ux*ux + uy*uy + uz*uz
+            mom = self._moments(i, j, k, gx)
+            r = mom[0]
+            ux = mom[1]
+            uy = mom[2]
+            uz = mom[3]
+            usqr = mom[4]
 
             tau = tau0
             if cs > 0.0:
@@ -230,21 +210,12 @@ class Simulation3D:
             i = self.wall_ijk[m, 0]
             j = self.wall_ijk[m, 1]
             k = self.wall_ijk[m, 2]
-            r = 0.0
-            mx = 0.0
-            my = 0.0
-            mz = 0.0
 
-            for q in range(self.Q):
-                f = self.f[q, i, j, k]
-                r += f
-                mx += f * self.E[q, 0]
-                my += f * self.E[q, 1]
-                mz += f * self.E[q, 2]
+            mom = self._moments(i, j, k, 0.0)
+            ux = mom[1]
+            uy = mom[2]
+            uz = mom[3]
 
-            ux = mx / r
-            uy = my / r
-            uz = mz / r
             nxn = self.wall_n[m, 0]
             nyn = self.wall_n[m, 1]
             nzn = self.wall_n[m, 2]
@@ -275,11 +246,15 @@ class Simulation3D:
             up_z = self._uvec(i, j, k, 0, 0, 1)
             dn_z = self._uvec(i, j, k, 0, 0, -1)
 
+            nx_in = ti.max(self._in_dom(i, j, k, 1, 0, 0) + self._in_dom(i, j, k, -1, 0, 0), 1)
+            ny_in = ti.max(self._in_dom(i, j, k, 0, 1, 0) + self._in_dom(i, j, k, 0, -1, 0), 1)
+            nz_in = ti.max(self._in_dom(i, j, k, 0, 0, 1) + self._in_dom(i, j, k, 0, 0, -1), 1)
+
             g = ti.Matrix.zero(ti.f32, 3, 3)          # g[a, b] = d u_a / d x_b
             for a in ti.static(range(3)):
-                g[a, 0] = 0.5 * (up_x[a] - dn_x[a])
-                g[a, 1] = 0.5 * (up_y[a] - dn_y[a])
-                g[a, 2] = 0.5 * (up_z[a] - dn_z[a])
+                g[a, 0] = (up_x[a] - dn_x[a]) / nx_in
+                g[a, 1] = (up_y[a] - dn_y[a]) / ny_in
+                g[a, 2] = (up_z[a] - dn_z[a]) / nz_in
 
             S = 0.5 * (g + g.transpose())             # symmetric strain
             gsq = g @ g                               # g . g
@@ -295,7 +270,8 @@ class Simulation3D:
 
     @ti.func
     def _uvec(self, i, j, k, di, dj, dk):
-        # velocity at neighbour (i+di, j+dj, k+dk): out of domain -> clamp to (i,j,k);
+        # velocity at neighbour (i+di, j+dj, k+dk): out of domain -> clamp to (i,j,k)
+        # (with les_wale's in-domain divisor this gives a one-sided difference);
         # solid -> zero (no-slip); else the stored velocity
         ni = i + di
         nj = j + dj
@@ -308,6 +284,17 @@ class Simulation3D:
         else:
             v = ti.Vector([self.u[0, ni, nj, nk], self.u[1, ni, nj, nk], self.u[2, ni, nj, nk]])
         return v
+    
+    @ti.func
+    def _in_dom(self, i, j, k, di, dj, dk) -> ti.i32:
+        # 1 if (i+di, j+dj, k+dk) lies inside the domain, else 0
+        ni = i + di
+        nj = j + dj
+        nk = k + dk
+        inside = 1
+        if ni < 0 or ni >= self.nx or nj < 0 or nj >= self.ny or nk < 0 or nk >= self.nz:
+            inside = 0
+        return inside
 
     def build_wall_list(self):
         solid = self.solid.to_numpy()
@@ -464,25 +451,6 @@ class Simulation3D:
     def inlet_neem(self, U: ti.f32):
         for j, k in ti.ndrange(self.ny, self.nz):
             self._neem_column(j, k, U)
-            # neighbor (x = 1) moments
-            rn = 0.0
-            mx = 0.0
-            my = 0.0
-            mz = 0.0
-            for q in range(self.Q):
-                rn += self.f[q, 1, j, k]
-                mx += self.f[q, 1, j, k] * self.E[q,0]
-                my += self.f[q, 1, j, k] * self.E[q,1]
-                mz += self.f[q, 1, j, k] * self.E[q,2]
-            ux = mx / rn
-            uy = my / rn
-            uz = mz / rn
-            usqr_n = ux * ux + uy * uy + uz * uz
-            usqr_b = U * U
-            for q in range(self.Q):
-                feq_b = self.feq(q, rn, U, 0.0, 0.0, usqr_b)
-                feq_n = self.feq(q, rn, ux, uy, uz, usqr_n)
-                self.f[q, 0, j, k] = feq_b + (self.f[q, 1, j, k] - feq_n)
 
     # same as inlet_neem but only drives open columns, leaves solid at the inlet plane alone
     @ti.kernel
@@ -490,47 +458,27 @@ class Simulation3D:
         for j, k in ti.ndrange(self.ny, self.nz):
             if self.solid[0, j, k] == 0 and self.solid[1, j, k] == 0:   # open column only
                 self._neem_column(j, k, U)
-                # neighbor (x = 1) moments
-                rn = 0.0
-                mx = 0.0
-                my = 0.0
-                mz = 0.0
-                for q in range(self.Q):
-                    rn += self.f[q, 1, j, k]
-                    mx += self.f[q, 1, j, k] * self.E[q,0]
-                    my += self.f[q, 1, j, k] * self.E[q,1]
-                    mz += self.f[q, 1, j, k] * self.E[q,2]
-                ux = mx / rn
-                uy = my / rn
-                uz = mz / rn
-                usqr_n = ux * ux + uy * uy + uz * uz
-                usqr_b = U * U
-                for q in range(self.Q):
-                    eu_b = self.E[q,0] * U # imposed u = (U, 0, 0)
-                    feq_b = self.W[q] * rn * (1 + 3 * eu_b + 4.5 * eu_b * eu_b - 1.5 * usqr_b)
-                    eu_n = self.E[q,0] * ux + self.E[q,1] * uy + self.E[q,2] * uz
-                    feq_n = self.W[q] * rn * (1+ 3 * eu_n + 4.5 * eu_n * eu_n - 1.5 * usqr_n)
-                    self.f[q, 0, j, k] = feq_b + (self.f[q, 1, j, k] - feq_n)
 
     @ti.func
     def _neem_column(self, j, k, U):
-        rn = 0.0
-        mx = 0.0
-        my = 0.0
-        mz = 0.0
+        mom = self._moments(1, j, k, 0.0)
+        rn = mom[0]
+        ux = mom[1]
+        uy = mom[2]
+        uz = mom[3]
+        usqr_n = mom[4]
+        P = self._stress(1, j, k, rn, ux, uy, uz, usqr_n)    # [Pxx, Pyy, Pzz, Pxy, Pxz, Pyz]
+        trace = P[0] + P[1] + P[2]
+
         for q in range(self.Q):
-            rn += self.f[q, 1, j, k]
-            mx += self.f[q, 1, j, k] * self.E[q,0]
-            my += self.f[q, 1, j, k] * self.E[q,1]
-            mz += self.f[q, 1, j, k] * self.E[q,2]
-        ux = mx / rn
-        uy = my / rn
-        uz = mz / rn
-        usqr_n = ux * ux + uy * uy + uz * uz
-        for q in range(self.Q):
+            ex = self.E[q, 0]
+            ey = self.E[q, 1]
+            ez = self.E[q, 2]
+            Hq = (ex * ex * P[0] + ey * ey * P[1] + ez * ez * P[2]
+                  + 2.0 * (ex * ey * P[3] + ex * ez * P[4] + ey * ez * P[5])
+                  - (1.0 / 3.0) * trace)
             feq_b = self.feq(q, rn, U, 0.0, 0.0, U * U)
-            feq_n = self.feq(q, rn, ux, uy, uz, usqr_n)
-            self.f[q, 0, j, k] = feq_b + (self.f[q, 1, j, k] - feq_n)
+            self.f[q, 0, j, k] = feq_b + 4.5 * self.W[q] * Hq
     
     # zero-gradient outlet: copy the second-to-last plane onto the last
     @ti.kernel
@@ -538,6 +486,65 @@ class Simulation3D:
         for j, k in ti.ndrange(self.ny, self.nz):
             for q in range(self.Q):
                 self.f[q, self.nx - 1, j, k] = self.f[q, self.nx - 2, j , k]
+
+    # pressure (density) outlet, Guo non-equilibrium extrapolation: impose rho_out at x = nx-1,
+    # take the velocity and the non-equilibrium part from x = nx-2. pins the mean density, which
+    # a velocity inlet + zero-gradient outlet leave free to drift. open columns only.
+    @ti.kernel
+    def outlet_pressure(self, rho_out: ti.f32):
+        for j,k in ti.ndrange(self.ny, self.nz):
+            if self.solid[self.nx - 1, j, k] == 0 and self.solid[self.nx - 2, j, k] == 0:
+                i = self.nx -2
+                mom = self._moments(i, j, k, 0.0)
+                rn = mom[0]
+                ux = mom[1]
+                uy = mom[2]
+                uz = mom[3]
+                usqr = mom[4]
+
+                P = self._stress(i, j, k, rn, ux, uy, uz, usqr)
+                trace = P[0] + P[1] + P[2]
+
+                for q in range(self.Q):
+                    ex = self.E[q, 0]
+                    ey = self.E[q, 1]
+                    ez = self.E[q, 2]
+                    Hq = (ex * ex * P[0] + ey * ey * P[1] + ez * ez * P[2]
+                          + 2.0 * (ex * ey * P[3] + ex * ez * P[4] + ey * ez * P[5])
+                          - (1.0 / 3.0) * trace)
+                    feq_b = self.feq(q, rho_out, ux, uy, uz, usqr)
+                    self.f[q, self.nx - 1, j, k] = feq_b + 4.5 * self.W[q] * Hq
+    
+    # relaxation absorbing layer: f -> f - sigma (f - feq(1, U_in, 0, 0)) near x = 0 and x = nx-1.
+    # absorbs outgoing acoustic / vortical content and pins rho = 1 in the layers.
+    @ti.kernel
+    def sponge_relax(self, U: ti.f32):
+        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
+            s = self.sigma[i, k]
+            if s > 0.0 and self.solid[i, j, k] == 0:
+                for q in range(self.Q):
+                    target = self.feq(q, 1.0, U, 0.0, 0.0, U * U)
+                    self.f[q, i, j, k] -= s * (self.f[q, i, j, k] - target)
+    
+    # z-wall absorbing layer: relax f toward the local running mean (rho_bar, u_bar), not the free stream.
+    # removes fluctuations (trapped transverse waves) without imposing a mean flow on the bypass region.
+    @ti.kernel
+    def sponge_relax_mean(self, alpha: ti.f32):
+        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
+            s = self.sigma_z[i, k]
+            if s > 0.0 and self.solid[i, j, k] == 0:
+                mom = self._moments(i, j, k, 0.0)
+                self.rho_bar[i, j, k] += alpha * (mom[0] - self.rho_bar[i, j, k])
+                for d in ti.static(range(3)):
+                    self.u_bar[d, i, j, k] += alpha * (mom[1 + d] - self.u_bar[d, i, j, k])
+                rb = self.rho_bar[i, j, k]
+                ubx = self.u_bar[0, i, j, k]
+                uby = self.u_bar[1, i, j, k]
+                ubz = self.u_bar[2, i, j, k]
+                ub2 = ubx * ubx + uby * uby + ubz * ubz
+                for q in range(self.Q):
+                    target = self.feq(q, rb, ubx, uby, ubz, ub2)
+                    self.f[q, i, j, k] -= s * (self.f[q, i, j, k] - target)
 
     # force on the solid by momentum exchange, sum 2 c_i f_i over fluid->solid links
     # call after collide, before stream
@@ -601,6 +608,24 @@ class Simulation3D:
     def feq(self, q, r, ux, uy, uz, usqr):
         eu = self.E[q,0] * ux + self.E[q,1] * uy + self.E[q,2] * uz
         return self.W[q] * r * (1 + 3 * eu + 4.5 * eu * eu - 1.5 * usqr)
+    
+    @ti.func
+    def _moments(self, i, j, k, gx):
+        r = 0.0
+        mx = 0.0
+        my = 0.0
+        mz = 0.0
+        for q in range(self.Q):
+            f = self.f[q, i, j, k]
+            r += f
+            mx += f * self.E[q, 0]
+            my += f * self.E[q, 1]
+            mz += f * self.E[q, 2]
+        ux = (mx + 0.5 * gx) / r
+        uy = my / r
+        uz = mz / r
+        usqr = ux * ux + uy * uy + uz * uz
+        return ti.Vector([r, ux, uy, uz, usqr])
     
     @ti.func
     def _stress(self, i, j, k, r, ux, uy, uz, usqr):

@@ -5,7 +5,7 @@ from src.engine.simulation3d import Simulation3D
 from src.post.progress import Progress
 from src.post.vtk import write_field
 import sys
-from src.geometry.sponge import sponge
+from src.geometry.sponge import sponge, relax_profile
 from src.post.run_log import RunRecord
 
 H = 32                      # small for iteration; go to 48 for real runs
@@ -24,17 +24,25 @@ T_ft = nx / U                        # flow-through time in steps (~14000 at H=3
 warmup = round(5 * T_ft)             # establish flow + wake
 steps  = round(11 * T_ft)            # + ~6 flow-throughs (~30 shedding periods) to average
 #warmup = round(3 * T_ft)
-#steps  = round(6 * T_ft) 
+#steps  = round(6 * T_ft)
+#steps = 15000 
+ramp = round(T_ft)
 sample_every = 25   # sample force every N steps (avoids per-step GPU sync)
 check_every  = max(1, steps // 300) # progress readout interval
-sgs = sys.argv[3] if len(sys.argv) > 3 else "smag"      # "smag" or "wale"
-cs = 0.084 if sgs == "smag" else 0.0
+sgs = sys.argv[3] if len(sys.argv) > 3 else "wale"      # "smag" or "wale"
+cs_floor = 0.04 # Smagorinsky floor under WALE: damps grid-scale noise where WALE's nut ~ 0
+cs = 0.084 if sgs == "smag" else cs_floor
 cw = 0.5
 gx = 0.0
 trt = 1
 y1 = 0.5 # wall distance, halfway bounce back
 sponge_width = 8                    # absorbing layer at inlet/outlet/side walls, cells
-sponge_nu = 0.02                    # peak sponge viscosity; 0.0 disables the sponge
+sponge_nu = 0.0                     # peak sponge viscosity; 0.0 disables the sponge
+relax_width = 24                      # x layers (inlet/outlet), cells
+relax_width_z = 12                    # z-wall layers, cells
+relax_sigma = 0.1
+relax_alpha = 1.0 / 2000.0  # z-layer running-mean rate (about a 2000-step memory)
+outlet_bc = "pressure"              # "pressure" (rho = 1 at the exit) or "copy" (zero-gradient)
 phi = int(sys.argv[1]) if len(sys.argv) > 1 else 25   # slant angle, deg
 nose = sys.argv[2] if len(sys.argv) > 2 else "round"   # "round" or "square"
 tag = f"phi{phi}" + ("" if nose == "round" else f"_{nose}") + ("" if sgs == "smag" else f"_{sgs}")
@@ -77,9 +85,12 @@ def main():
     if sponge_nu > 0.0:
         sim.nut_sponge.from_numpy(sponge(nx, ny, nz, width=sponge_width, nu_max=sponge_nu))
 
-    sim.init_equilibrium(np.full((nx, ny, nz), U, np.float32),   # u_x = U everywhere
+    sim.init_equilibrium(np.zeros((nx, ny, nz), np.float32),   # start from rest, inlet ramps up
                      np.zeros((nx, ny, nz), np.float32),
                      np.zeros((nx, ny, nz), np.float32))
+    
+    sim.sigma.from_numpy(relax_profile(nx, nz, relax_width, 0, relax_sigma))       # x layers only, free-stream target
+    sim.sigma_z.from_numpy(relax_profile(nx, nz, 0, relax_width_z, relax_sigma))   # z layers only, running-mean target                                                       # mean starts at rest density
     
     u_sum = np.zeros((3, nx, ny, nz), np.float32)
     n_u = 0
@@ -88,17 +99,27 @@ def main():
     cd = []
     run = RunRecord("ahmed", sim, steps=steps, u_ref=U, nu=nu, tau=round(tau, 6), Re=Re_H,
                     geometry=f"H={H} phi={phi} {nose}", warmup=warmup, avg_Tft=round((steps - warmup) / T_ft, 1),
-                    collision="regularized", sgs=f"smag cs={cs}" if sgs == "smag" else f"wale cw={cw}",
+                    collision="regularized", sgs=f"smag cs={cs}" if sgs == "smag" else f"wale cw={cw} + smag floor cs={cs}",
                     wall_model="log-law y+>30", walls="staircase BB", forcing="none",
-                    boundaries="NEEM-open inlet / zero-grad outlet / free-slip z / no-slip floor+ceiling",
-                    sponge=f"width {sponge_width}, nu_max {sponge_nu}" if sponge_nu > 0.0 else "none")
+                    boundaries=f"NEEM-open inlet / {outlet_bc} outlet / free-slip z / no-slip floor+ceiling",
+                    sponge=f"relax x {relax_width} (free stream) / z {relax_width_z} (running mean from ramp end, alpha {relax_alpha:.1e}), sigma {relax_sigma}")
+    
     prog = Progress(steps)
     for s in range(steps):
         if sgs == "wale":
             sim.macroscopic()               # WALE needs current u (not needed on the smag path)
             sim.les_wale(cw)
         sim.wall_model_fast(nu, y1)
+        r = min(s / ramp, 1.0)
+        U_in = U * 0.5 * (1.0 - np.cos(np.pi * r))
         sim.collide_reg(tau, cs, gx)
+        sim.sponge_relax(U_in)
+        if s == ramp:
+            sim.macroscopic()
+            sim.rho_bar.copy_from(sim.rho)
+            sim.u_bar.copy_from(sim.u)
+        if s >= ramp:
+            sim.sponge_relax_mean(relax_alpha)
         if s >= warmup and s % mean_every == 0:
             sim.macroscopic()
             u_sum += sim.u.to_numpy()
@@ -107,8 +128,11 @@ def main():
             sim.drag_body()                                          # only on sample steps now
             cd.append(float(sim.force.to_numpy()[0]) / (0.5*U*U*A))
         sim.stream()
-        sim.inlet_neem_open(U)           # reuse: drives open rows, skips the solid floor at the inlet
-        sim.outlet()
+        sim.inlet_neem_open(U_in)        # reuse: drives open rows, skips the solid floor at the inlet
+        if outlet_bc == "pressure":
+            sim.outlet_pressure(1.0)
+        else:
+            sim.outlet()
         sim.free_slip_z()                # side walls
         sim.bounce_back()                # floor + ceiling + body
 
