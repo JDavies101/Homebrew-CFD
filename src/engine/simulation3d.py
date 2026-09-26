@@ -4,6 +4,7 @@ import taichi as ti
 import numpy as np
 from src.engine import lattice3d as L3
 from src.engine import runtime
+from src.geometry.sdf import normals_from_sdf
 
 @ti.data_oriented
 class Simulation3D:
@@ -247,8 +248,10 @@ class Simulation3D:
         
 
     @ti.kernel
-    def wall_model_fast(self, nu: ti.f32, y1: ti.f32):
+    def wall_model_fast(self, nu: ti.f32):
         for m in range(self.n_wall):
+            y1 = self.wall_y1[m]
+
             i = self.wall_ijk[m, 0]
             j = self.wall_ijk[m, 1]
             k = self.wall_ijk[m, 2]
@@ -338,7 +341,7 @@ class Simulation3D:
             inside = 0
         return inside
 
-    def build_wall_list(self):
+    def build_wall_list(self, phi=None):
         solid = self.solid.to_numpy()
         E = L3.E
         nx, ny, nz = self.nx, self.ny, self.nz
@@ -365,8 +368,21 @@ class Simulation3D:
 
         M = ijk.shape[0]
         self.n_wall = M
-        self.wall_ijk = ti.field(ti.i32, shape=(M, 3)); self.wall_ijk.from_numpy(ijk)
-        self.wall_n   = ti.field(ti.f32, shape=(M, 3)); self.wall_n.from_numpy(normals)
+        
+        y1 = np.full(M, 0.5, np.float32) # halfway bounce-back default
+        if phi is not None:
+            px = ijk[:, 0].astype(np.float64)
+            py = ijk[:, 1].astype(np.float64)
+            pz = ijk[:, 2].astype(np.float64)
+            y1 = phi(px, py, pz).astype(np.float32) # true normal distance to the surface
+            normals = normals_from_sdf(phi, px, py, pz).astype(np.float32)
+
+        self.wall_ijk = ti.field(ti.i32, shape=(M, 3))
+        self.wall_ijk.from_numpy(ijk)
+        self.wall_n = ti.field(ti.f32, shape=(M, 3))
+        self.wall_n.from_numpy(normals)
+        self.wall_y1 = ti.field(ti.f32, shape=M)
+        self.wall_y1.from_numpy(y1)
     
     # pull each population from its upstream neighbour into f_new
     @ti.kernel

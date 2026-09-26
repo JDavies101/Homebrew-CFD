@@ -109,7 +109,7 @@ def main():
         if sgs == "wale":
             sim.macroscopic()               # WALE needs current u (not needed on the smag path)
             sim.les_wale(cw)
-        sim.wall_model_fast(nu, y1)
+        sim.wall_model_fast(nu)
         r = min(s / ramp, 1.0)
         U_in = U * 0.5 * (1.0 - np.cos(np.pi * r))
         if s == ramp:

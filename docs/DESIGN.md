@@ -480,6 +480,14 @@ relative comparisons and credible trends, not certification-grade absolute Cd. S
   equality with the separate kernels). Run 47: Cd 0.701 +/- 0.001, 174 hot cells, 1183 MLUPS -
   the full configuration now runs at the no-layer baseline speed. Open: the nose gap remains the
   stability-critical region at H = 32.
+  *4.0 progress - SDF wall geometry.* `src/geometry/sdf.py`: a shape is a function phi(x, y, z)
+  (> 0 fluid, < 0 solid). From one phi I get the solid mask, per-link Bouzidi fractions q (sign
+  change of phi along each boundary link, bisection to f64 precision, out-of-domain links masked),
+  wall normals grad(phi)/|grad(phi)|, and the first-node wall distance. Validated by reduction:
+  on an off-lattice sphere, q matches the analytic ray-sphere `wall_fraction_sphere` to 1e-5 over
+  the same link set, and normals are radial to 1e-6. `build_wall_list(phi)` now stores per-node
+  `wall_y1 = phi(node)` and SDF normals; without phi it keeps y1 = 0.5 and mask normals, and the
+  Ahmed reference run reproduces bit-identically (run 48).
 - *4.1 STL import + voxelization.* Read a triangle mesh, voxelize to the solid mask plus the
   per-link `q` field via the SDF (so curved car surfaces are not staircased). *Gate: an STL of
   a sphere/cylinder recovers the analytic-mask Cd/St (validation by reduction).*
