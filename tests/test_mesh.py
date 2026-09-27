@@ -1,7 +1,7 @@
 # mesh I/O and narrow-band distance: reduce to exact answers
 import numpy as np
-from src.geometry.mesh import read_stl, write_stl, icosphere
-from src.geometry.mesh_distance import band_distance, sdf_from_mesh
+from src.geometry.mesh import read_stl, write_stl, icosphere, box_mesh
+from src.geometry.mesh_distance import band_distance, sdf_from_mesh, q_from_mesh
 from src.geometry.sdf import sdf_sphere, q_from_sdf
 from src.geometry.wall_fraction import wall_fraction_sphere
 from src.engine import lattice3d as L3
@@ -102,3 +102,38 @@ def test_mesh_phi_reduces_to_sphere():
     
     assert (dq * cn).max() < sag + interp                           # wall displacement along the normal
     assert np.median(dq) < 0.02                                     # typical link is essentially exact
+
+def _dir(v):
+    return int(np.nonzero((L3.E == np.array(v)).all(axis=1))[0][0])
+
+# test 6: flat faces give exact q on straight and diagonal links
+def test_q_from_mesh_box_exact():
+    n = 16
+    tris = box_mesh((5.3, 2.2, 2.4), (9.6, 13.7, 13.6))
+    grid, phi = sdf_from_mesh(tris, n, n, n)
+    q = q_from_mesh(tris, phi, n, n, n)
+    px = _dir((1, 0, 0))
+    pxy = _dir((1, 1, 0))
+    mx = _dir((-1, 0, 0))
+    inner = (slice(4, 11), slice(4, 11))
+    assert np.allclose(q[px, 5][inner], 0.3, atol=1e-5)           # x = 5 -> face at 5.3
+    assert np.allclose(q[pxy, 5][inner], 0.3, atol=1e-5)          # diagonal hits the same face at t = 0.3
+    assert np.allclose(q[mx, 10][inner], 0.4, atol=1e-5)          # x = 10 -> face at 9.6 going -x
+
+
+# test 7: exact mesh q on the icosphere is limited only by the facet sag
+def test_q_from_mesh_icosphere():
+    tris = icosphere(C, R, subdiv=4)
+    grid, phi = sdf_from_mesh(tris, N, N, N)
+    q_mesh = q_from_mesh(tris, phi, N, N, N)
+    q_ref = wall_fraction_sphere(N, N, N, *C, R)
+    sag = _sphere_sag(tris)
+    both = (q_mesh > 0) & (q_ref > 0)
+    assert both.sum() > 0.99 * (q_ref > 0).sum()
+    d, i, j, k = np.nonzero(both)
+    E = L3.E[d].astype(np.float64)
+    P = np.stack([i, j, k], axis=1) + q_ref[both][:, None] * E
+    n = (P - np.array(C)) / R
+    cn = np.abs((E * n).sum(axis=1))
+    dq = np.abs(q_mesh[both] - q_ref[both])
+    assert (dq * cn).max() < sag + 1e-4                           # was sag + trilinear bound with q_from_sdf

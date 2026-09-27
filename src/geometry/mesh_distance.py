@@ -2,6 +2,8 @@
 import numpy as np
 import taichi as ti
 from src.engine import runtime
+from src.engine import lattice3d as L3
+from src.geometry.sdf import q_from_sdf
 
 @ti.func
 def _closest_on_tri(p, a, b, c):
@@ -151,3 +153,67 @@ def sdf_from_mesh(tris, nx, ny, nz, band=3.0, backend="cpu"):
     grid = np.where(inside, -mag, mag).astype(np.float32)
 
     return grid, trilinear(grid)
+
+@ti.kernel
+def _link_hits(tris: ti.types.ndarray(), E:ti.types.ndarray(), q: ti.template()):
+    # nearest segment-triangle hit t in [0, 1] for every lattice link near each triangle (Moller-Trumbore)
+    for m in range(tris.shape[0]):
+        a = ti.Vector([tris[m, 0, 0], tris[m, 0, 1], tris[m, 0, 2]])
+        b = ti.Vector([tris[m, 1, 0], tris[m, 1, 1], tris[m, 1, 2]])
+        c = ti.Vector([tris[m, 2, 0], tris[m, 2, 1], tris[m, 2, 2]])
+
+        e1 = b - a
+        e2 = c - a
+
+        lo = ti.floor(ti.min(a, b, c)) - 1.0
+        hi = ti.ceil(ti.max(a, b, c)) + 1.0
+
+        i0 = ti.max(ti.cast(lo[0], ti.i32), 0 )
+        j0 = ti.max(ti.cast(lo[1], ti.i32), 0)
+        k0 = ti.max(ti.cast(lo[2], ti.i32), 0)
+
+        i1 = ti.min(ti.cast(hi[0], ti.i32), q.shape[1] - 1)
+        j1 = ti.min(ti.cast(hi[1], ti.i32), q.shape[2] - 1)
+        k1 = ti.min(ti.cast(hi[2], ti.i32), q.shape[3] - 1)
+
+        for i in range(i0, i1 + 1):
+            for j in range(j0, j1 + 1):
+                for k in range(k0, k1 + 1):
+                    p = ti.Vector([ti.cast(i, ti.f32), ti.cast(j, ti.f32), ti.cast(k, ti.f32)])
+                    s = p - a
+
+                    for d in range(E.shape[0]):
+                        dv = ti.Vector([ti.cast(E[d, 0], ti.f32), ti.cast(E[d, 1], ti.f32), ti.cast(E[d, 2], ti.f32)])
+                        h = dv.cross(e2)
+                        det = e1.dot(h)
+
+                        if ti.abs(det) > 1e-12:
+                            inv = 1.0 / det
+                            u = s.dot(h) * inv
+
+                            if u >= 0.0 and u <= 1.0:
+                                qv = s.cross(e1)
+                                v = dv.dot(qv) * inv
+
+                                if v >= 0.0 and u + v <= 1.0:
+                                    t = e2.dot(qv) * inv
+
+                                    if t >= 0.0 and t <= 1.0:
+                                        ti.atomic_min(q[d, i, j, k], t)
+
+def q_from_mesh(tris, phi, nx, ny, nz, backend="cpu"):
+    # exact Bouzidi fractions for a triangle mesh; phi (from sdf_from_mesh) defines which links are boundary links
+    runtime.init(backend)
+    
+    qh = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))
+    qh.fill(2.0)
+
+    _link_hits(np.ascontiguousarray(tris, np.float32), np.ascontiguousarray(L3.E, np.int32), qh)
+
+    t = qh.to_numpy()
+    q_phi = q_from_sdf(phi, nx, ny, nz)
+    link = q_phi > 0.0
+    hit = t <= 1.0
+    q = np.where(link & hit, np.maximum(t, 1e-6), q_phi)
+
+    return q.astype(np.float32)

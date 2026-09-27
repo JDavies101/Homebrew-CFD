@@ -1,5 +1,6 @@
 # signed distance fields: phi > 0 fluid, phi < 0 solid, phi = 0 on the surface.
-# one phi gives the solid mask, per-link Bouzidi fractions q, wall normals, and wall distance.import numpy as np
+# one phi gives the solid mask, per-link Bouzidi fractions q, wall normals, and wall distance.
+# import numpy as np
 from src.engine import lattice3d as L3
 import numpy as np
 
