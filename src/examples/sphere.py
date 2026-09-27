@@ -10,6 +10,7 @@ from src.post.run_log import RunRecord
 import sys
 from src.geometry.mesh import icosphere, write_stl, read_stl
 from src.geometry.mesh_distance import sdf_from_mesh, q_from_mesh
+from src.geometry.sponge import relax_profile
 
 D = 20                      # sphere diameter in cells
 nx = 384
@@ -44,22 +45,29 @@ def main():
     sim.solid.from_numpy(solid)
     sim.q.from_numpy(q)
 
-    sim.f.from_numpy(np.tile(L.W[:, None, None, None], (1, nx, ny, nz)).astype(np.float32))
+    sim.init_equilibrium(np.full((nx, ny, nz), U, np.float32),      # start in uniform flow at U
+                         np.zeros((nx, ny, nz), np.float32),
+                         np.zeros((nx, ny, nz), np.float32))
+    sim.sigma.from_numpy(relax_profile(nx, nz, 24, 0, 0.1))           # x absorbing layers only
 
     run = RunRecord("sphere", sim, steps=steps, u_ref=U, nu=nu, tau=round(tau, 6), Re=Re,
                     geometry=f"D={D}, {geom}", collision="TRT", sgs="none", walls="Bouzidi",
-                    boundaries="equilibrium inlet / zero-grad outlet / free-slip y,z", forcing="none")
+                    boundaries="regularized NEEM inlet / pressure outlet / free-slip y,z", forcing="none")
     prog = Progress(steps)
     for s in range(steps):
         sim.collide_trt(tau)
+        sim.sponge_relax(U)            # absorb acoustic waves at inlet/outlet (free-stream target)
         sim.fc.copy_from(sim.f)        # snapshot post-collision
         sim.stream()
-        sim.inlet(U)        # equilibrium inlet: stable at free-slip corners (NEEM diverges there)
-        sim.outlet()
+        sim.inlet_neem_open(U)          # velocity inlet: u = U imposed, rho from the interior, regularized f_neq
+        sim.outlet_pressure(1.0)        # pins the mean density; the zero-gradient outlet let it drift to 1.08
         sim.free_slip_y()
         sim.free_slip_z()
         sim.bounce_back_interp()
         sim.drag_interp()
+
+        if s == steps - 5000:
+            F_mid = float(sim.force.to_numpy()[0])
 
         if s % check_every == 0:
             hi = sim.f_absmax()                      # cheap GPU reduction, no full copy
@@ -87,12 +95,15 @@ def main():
     U_eff = float(u[0, cx, 20, nz//2])   # near the wall, out of the wake
     Re_eff = U_eff * D / nu
     F = sim.force.to_numpy()
-    cd = float(F[0] / (0.5 * 1.0 * U_eff * U_eff * A))   # normalize by the actual free-stream
-    cd_ref = (24/Re_eff)*(1 + 0.15*Re_eff**0.687)        # Schiller-Naumann at the MEASURED Re
+    cd = float(F[0] / (0.5 * 1.0 * U * U * A))            # nominal free stream: the inlet now delivers U
+    cd_ref = (24 / Re) * (1 + 0.15 * Re ** 0.687)          # Schiller-Naumann at the nominal Re
+
+    drift = (float(F[0]) - F_mid) / float(F[0])
+    print(f"drag change over last 5000 steps: {100 * drift:+.2f}%  (steady if |.| < 0.5%)")
     
-    print(f"U_eff = {U_eff:.4f}  ->  effective Re = {Re_eff:.0f}")
-    print(f"Cd = {cd:.3f}   [Schiller-Naumann at Re={Re_eff:.0f} ~ {cd_ref:.2f}]")
-    run.finish(metric="Cd", value=round(cd, 4), reference=round(cd_ref, 4), other=f"Re_eff {Re_eff:.0f}")
+    print(f"U_eff beside sphere = {U_eff:.4f} (check: ~U, slightly above from blockage)")
+    print(f"Cd = {cd:.3f}   [Schiller-Naumann at Re={Re} ~ {cd_ref:.2f}]")
+    run.finish(metric="Cd", value=round(cd, 4), reference=round(cd_ref, 4), other=f"U_eff {U_eff:.4f} drift {100 * drift:+.2f}%")
 
 if __name__ == "__main__":
     main()

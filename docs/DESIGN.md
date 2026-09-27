@@ -497,8 +497,17 @@ relative comparisons and credible trends, not certification-grade absolute Cd. S
   r), which matters at the small radii of a car. Tests: exact q on a box (flat faces, straight and
   diagonal links), icosphere sign/distance/q against the analytic sphere, with q errors measured
   as wall displacement along the normal |dq||c.n| because grazing links are ill-conditioned in q.
-  Flow gate: an icosphere STL (20480 triangles) run through the sphere case gives Cd 2.0047 vs
-  2.0027 for the analytic geometry (+0.10%, gate 1%), with 2 mask cells differing.
+  Flow gate: an icosphere STL (20480 triangles) run through the sphere case gives Cd 1.6233 vs
+  1.6228 for the analytic geometry (+0.03%, gate 1%; runs 52-53), with 2 mask cells differing.
+  *Sphere case fix (found while running the gate).* The example used an equilibrium inlet
+  (f = feq(1, U) at x = 0) with a zero-gradient outlet. That fixes the boundary distribution,
+  not the velocity: the interior settled at u = 0.072 and rho = 1.08 (78% of the intended mass
+  flux), hidden by normalizing Cd with the measured U_eff. With the regularized NEEM inlet and
+  pressure outlet the impulsive start from rest then trapped a domain-length acoustic mode
+  (damping time ~1/(nu k^2) ~ 3.7e5 steps). Starting from uniform flow at U plus x relaxation
+  layers gives a steady field (mass flux constant to +/-0.1%, drag drift 0.00% over 5000 steps)
+  and Cd 1.623 vs Schiller-Naumann 1.54 at Re 50 (+5.3%: correlation scatter ~5%, 1.9% blockage,
+  D = 20). Lesson: every open-boundary case needs a mass-flux-vs-x check and a drag drift check.
   Original plan: Read a triangle mesh, voxelize to the solid mask plus the
   per-link `q` field via the SDF (so curved car surfaces are not staircased). *Gate: an STL of
   a sphere/cylinder recovers the analytic-mask Cd/St (validation by reduction).*
