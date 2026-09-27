@@ -1,7 +1,10 @@
 # mesh I/O and narrow-band distance: reduce to exact answers
 import numpy as np
 from src.geometry.mesh import read_stl, write_stl, icosphere
-from src.geometry.mesh_distance import band_distance
+from src.geometry.mesh_distance import band_distance, sdf_from_mesh
+from src.geometry.sdf import sdf_sphere, q_from_sdf
+from src.geometry.wall_fraction import wall_fraction_sphere
+from src.engine import lattice3d as L3
 
 N = 24
 C = (11.3, 12.1, 11.7)
@@ -49,3 +52,53 @@ def test_band_distance_icosphere():
     near = exact <= 2.5
     assert near.sum() > 1000
     assert np.all(np.abs(dist[near] - exact[near]) <= sag + 1e-4)
+
+def _sphere_sag(tris):
+    e = tris[:, 0] - tris[:, 1]
+    edge = np.sqrt((e * e).sum(axis=1)).max()
+    return R - np.sqrt(R * R - (edge * edge) / 3.0)
+
+# test 4: inside/outside from ray parity matches the analytic sphere away from the facets
+def test_mesh_sign_matches_sphere():
+    tris = icosphere(C, R, subdiv=4)
+    grid, phi = sdf_from_mesh(tris, N, N, N)
+    X, Y, Z = np.meshgrid(np.arange(N), np.arange(N), np.arange(N), indexing="ij")
+
+    dx = X - C[0]
+    dy = Y - C[1]
+    dz = Z - C[2]
+
+    s = np.sqrt(dx * dx + dy * dy + dz * dz) - R
+    clear = np.abs(s) > _sphere_sag(tris) + 0.01
+
+    assert (s[clear] < 0).sum() > 500 # nodes not inside the facet gap
+    assert np.array_equal(grid[clear] < 0, s[clear] < 0) # plenty of interior nodes checked
+
+# test 5: signed field and q from the mesh reduce to the analytic sphere
+def test_mesh_phi_reduces_to_sphere():
+    tris = icosphere(C, R, subdiv=4)
+    grid, phi = sdf_from_mesh(tris, N, N, N)
+    sag = _sphere_sag(tris)
+    X, Y, Z = np.meshgrid(np.arange(N), np.arange(N), np.arange(N), indexing="ij")
+
+    exact = sdf_sphere(*C, R)(X, Y, Z)
+    band = np.abs(exact) <= 2.0
+
+    assert np.all(np.abs(grid[band] - exact[band]) <= sag + 1e-3)   # signed distance at nodes
+
+    q_mesh = q_from_sdf(phi, N, N, N)
+    q_ref = wall_fraction_sphere(N, N, N, *C, R)
+    both = (q_mesh > 0) & (q_ref > 0)
+
+    assert both.sum() > 0.99 * (q_ref > 0).sum()                    # same links, bar facet-gap nodes
+    
+    d, i, j, k = np.nonzero(both)
+    E = L3.E[d].astype(np.float64)                                  # link vector of each boundary link
+    P = np.stack([i, j, k], axis=1) + q_ref[both][:, None] * E      # exact wall point on the link
+    n = (P - np.array(C)) / R                                       # sphere normal there
+    cn = np.abs((E * n).sum(axis=1))                                # |c . n|, how steeply the link meets the wall
+    dq = np.abs(q_mesh[both] - q_ref[both])
+    interp = 3.0 / (8.0 * (R - np.sqrt(3.0)))                       # trilinear error bound: 3 axes x h^2/8 x curvature 1/r
+    
+    assert (dq * cn).max() < sag + interp                           # wall displacement along the normal
+    assert np.median(dq) < 0.02                                     # typical link is essentially exact

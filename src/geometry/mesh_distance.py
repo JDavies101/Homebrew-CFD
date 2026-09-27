@@ -75,3 +75,79 @@ def band_distance(tris, nx, ny, nz, band=3.0, backend="cpu"):
     dist.fill(np.inf)
     _band_distance(np.ascontiguousarray(tris, np.float32), dist, band)
     return dist.to_numpy()
+
+@ti.kernel
+def _ray_crossings(tris: ti.types.ndarray(), cross: ti.template(), ey: ti.f32, ez: ti.f32):
+    # +x rays along grid lines (j + ey, k + ez); marks the first node past each triangle crossing
+    for t in range(tris.shape[0]):
+        a = ti.Vector([tris[t, 0, 0], tris[t, 0, 1], tris[t, 0, 2]])
+        b = ti.Vector([tris[t, 1, 0], tris[t, 1, 1], tris[t, 1, 2]])
+        c = ti.Vector([tris[t, 2, 0], tris[t, 2, 1], tris[t, 2, 2]])
+
+        by_ = b[1] - a[1]
+        bz_ = b[2] - a[2]
+        cy_ = c[1] - a[1]
+        cz_ = c[2] - a[2]
+        det = by_ * cz_ - cy_ * bz_
+
+        if det != 0.0: # skip triangles edge-on to the rays
+            j0 = ti.max(ti.cast(ti.ceil(ti.min(a[1], b[1], c[1]) - ey), ti.i32), 0)
+            j1 = ti.min(ti.cast(ti.floor(ti.max(a[1], b[1], c[1]) - ey), ti.i32), cross.shape[1] - 1)
+            k0 = ti.max(ti.cast(ti.ceil(ti.min(a[2], b[2], c[2]) - ez), ti.i32), 0)
+            k1 = ti.min(ti.cast(ti.floor(ti.max(a[2], b[2], c[2]) - ez), ti.i32), cross.shape[2] - 1)
+            inv = 1.0 / det
+            
+            for j in range(j0, j1 + 1):
+                for k in range(k0, k1 + 1):
+                    py = ti.cast(j, ti.f32) + ey - a[1]
+                    pz = ti.cast(k, ti.f32) + ez - a[2]
+                    w1 = (py * cz_ - cy_ * pz) * inv # weight of b
+                    w2 = (by_ * pz - py * bz_) * inv # weight of c
+                    w0 = 1.0 - w1 - w2 # weight of a
+
+                    if w0 >= 0.0 and w1 >= 0.0 and w2 >=0.0:
+                        x = w0 * a[0] + w1 * b[0] + w2 * c[0]
+                        i = ti.max(ti.cast(ti.ceil(x), ti.i32), 0)
+
+                        if i < cross.shape[0]:
+                            ti.atomic_add(cross[i, j, k], 1)
+
+def trilinear(grid):
+    # wrap a node-sampled field as phi(x, y, z) for arbitrary points (arrays or scalars)
+    nx, ny, nz = grid.shape
+
+    def phi(x, y, z):
+        x = np.clip(np.asarray(x, np.float64), 0.0, nx - 1.0)
+        y = np.clip(np.asarray(y, np.float64), 0.0, ny - 1.0)
+        z = np.clip(np.asarray(z, np.float64), 0.0, nz - 1.0)
+
+        i = np.minimum(np.floor(x).astype(np.int64), nx - 2)
+        j = np.minimum(np.floor(y).astype(np.int64), ny - 2)
+        k = np.minimum(np.floor(z).astype(np.int64), nz - 2)
+
+        fx = x - i
+        fy = y - j
+        fz = z - k
+
+        gx = 1.0 - fx
+        gy = 1.0 - fy
+        gz = 1.0 - fz
+
+        return (grid[i, j, k] * gx * gy * gz + grid[i + 1, j, k] * fx * gy * gz
+                + grid[i, j + 1, k] * gx * fy * gz + grid[i, j, k + 1] * gx * gy * fz
+                + grid[i + 1, j + 1, k] * fx * fy * gz + grid[i + 1, j, k + 1] * fx * gy * fz
+                + grid[i, j + 1, k + 1] * gx * fy * fz + grid[i + 1, j + 1, k + 1] * fx * fy * fz)
+    return phi
+
+def sdf_from_mesh(tris, nx, ny, nz, band=3.0, backend="cpu"):
+    # closed triangle mesh (lattice units) -> (phi_grid, phi): phi > 0 fluid, < 0 inside the mesh
+    runtime.init(backend)
+    dist = band_distance(tris, nx, ny, nz, band, backend)
+    cross = ti.field(ti.i32, shape=(nx, ny, nz))
+
+    _ray_crossings(np.ascontiguousarray(tris, np.float32), cross, 0.00137, 0.00271)
+    inside = (np.cumsum(cross.to_numpy(), axis=0) % 2) == 1
+    mag = np.where(np.isfinite(dist), dist, band + 1.0)
+    grid = np.where(inside, -mag, mag).astype(np.float32)
+
+    return grid, trilinear(grid)
