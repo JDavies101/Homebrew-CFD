@@ -488,7 +488,18 @@ relative comparisons and credible trends, not certification-grade absolute Cd. S
   the same link set, and normals are radial to 1e-6. `build_wall_list(phi)` now stores per-node
   `wall_y1 = phi(node)` and SDF normals; without phi it keeps y1 = 0.5 and mask normals, and the
   Ahmed reference run reproduces bit-identically (run 48).
-- *4.1 STL import + voxelization.* Read a triangle mesh, voxelize to the solid mask plus the
+- *4.1 STL import + voxelization. First gate passed (runs 49-50).* `src/geometry/mesh.py` reads
+  and writes binary/ASCII STL; `mesh_distance.py` builds the SDF on the GPU with one thread per
+  triangle: narrow-band unsigned distance (Ericson closest point, atomic min), inside/outside by
+  ray parity along offset grid lines, and a trilinear phi wrapper. q for a mesh comes from exact
+  link-triangle intersection (Moller-Trumbore), so its only error is the mesh's own facet sag;
+  q from the interpolated phi is limited by the trilinear bound (~3/(8 r) cell at curvature radius
+  r), which matters at the small radii of a car. Tests: exact q on a box (flat faces, straight and
+  diagonal links), icosphere sign/distance/q against the analytic sphere, with q errors measured
+  as wall displacement along the normal |dq||c.n| because grazing links are ill-conditioned in q.
+  Flow gate: an icosphere STL (20480 triangles) run through the sphere case gives Cd 2.0047 vs
+  2.0027 for the analytic geometry (+0.10%, gate 1%), with 2 mask cells differing.
+  Original plan: Read a triangle mesh, voxelize to the solid mask plus the
   per-link `q` field via the SDF (so curved car surfaces are not staircased). *Gate: an STL of
   a sphere/cylinder recovers the analytic-mask Cd/St (validation by reduction).*
 - *4.2 Moving ground + rotating wheels.* Generalize the moving-wall velocity BC to the floor

@@ -7,6 +7,9 @@ from src.post.vtk import write_field
 from src.geometry.sphere import sphere
 from src.geometry.wall_fraction import wall_fraction_sphere
 from src.post.run_log import RunRecord
+import sys
+from src.geometry.mesh import icosphere, write_stl, read_stl
+from src.geometry.mesh_distance import sdf_from_mesh, q_from_mesh
 
 D = 20                      # sphere diameter in cells
 nx = 384
@@ -19,18 +22,32 @@ tau = 3 * nu + 0.5
 cx = 120
 cy = ny // 2
 cz = nz // 2
+geom = sys.argv[1] if len(sys.argv) > 1 else "analytic"    # "analytic" or "stl"
 steps = 20000               # sphere wake is steady at this Re -> reaches steady state
 check_every = 500           # progress + health readout interval
 A = np.pi * (D/2) ** 2                 # frontal area
 
 def main():
     sim = Simulation3D(nx, ny, nz, backend="cuda", interp=True)
-    sim.solid.from_numpy(sphere(nx, ny, nz, cx, cy, cz, D/2))
-    sim.q.from_numpy(wall_fraction_sphere(nx, ny, nz, cx, cy, cz, D/2))
+    
+    ref = sphere(nx, ny, nz, cx, cy, cz, D/2)
+    if geom == "stl":
+        write_stl("results/sphere.stl", icosphere((cx, cy, cz), D/2, subdiv=5))
+        tris = read_stl("results/sphere.stl")
+        grid, phi = sdf_from_mesh(tris, nx, ny, nz, backend="cuda")
+        solid = (grid < 0.0).astype(np.int32)
+        q = q_from_mesh(tris, phi, nx, ny, nz, backend="cuda")
+        print(f"STL: {len(tris)} triangles, mask cells differing from analytic: {int((solid != ref).sum())}")
+    else:
+        solid = ref
+        q = wall_fraction_sphere(nx, ny, nz, cx, cy, cz, D/2)
+    sim.solid.from_numpy(solid)
+    sim.q.from_numpy(q)
+
     sim.f.from_numpy(np.tile(L.W[:, None, None, None], (1, nx, ny, nz)).astype(np.float32))
 
     run = RunRecord("sphere", sim, steps=steps, u_ref=U, nu=nu, tau=round(tau, 6), Re=Re,
-                    geometry=f"D={D}", collision="TRT", sgs="none", walls="Bouzidi",
+                    geometry=f"D={D}, {geom}", collision="TRT", sgs="none", walls="Bouzidi",
                     boundaries="equilibrium inlet / zero-grad outlet / free-slip y,z", forcing="none")
     prog = Progress(steps)
     for s in range(steps):
@@ -58,18 +75,21 @@ def main():
                 run.finish(metric="blow-up step", value=s, status="bad", reason="NaN/inf in f")
                 return
             prog.update(s, float(hi))
+    
     prog.done()
     run.stop()
 
     # steady flow -> single force reading
     sim.macroscopic()
-    write_field("results/sphere", sim.rho.to_numpy(), sim.u.to_numpy())
+    write_field(f"results/sphere_{geom}", sim.rho.to_numpy(), sim.u.to_numpy())
+   
     u = sim.u.to_numpy()
     U_eff = float(u[0, cx, 20, nz//2])   # near the wall, out of the wake
     Re_eff = U_eff * D / nu
     F = sim.force.to_numpy()
     cd = float(F[0] / (0.5 * 1.0 * U_eff * U_eff * A))   # normalize by the actual free-stream
     cd_ref = (24/Re_eff)*(1 + 0.15*Re_eff**0.687)        # Schiller-Naumann at the MEASURED Re
+    
     print(f"U_eff = {U_eff:.4f}  ->  effective Re = {Re_eff:.0f}")
     print(f"Cd = {cd:.3f}   [Schiller-Naumann at Re={Re_eff:.0f} ~ {cd_ref:.2f}]")
     run.finish(metric="Cd", value=round(cd, 4), reference=round(cd_ref, 4), other=f"Re_eff {Re_eff:.0f}")
