@@ -448,7 +448,7 @@ def test_wall_model_matches(sim):
     sim.macroscopic(); sim.wall_model(0.01, 10.0)
     slow = sim.nut_wall.to_numpy().copy()
     sim.nut_wall.from_numpy(np.zeros((N,N,N), np.float32))
-    sim.build_wall_list(); sim.wall_model_fast(0.01, 10.0)
+    sim.build_wall_list(); sim.wall_model_fast(0.01)
     assert np.allclose(sim.nut_wall.to_numpy(), slow, atol=1e-6)
 
 # test 28: drag_body matches manual
