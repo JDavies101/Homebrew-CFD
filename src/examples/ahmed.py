@@ -143,7 +143,7 @@ def main():
     np.save(f"results/ahmed_umean_mid_{tag}.npy", u_mean[:, :, :, kmid])   # mid-span mean, re-analysis
     slant_ut, slant_attached = slant_check(u_mean[:, :, :, kmid], body[:, :, kmid])
     u_mean[:, body.astype(bool)] = np.nan                    # hide the body interior
-    fig, ax = plot_velocity_slice(u_mean, axis=2, index=nz//2, comp=0)
+    fig, ax = plot_velocity_slice(u_mean, axis=2, index=nz//2, component=0)
     fig.savefig(f"results/ahmed_mean_{tag}.png", dpi=130)
     ax.set_xlim(x0 - 20, x0 + 60); ax.set_ylim(0, 2 * H)
     fig.savefig(f"results/ahmed_mean_nose_{tag}.png", dpi=160)
@@ -152,7 +152,7 @@ def main():
 
     u = sim.u.to_numpy()
     write_field(f"results/ahmed_{tag}", sim.rho.to_numpy(), u)
-    plot_velocity_slice(u, axis=2, index=nz//2, comp=0)[0].savefig(f"results/ahmed_wake_{tag}.png", dpi=130)
+    plot_velocity_slice(u, axis=2, index=nz//2, component=0)[0].savefig(f"results/ahmed_wake_{tag}.png", dpi=130)
     cd = np.asarray(cd)
     np.save(f"results/ahmed_cd_{tag}.npy", cd)            # raw series for re-analysis
     

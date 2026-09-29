@@ -2,27 +2,46 @@
 import time
 
 class Progress:
+    """
+    Single-line progress bar with elapsed time, ETA and an optional health value (e.g. max|u|).
+    """
+
     def __init__(self, total):
+        """
+        Start the timer for a loop of total steps.
+        """
+
         self.total = total
-        self.t0 = time.time()
+        self.start_time = time.time()
         self.last_health = None
 
-    # call once per step; `health` is an optional value to display (e.g. max|u|)
     def update(self, step, health=None):
-        done = step + 1
-        el = time.time() - self.t0
-        frac = done / self.total
-        eta = el / frac - el if frac > 0 else 0.0
-        bar = "#" * int(30 * frac) + "-" * (30 - int(30 * frac))
-        msg = f"\r[{bar}] {done}/{self.total} {frac*100:5.1f}%  {el:5.0f}s  ETA {eta:5.0f}s"
+        """
+        Redraw the bar; call once per step, health is an optional value to display.
+        """
+
+        steps_done = step + 1
+        elapsed = time.time() - self.start_time
+        fraction = steps_done / self.total
+        eta = elapsed / fraction - elapsed if fraction > 0 else 0.0
+        bar = "#" * int(30 * fraction) + "-" * (30 - int(30 * fraction))
+        message = f"\r[{bar}] {steps_done}/{self.total} {fraction * 100:5.1f}%  {elapsed:5.0f}s  ETA {eta:5.0f}s"
+
         if health is not None:
             self.last_health = health
-            msg += f"  max|u|={health:.3g}"
-        print(msg, end="", flush=True)
+            message += f"  max|u|={health:.3g}"
+
+        print(message, end="", flush=True)
 
     def done(self):
-        el = time.time() - self.t0
-        msg = f"\r[{'#'*30}] {self.total}/{self.total} 100.0%  {el:5.0f}s  ETA     0s"
+        """
+        Draw the full bar and end the line, keeping the last health reading visible.
+        """
+
+        elapsed = time.time() - self.start_time
+        message = f"\r[{'#' * 30}] {self.total}/{self.total} 100.0%  {elapsed:5.0f}s  ETA     0s"
+
         if self.last_health is not None:
-            msg += f"  max|u|={self.last_health:.3g}"   # keep the final reading visible
-        print(msg + " " * 10)                            # trailing spaces clear any leftover tail
+            message += f"  max|u|={self.last_health:.3g}"
+
+        print(message + " " * 10)  # trailing spaces clear any leftover tail
