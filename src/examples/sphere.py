@@ -33,7 +33,7 @@ def main():
     
     ref = sphere(nx, ny, nz, cx, cy, cz, D/2)
     if geom == "stl":
-        write_stl("results/sphere.stl", icosphere((cx, cy, cz), D/2, subdiv=5))
+        write_stl("results/sphere.stl", icosphere((cx, cy, cz), D/2, subdivisions=5))
         tris = read_stl("results/sphere.stl")
         grid, phi = sdf_from_mesh(tris, nx, ny, nz, backend="cuda")
         solid = (grid < 0.0).astype(np.int32)

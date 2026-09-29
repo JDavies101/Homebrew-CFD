@@ -1,23 +1,30 @@
-# log-law wall function: newton inversion for u_tau given the first-node speed u1 at distance y1
+# log-law wall function: Newton inversion for the friction velocity given the first-node speed at distance y1
 # host copy of Simulation3D.wall_utau (the kernel can't call numpy), keep the two in sync
 import numpy as np
 
-def friction_velocity(u1, y1, nu, k=0.41, B=5.2, iters=50, atol=1e-8):
+def friction_velocity(first_node_speed, y1, viscosity, von_karman=0.41, log_law_constant=5.2, iterations=50, tolerance=1e-8):
+    """
+    Solve u1 = u_tau (ln(y1 u_tau / nu) / kappa + B) for u_tau by Newton iteration.
 
-    if u1 <= 0:
+    Returns u_tau (0 for non-positive first-node speed).
+    """
+
+    if first_node_speed <= 0:
         return 0.0
 
-    u_tau = np.sqrt(nu * u1 / y1) # initial guess of the viscous/gradient estimate
+    inverse_von_karman = 1 / von_karman
+    # initial guess: viscous sublayer estimate
+    u_tau = np.sqrt(viscosity * first_node_speed / y1)
 
-    for _ in range(iters):
-        f = u_tau * ((1 / k) * np.log(y1 * u_tau / nu) + B) - u1
-        
-        if abs(f) < atol:
+    for _ in range(iterations):
+        residual = u_tau * (inverse_von_karman * np.log(y1 * u_tau / viscosity) + log_law_constant) - first_node_speed
+
+        if abs(residual) < tolerance:
             break
 
-        f_prime = (1 / k) * np.log(y1 * u_tau / nu) + B + 1 / k
-        u_next = u_tau - f / f_prime
+        residual_derivative = inverse_von_karman * np.log(y1 * u_tau / viscosity) + log_law_constant + inverse_von_karman
+        u_tau_next = u_tau - residual / residual_derivative
 
-        u_tau = u_next if u_next > 0 else u_tau / 2 # guard the proposed value
-    
+        u_tau = u_tau_next if u_tau_next > 0 else u_tau / 2  # guard the proposed value
+
     return u_tau
