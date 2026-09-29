@@ -1,3 +1,4 @@
+# Ahmed body in a wind tunnel: WALE + Smagorinsky floor, relaxation layers, static or moving ground
 import numpy as np
 from src.geometry.ahmed_body import ahmed_body
 from src.post.plotting import plot_mask_slice, plot_velocity_slice
@@ -5,7 +6,7 @@ from src.engine.simulation3d import Simulation3D
 from src.post.progress import Progress
 from src.post.vtk import write_field
 import sys
-from src.geometry.sponge import sponge, relax_profile
+from src.geometry.sponge import relax_profile
 from src.post.run_log import RunRecord
 
 H = 32                      # small for iteration; go to 48 for real runs
@@ -17,7 +18,7 @@ ny = round(3.75 * H)          # ~2.5 H of air above the body
 nz = round(3.667 * H)         # ~10% blockage
 U = 0.05                    # low Mach
 Re_H = 30000                  # laminar-ish separated wake; machinery, not the reference Cd
-nu = U * H / Re_H           # ~0.0053 -> tau ~0.516 (TRT)
+nu = U * H / Re_H           # ~5.3e-5 -> tau ~0.50016
 tau = 3*nu + 0.5
 A = Wb * H                 # frontal area for Cd
 T_ft = nx / U                        # flow-through time in steps (~14000 at H=32)
@@ -32,15 +33,10 @@ cs_floor = 0.04 # Smagorinsky floor under WALE: damps grid-scale noise where WAL
 cs = 0.084 if sgs == "smag" else cs_floor
 cw = 0.5
 gx = 0.0
-trt = 1
-y1 = 0.5 # wall distance, halfway bounce back
-sponge_width = 8                    # absorbing layer at inlet/outlet/side walls, cells
-sponge_nu = 0.0                     # peak sponge viscosity; 0.0 disables the sponge
 relax_width = 24                      # x layers (inlet/outlet), cells
 relax_width_z = 12                    # z-wall layers, cells
 relax_sigma = 0.1
 relax_alpha = 1.0 / 2000.0  # z-layer running-mean rate (about a 2000-step memory)
-outlet_bc = "pressure"              # "pressure" (rho = 1 at the exit) or "copy" (zero-gradient)
 phi = int(sys.argv[1]) if len(sys.argv) > 1 else 25   # slant angle, deg
 nose = sys.argv[2] if len(sys.argv) > 2 else "round"   # "round" or "square"
 tag = f"phi{phi}" + ("" if nose == "round" else f"_{nose}") + ("" if sgs == "smag" else f"_{sgs}") + ("" if ground == "static" else "_mground")
@@ -63,7 +59,10 @@ def slant_check(u_mid, body_mid):
         rows.append((i, j, u_mid[0, i, j] * t[0] + u_mid[1, i, j] * t[1]))
     ut = np.array([r[2] for r in rows])
     print(f"slant u_t/U (first fluid cell, {len(ut)} columns):", np.round(ut / U, 3))
-    print(f"attached fraction (u_t > 0.05 U): {np.mean(ut > 0.05 * U):.2f}")   # threshold: ~0 is dead water, not attached
+    attached = float(np.mean(ut > 0.05 * U))
+    print(f"attached fraction (u_t > 0.05 U): {attached:.2f}")   # threshold: ~0 is dead water, not attached
+
+    return ut / U, attached
 
 def main():
     sim = Simulation3D(nx, ny, nz, backend="cuda")
@@ -84,15 +83,13 @@ def main():
     sim.body.from_numpy(body)
     sim.build_wall_list()
 
-    if sponge_nu > 0.0:
-        sim.nut_sponge.from_numpy(sponge(nx, ny, nz, width=sponge_width, nu_max=sponge_nu))
-
     sim.init_equilibrium(np.zeros((nx, ny, nz), np.float32),   # start from rest, inlet ramps up
                      np.zeros((nx, ny, nz), np.float32),
                      np.zeros((nx, ny, nz), np.float32))
     
     sim.sigma.from_numpy(relax_profile(nx, nz, relax_width, 0, relax_sigma))       # x layers only, free-stream target
-    sim.sigma_z.from_numpy(relax_profile(nx, nz, 0, relax_width_z, relax_sigma))   # z layers only, running-mean target                                                       # mean starts at rest density
+    sim.sigma_z.from_numpy(relax_profile(nx, nz, 0, relax_width_z, relax_sigma))   # z layers only, running-mean target
+    fluid = solid == 0
     
     u_sum = np.zeros((3, nx, ny, nz), np.float32)
     n_u = 0
@@ -103,7 +100,7 @@ def main():
                     geometry=f"H={H} phi={phi} {nose}", warmup=warmup, avg_Tft=round((steps - warmup) / T_ft, 1),
                     collision="regularized", sgs=f"smag cs={cs}" if sgs == "smag" else f"wale cw={cw} + smag floor cs={cs}",
                     wall_model="log-law y+>30", walls="staircase BB", forcing="none",
-                    boundaries=f"NEEM-open inlet / {outlet_bc} outlet / free-slip z / no-slip floor+ceiling / {ground} floor",
+                    boundaries=f"NEEM-open inlet / pressure outlet / free-slip z / no-slip floor+ceiling / {ground} floor",
                     sponge=f"relax x {relax_width} (free stream) / z {relax_width_z} (running mean from ramp end, alpha {relax_alpha:.1e}), sigma {relax_sigma}")
     
     prog = Progress(steps)
@@ -112,7 +109,7 @@ def main():
         U_in = U * 0.5 * (1.0 - np.cos(np.pi * r))
         if sgs == "wale":
             sim.macroscopic()               # WALE needs current u (not needed on the smag path)
-            sim.les_wale(cw)
+            sim.les_wale(cw, U_in / U) # moving walls enter the gradients at their ramped speed
         sim.wall_model_fast(nu, U_in / U)
         if s == ramp:
             sim.macroscopic()
@@ -129,16 +126,13 @@ def main():
             cd.append(float(sim.force.to_numpy()[0]) / (0.5*U*U*A))
         sim.stream()
         sim.inlet_neem_open(U_in)        # reuse: drives open rows, skips the solid floor at the inlet
-        if outlet_bc == "pressure":
-            sim.outlet_pressure(1.0)
-        else:
-            sim.outlet()
+        sim.outlet_pressure(1.0)
         sim.free_slip_z()                # side walls
         sim.bounce_back(U_in / U)        # floor + ceiling + body; moving floor ramps with the inlet
 
         if s % check_every == 0:
             sim.macroscopic()
-            prog.update(s, float(np.nanmax(np.abs(sim.u.to_numpy()))))
+            prog.update(s, float(np.nanmax(np.abs(sim.u.to_numpy()[:, fluid]))))   # fluid cells only
 
     prog.done()                          # finish the bar (newline) before any other output
     run.stop()
@@ -147,7 +141,7 @@ def main():
     u_mean = u_sum / n_u
     kmid = nz // 2
     np.save(f"results/ahmed_umean_mid_{tag}.npy", u_mean[:, :, :, kmid])   # mid-span mean, re-analysis
-    slant_check(u_mean[:, :, :, kmid], body[:, :, kmid])
+    slant_ut, slant_attached = slant_check(u_mean[:, :, :, kmid], body[:, :, kmid])
     u_mean[:, body.astype(bool)] = np.nan                    # hide the body interior
     fig, ax = plot_velocity_slice(u_mean, axis=2, index=nz//2, comp=0)
     fig.savefig(f"results/ahmed_mean_{tag}.png", dpi=130)
@@ -178,7 +172,8 @@ def main():
 
     m5, se5 = block_stats(cd, 5)
     run.finish(metric="Cd", value=round(float(m5), 4), se=round(float(se5), 4),
-               drift_1st=round(float(cd[:h].mean()), 4), drift_2nd=round(float(cd[h:].mean()), 4))
+               drift_1st=round(float(cd[:h].mean()), 4), drift_2nd=round(float(cd[h:].mean()), 4),
+               other=f"slant attached {slant_attached:.2f}; slant u_t/U first 4 cols {np.round(slant_ut[:4], 3).tolist()}")
 
 if __name__ == "__main__":
     main()

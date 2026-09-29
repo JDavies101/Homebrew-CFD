@@ -16,4 +16,5 @@ def macroscopic(f):
     mom_y = np.einsum("q,qxy->xy", lt.E[:,1], f)
     # velocity from momentum divided by density
     u = np.stack([mom_x, mom_y]) / rho
+    
     return rho, u

@@ -33,10 +33,12 @@ class Simulation:
             r = 0.0
             mx = 0.0
             my = 0.0
+            
             for q in range(self.Q):            # serial: sum the 9 populations
                 r += self.f[q, i, j]
                 mx += self.f[q, i, j] * self.E[q, 0]
                 my += self.f[q, i, j] * self.E[q, 1]
+
             self.rho[i, j] = r
             self.u[0, i, j] = mx / r
             self.u[1, i, j] = my / r

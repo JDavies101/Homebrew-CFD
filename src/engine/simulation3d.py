@@ -32,7 +32,6 @@ class Simulation3D:
             self.fc = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))   # post-collision snapshot (Bouzidi needs it)
         self.nut_wall = ti.field(ti.f32, shape =(nx, ny, nz))  # wall-model eddy viscosity (0 away from walls)
         self.nut_les = ti.field(ti.f32, shape=(nx, ny, nz)) # WALE subgrid eddy viscosity (0 until les_wale runs)
-        self.nut_sponge = ti.field(ti.f32, shape=(nx, ny, nz))   # absorbing-layer viscosity, set once, 0 by default
         self.sigma = ti.field(ti.f32, shape=(nx, nz))              # relaxation layer strength per (x, z) column, 0 by default
         self.sigma_z = ti.field(ti.f32, shape=(nx, nz))            # z-layer strength (relaxes to running mean), 0 by default
         self.rho_bar = ti.field(ti.f32, shape=(nx, ny, nz))        # running-mean density, z-layer target
@@ -75,8 +74,8 @@ class Simulation3D:
 
     # regularized collision: rebuild f_neq from the stress Pi only (drops the ghost moments
     # that blow up as tau -> 0.5), then relax. single rate, no trt split
-    # cs=0 disables LES, gx=0 disables forcing. forced + regularized still needs the Guo
-    # correction to Pi (regularizing zeroes f_neq's -F/2 first moment), so keep gx=0 here
+    # cs=0 disables LES, gx=0 disables forcing. forcing is supported: the first-order Hermite
+    # term below restores the -F/2 first moment that regularization would otherwise drop
     @ti.kernel
     def _collide_reg(self, tau0: ti.f32, cs: ti.f32, gx: ti.f32, U_in: ti.f32, alpha: ti.f32, zon: ti.i32):
         for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
@@ -107,7 +106,7 @@ class Simulation3D:
             if cs > 0.0:                                     # LES: eddy-adjusted tau from stress magnitude
                 Qmag = ti.sqrt(Pxx*Pxx + Pyy*Pyy + Pzz*Pzz + 2.0*(Pxy*Pxy + Pxz*Pxz + Pyz*Pyz))
                 tau = 0.5 * (tau0 + ti.sqrt(tau0*tau0 + 18.0 * ti.sqrt(2.0) *cs*cs*Qmag / r))
-            s = 1.0 / (tau + 3.0 * (self.nut_wall[i, j, k] + self.nut_les[i, j, k] + self.nut_sponge[i, j, k]))
+            s = 1.0 / (tau + 3.0 * (self.nut_wall[i, j, k] + self.nut_les[i, j, k]))
             pre = 1.0 - 0.5 * s # Guo prefactor; BGK single rate
 
             # absorbing layers, fused (were sponge_relax / sponge_relax_mean): strengths for this column
@@ -193,7 +192,7 @@ class Simulation3D:
                 Qmag = ti.sqrt(Qxx * Qxx + Qyy * Qyy + Qzz * Qzz + 2 * (Qxy * Qxy + Qxz * Qxz + Qyz * Qyz))
                 tau = 0.5 * (tau0 + ti.sqrt(tau0 * tau0 + 18.0 * ti.sqrt(2.0) * cs * cs * Qmag / r))
             
-            tau += 3.0 * (self.nut_wall[i, j, k] + self.nut_les[i, j, k] + self.nut_sponge[i, j, k])
+            tau += 3.0 * (self.nut_wall[i, j, k] + self.nut_les[i, j, k])
 
             s_plus = 1.0 / tau
             s_minus = s_plus # trt = 0 -> BGK
@@ -281,19 +280,22 @@ class Simulation3D:
     def wall_model_fast(self, nu, scale=1.0):
         self._wall_model_fast(nu, scale)
 
+    # WALE subgrid viscosity from central/one-sided velocity gradients. call after macroscopic().
+    # solid neighbours contribute their wall velocity (scale * uw), so moving walls are not seen as a
+    # velocity jump. scale follows the inlet ramp like bounce_back.
     @ti.kernel
-    def les_wale(self, cw: ti.f32):
+    def _les_wale(self, cw: ti.f32, scale: ti.f32):
         for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
             self.nut_les[i, j, k] = 0.0
             if self.solid[i, j, k] == 1 or self.lid[i, j, k] == 1:
                 continue
 
-            up_x = self._uvec(i, j, k, 1, 0, 0)
-            dn_x = self._uvec(i, j, k, -1, 0, 0)
-            up_y = self._uvec(i, j, k, 0, 1, 0)
-            dn_y = self._uvec(i, j, k, 0, -1, 0)
-            up_z = self._uvec(i, j, k, 0, 0, 1)
-            dn_z = self._uvec(i, j, k, 0, 0, -1)
+            up_x = self._uvec(i, j, k, 1, 0, 0, scale)
+            dn_x = self._uvec(i, j, k, -1, 0, 0, scale)
+            up_y = self._uvec(i, j, k, 0, 1, 0, scale)
+            dn_y = self._uvec(i, j, k, 0, -1, 0, scale)
+            up_z = self._uvec(i, j, k, 0, 0, 1, scale)
+            dn_z = self._uvec(i, j, k, 0, 0, -1, scale)
 
             nx_in = ti.max(self._in_dom(i, j, k, 1, 0, 0) + self._in_dom(i, j, k, -1, 0, 0), 1)
             ny_in = ti.max(self._in_dom(i, j, k, 0, 1, 0) + self._in_dom(i, j, k, 0, -1, 0), 1)
@@ -313,15 +315,21 @@ class Simulation3D:
             SS = (S * S).sum()                        # S : S
             SdSd = (Sd * Sd).sum()                    # Sd : Sd
 
-            delta = 1.0
             eps = 1e-12
-            self.nut_les[i, j, k] = (cw * delta) ** 2 * SdSd ** 1.5 / (SS ** 2.5 + SdSd ** 1.25 + eps)
+            sd_root = ti.sqrt(SdSd)
+            ss_root = ti.sqrt(SS)
+            numerator = SdSd * sd_root                               # SdSd^1.5
+            denominator = SS * SS * ss_root + SdSd * ti.sqrt(sd_root) + eps   # SS^2.5 + SdSd^1.25
+            self.nut_les[i, j, k] = cw * cw * numerator / denominator   # filter width = 1 cell
+
+    def les_wale(self, cw, scale=1.0):
+        self._les_wale(cw, scale)
 
     @ti.func
-    def _uvec(self, i, j, k, di, dj, dk):
+    def _uvec(self, i, j, k, di, dj, dk, scale):
         # velocity at neighbour (i+di, j+dj, k+dk): out of domain -> clamp to (i,j,k)
         # (with les_wale's in-domain divisor this gives a one-sided difference);
-        # solid -> zero (no-slip); else the stored velocity
+        # solid -> its wall velocity scale * uw (0 for static walls); else the stored velocity
         ni = i + di
         nj = j + dj
         nk = k + dk
@@ -329,7 +337,7 @@ class Simulation3D:
         if ni < 0 or ni >= self.nx or nj < 0 or nj >= self.ny or nk < 0 or nk >= self.nz:
             v = ti.Vector([self.u[0, i, j, k], self.u[1, i, j, k], self.u[2, i, j, k]])
         elif self.solid[ni, nj, nk] == 1:
-            v = ti.Vector([0.0, 0.0, 0.0])
+            v = scale * ti.Vector([self.uw[0, ni, nj, nk], self.uw[1, ni, nj, nk], self.uw[2, ni, nj, nk]])
         else:
             v = ti.Vector([self.u[0, ni, nj, nk], self.u[1, ni, nj, nk], self.u[2, ni, nj, nk]])
         return v
@@ -421,7 +429,6 @@ class Simulation3D:
                 wx = scale * self.uw[0, i, j, k]
                 wy = scale * self.uw[1, i, j, k]
                 wz = scale * self.uw[2, i, j, k]
-                #moving = wx != 0.0 or wy != 0.0 or wz != 0.0
 
                 for q in range(self.Q):
                     o = self.OPP[q]
@@ -444,43 +451,75 @@ class Simulation3D:
     def bounce_back(self, scale=1.0):
         self._bounce_back(scale)
 
+    def set_wall_fractions(self, q):
+        """
+        Load the per-link wall fractions q (Q, nx, ny, nz) and build the compact boundary-link list.
+
+        Bouzidi and drag_interp loop over this list instead of scanning all 19 x N entries each step.
+        """
+
+        self.q.from_numpy(q)
+        direction, i, j, k = np.nonzero(q > 0.0)
+        count = len(direction)
+        size = max(count, 1)
+        self.link_count = count
+        self.link_direction = ti.field(ti.i32, shape=size)
+        self.link_node = ti.field(ti.i32, shape=(size, 3))
+        self.link_fraction = ti.field(ti.f32, shape=size)
+        if count > 0:
+            self.link_direction.from_numpy(direction.astype(np.int32))
+            self.link_node.from_numpy(np.stack([i, j, k], axis=1).astype(np.int32))
+            self.link_fraction.from_numpy(q[direction, i, j, k].astype(np.float32))
+
+    @ti.func
+    def _link_wall_velocity(self, i, j, k, d, qf, scale):
+        # wall velocity at the wall point x_f + q c_d, linear between the link ends
+        # (exact for rigid-body motion when uw is set on both sides of the surface)
+        si = (i + self.E[d, 0]) % self.nx
+        sj = (j + self.E[d, 1]) % self.ny
+        sk = (k + self.E[d, 2]) % self.nz
+        w = ti.Vector([0.0, 0.0, 0.0])
+        for c in ti.static(range(3)):
+            w[c] = scale * ((1.0 - qf) * self.uw[c, i, j, k] + qf * self.uw[c, si, sj, sk])
+        return w
+
     # Bouzidi wall with moving-wall term: delta = 6 w (c_ob . u_w), divided by 2q on the q > 1/2
-    # branch (Bouzidi et al. 2001). u_w is interpolated to the wall point along the link, exact for
-    # rigid-body motion when uw is set on both sides of the surface. reads fc, writes f.
+    # branch (Bouzidi et al. 2001). loops over the boundary-link list. reads fc, writes f.
     @ti.kernel
-    def _bounce_back_interp(self, scale: ti.f32):
-        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
-            for d in range(self.Q):
-                qf = self.q[d, i, j, k]
-                if qf > 0.0:                          # dir d from (i,j,k) crosses the wall
-                    ob = self.OPP[d]
-                    fi = self.fc[d, i, j, k]          # post-collision f_i at x_f
+    def _bounce_back_interp(self, scale: ti.f32, link_direction: ti.template(), link_node: ti.template(),
+                            link_fraction: ti.template(), count: ti.i32):
+        for m in range(count):
+            d = link_direction[m]
+            i = link_node[m, 0]
+            j = link_node[m, 1]
+            k = link_node[m, 2]
+            qf = link_fraction[m]
+            ob = self.OPP[d]
+            fi = self.fc[d, i, j, k] # post-collision f_i at x_f
+            w = self._link_wall_velocity(i, j, k, d, qf, scale)
+            delta = 6.0 * self.W[ob] * (self.E[ob, 0] * w[0] + self.E[ob, 1] * w[1] + self.E[ob, 2] * w[2])
 
-                    si = (i + self.E[d, 0]) % self.nx
-                    sj = (j + self.E[d, 1]) % self.ny
-                    sk = (k + self.E[d, 2]) % self.nz
-                    wx = scale * ((1.0 - qf) * self.uw[0, i, j, k] + qf * self.uw[0, si, sj, sk])
-                    wy = scale * ((1.0 - qf) * self.uw[1, i, j, k] + qf * self.uw[1, si, sj, sk])
-                    wz = scale * ((1.0 - qf) * self.uw[2, i, j, k] + qf * self.uw[2, si, sj, sk])
-                    delta = 6.0 * self.W[ob] * (self.E[ob, 0] * wx + self.E[ob, 1] * wy + self.E[ob, 2] * wz)
+            if qf <= 0.5:
+                iff = i - self.E[d, 0]
+                jff = j - self.E[d, 1]
+                kff = k - self.E[d, 2]
+                upstream_fluid = 0
+                if 0 <= iff < self.nx and 0 <= jff < self.ny and 0 <= kff < self.nz:
+                    if self.solid[iff, jff, kff] == 0:
+                        upstream_fluid = 1
 
-                    if qf <= 0.5:
-                        iff = i - self.E[d, 0]
-                        jff = j - self.E[d, 1]
-                        kff = k - self.E[d, 2]
-
-                        if 0 <= iff < self.nx and 0 <= jff < self.ny and 0 <= kff < self.nz:
-                            fiff = self.fc[d, iff, jff, kff]
-                            self.f[ob, i, j, k] = 2.0 * qf * fi + (1.0 - 2.0*qf) * fiff + delta
-                        else:                          # no upstream node -> fall back to halfway
-                            self.f[ob, i, j, k] = fi + delta
-                    else:
-                        fib = self.fc[ob, i, j, k]     # post-collision f_ibar at x_f
-                        invq2 = 1.0 / (2.0 * qf)
-                        self.f[ob, i, j, k] = fi * invq2 + (2.0 * qf - 1.0) * invq2 * fib + delta * invq2
+                if upstream_fluid == 1:
+                    fiff = self.fc[d, iff, jff, kff]
+                    self.f[ob, i, j, k] = 2.0 * qf * fi + (1.0 - 2.0 * qf) * fiff + delta
+                else: # no fluid upstream node (domain edge or thin gap) -> fall back to halfway
+                    self.f[ob, i, j, k] = fi + delta
+            else:
+                fib = self.fc[ob, i, j, k] # post-collision f_ibar at x_f
+                inverse_two_q = 1.0 / (2.0 * qf)
+                self.f[ob, i, j, k] = fi * inverse_two_q + (2.0 * qf - 1.0) * inverse_two_q * fib + delta * inverse_two_q
 
     def bounce_back_interp(self, scale=1.0):
-        self._bounce_back_interp(scale)
+        self._bounce_back_interp(scale, self.link_direction, self.link_node, self.link_fraction, self.link_count)
 
     # free-slip y walls: specular reflection, mirrors the y component
     @ti.kernel
@@ -498,19 +537,6 @@ class Simulation3D:
                     self.f[q, i, self.ny - 1, k] = self.f[m, i , self.ny - 1, k]
                     self.f[m, i, self.ny - 1, k] = t2
 
-    # free-slip ceiling only (j = ny-1): far-field roof over a no-slip floor
-    # not wired into ahmed yet: meeting the free-slip sides it hits the corner artifact
-    @ti.kernel
-    def free_slip_y_top(self):
-        for i, k in ti.ndrange(self.nx, self.nz):
-            for q in range(self.Q):
-                m = self.MIRROR_Y[q]
-                if q < m:
-                    # top wall j = ny - 1
-                    t = self.f[q, i, self.ny-1, k]
-                    self.f[q, i, self.ny - 1, k] = self.f[m, i , self.ny - 1, k]
-                    self.f[m, i, self.ny - 1, k] = t
-
     # free-slip z walls: specular reflection, mirrors the z component
     @ti.kernel
     def free_slip_z(self):
@@ -527,30 +553,6 @@ class Simulation3D:
                     self.f[q, i, j, self.nz - 1] = self.f[m, i , j, self.nz - 1]
                     self.f[m, i, j, self.nz - 1] = t2
 
-    # lid: bounce-back plus a momentum kick so the wall drags the fluid at U
-    @ti.kernel
-    def moving_wall(self, U: ti.f32):
-        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
-            if self.lid[i, j, k] == 1:
-                for q in range(self.Q):
-                    o = self.OPP[q]
-                    if q < o:
-                        tmp = self.f[q, i, j, k]
-                        self.f[q, i, j, k] = self.f[o, i, j, k]
-                        self.f[o, i, j, k] = tmp  # bounce-back
-                        corr = 6.0 * self.W[q] * self.E[q, 0] * U
-                        self.f[q, i, j, k] += corr
-                        self.f[o, i, j, k] -= corr        # opposite dir gets the negative
-    
-    # equilibrium inlet at x=0, rho fixed at 1
-    # stable but soft: the free-stream can sag below U against blockage
-    @ti.kernel
-    def inlet(self, U: ti.f32):
-        for j, k in ti.ndrange(self.ny, self.nz):
-            for q in range(self.Q):
-                # inlet body:
-                self.f[q, 0, j, k] = self.feq(q, 1.0, U, 0.0, 0.0, U * U)
-    
     # Guo non-equilibrium extrapolation inlet: equilibrium at the imposed U with
     # rho taken from x=1, plus the neighbour non-equilibrium part
     # holds the free-stream rigidly, but diverges where two free-slip walls meet
@@ -659,23 +661,31 @@ class Simulation3D:
     def drag(self):
         self._drag_mask(0)
 
-    # momentum exchange for interpolated walls: sum c_i (f_in + f_out)
+    # momentum exchange for interpolated walls over the boundary-link list, Galilean-invariant form
+    # (Wen et al. 2014): F = sum c_d (f_in + f_out) - u_w (f_in - f_out), u_w at the wall point.
     # call AFTER bounce_back_interp, so f holds the reconstructed reflection
     @ti.kernel
-    def drag_interp(self):
+    def _drag_interp(self, scale: ti.f32, link_direction: ti.template(), link_node: ti.template(),
+                     link_fraction: ti.template(), count: ti.i32):
         for c in range(L3.D):
             self.force[c] = 0.0
-        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
-            for d in range(self.Q):
-                if self.q[d, i, j, k] > 0.0:          # same link set Bouzidi uses
-                    ob = self.OPP[d]
-                    fin  = self.fc[d, i, j, k]        # post-collision, into the wall
-                    fout = self.f[ob, i, j, k]        # reconstructed reflection
-                    self.force[0] += (fin + fout) * self.E[d, 0]
-                    self.force[1] += (fin + fout) * self.E[d, 1]
-                    self.force[2] += (fin + fout) * self.E[d, 2] 
+        for m in range(count):
+            d = link_direction[m]
+            i = link_node[m, 0]
+            j = link_node[m, 1]
+            k = link_node[m, 2]
+            ob = self.OPP[d]
+            fin = self.fc[d, i, j, k] # post-collision, into the wall
+            fout = self.f[ob, i, j, k] # reconstructed reflection
+            w = self._link_wall_velocity(i, j, k, d, link_fraction[m], scale)
+            for c in ti.static(range(3)):
+                self.force[c] += (fin + fout) * self.E[d, c] - w[c] * (fin - fout)
 
-    # momentum-exchange force; use_body=1 sums only body links (Cd), 0 sums all solid links
+    def drag_interp(self, scale=1.0):
+        self._drag_interp(scale, self.link_direction, self.link_node, self.link_fraction, self.link_count)
+
+    # momentum-exchange force; use_body=1 sums only body links (Cd), 0 sums all solid links.
+    # staircase walls, static bodies only (moving parts use Bouzidi + drag_interp)
     @ti.func
     def _drag_mask(self, use_body: ti.i32):
         for c in range(L3.D):

@@ -1,7 +1,6 @@
 # backward-facing step (Armaly): reattachment length x_r/S at Re=100 (ref ~3, we get ~2.5)
 import numpy as np
 from src.engine.simulation3d import Simulation3D
-from src.engine import lattice3d as L
 from src.post.progress import Progress
 from src.post.vtk import write_field
 from src.geometry.step import step
@@ -18,29 +17,33 @@ h = (ny-2) - S             # inlet channel height
 nu = U * (2*h) / Re        # Armaly: Re on hydraulic diameter 2h
 tau = 3*nu + 0.5
 steps = 60000
+ramp = 8000                # cosine inlet ramp from rest (avoids trapping a start-up acoustic wave)
 sample_every = 20           # sample force every N steps (avoids per-step GPU sync)
 check_every = 500           # progress readout interval
 
 def main():
     sim = Simulation3D(nx, ny, nz, backend="cuda")
-    sim.solid.from_numpy(step(nx, ny, nz, x_step, S))
-    sim.f.from_numpy(np.tile(L.W[:,None,None,None], (1,nx,ny,nz)).astype(np.float32))
+    solid = step(nx, ny, nz, x_step, S)
+    sim.solid.from_numpy(solid)
+    fluid = solid == 0
+    zero = np.zeros((nx, ny, nz), np.float32)
+    sim.init_equilibrium(zero, zero, zero) # at rest; the inlet ramps up
     
     run = RunRecord("step", sim, steps=steps, u_ref=U, nu=nu, tau=round(tau, 6), Re=Re,
                     geometry=f"S={S} ER~1.94", collision="TRT", sgs="none", walls="staircase BB",
-                    boundaries="NEEM-open inlet / zero-grad outlet / no-slip walls / periodic z", forcing="none")
+                    boundaries="NEEM-open inlet (ramped) / pressure outlet / no-slip walls / periodic z", forcing="none")
     prog = Progress(steps)
     for s in range(steps):
         sim.collide_trt(tau)
         sim.stream()
-        sim.inlet_neem_open(U)
-        sim.outlet()
-        sim.bounce_back()          # walls + step, all no-slip
-        # progress/health as in cylinder
+        ramp_fraction = min(s / ramp, 1.0)
+        sim.inlet_neem_open(U * 0.5 * (1.0 - np.cos(np.pi * ramp_fraction)))
+        sim.outlet_pressure(1.0) # pins the mean density (zero-gradient outlet let it drift)
+        sim.bounce_back() # walls + step, all no-slip
 
         if s % check_every == 0:
             sim.macroscopic()
-            hmax = float(np.nanmax(np.abs(sim.u.to_numpy())))
+            hmax = float(np.nanmax(np.abs(sim.u.to_numpy()[:, fluid])))   # fluid cells only
             prog.update(s, hmax)
 
     prog.done()

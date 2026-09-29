@@ -533,6 +533,15 @@ relative comparisons and credible trends, not certification-grade absolute Cd. S
   pressure outlet, start at U, x layers): non-rotating Cd 1.378, St 0.165 (run 56); at spin ratio
   alpha = 1 (counter-clockwise), Cl -2.653 with the Magnus sign, Cd 1.166, St 0.165 (run 58),
   against about |Cl| 2.5 and Cd 1.1 reported for unconfined flow at Re 100.
+- *4.2 close-out - bug hunt fixes (runs 59-63).* WALE now takes a solid neighbour's wall velocity
+  instead of zero, so moving walls are not seen as a velocity jump. Bouzidi falls back to halfway
+  bounce-back when the q <= 1/2 upstream node is solid (thin gaps, wheel contact patches). The
+  interpolated-wall force uses the Galilean-invariant form F = sum c (f_in + f_out) - u_w (f_in - f_out).
+  Bouzidi and its force loop over a compact boundary-link list built by `set_wall_fractions(q)`
+  instead of all 19 x N entries (sphere 994 -> 1205 MLUPS, cylinder 1013 -> 1195). The step case
+  moved to a ramped NEEM inlet and pressure outlet: x_r/S 2.82 (was about 2.5; Armaly about 3.0).
+  Reference runs reproduce: sphere Cd 1.6228 (identical), cylinder Cl -2.652, Ahmed static 0.7047 and
+  moving ground 0.6873, both within their standard errors of the earlier runs.
 - *4.2 Moving ground + rotating wheels (original plan).* Generalize the moving-wall velocity BC to the floor
   (belt at inlet U) and to wheel surfaces (local tangential speed). *Gate: moving belt removes
   the floor boundary layer (measured vs static floor); a spinning cylinder shows the expected

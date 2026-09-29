@@ -1,11 +1,10 @@
-# 3D engine invariants: moments, collision, streaming, walls, inlet
+# 3D engine invariants: moments, collision, streaming, walls, inlet, outlet, wall models, layers
 import numpy as np
 import pytest
 from src.engine.simulation3d import Simulation3D
 from src.engine import lattice3d as L3
 from src.turbulence.wall_function import friction_velocity
-from src.engine import runtime 
-from src.geometry.sponge import sponge
+from src.engine import runtime
 from src.geometry.sdf import solid_from_sdf, q_from_sdf, node_grid
 
 rng = np.random.default_rng(0)
@@ -30,7 +29,7 @@ def _load(sim, f):
     sim.f.from_numpy(f)
 
 # test 1: macroscopic rho and u
-def test_macroscopic3d(sim):
+def test_macroscopic_density_and_velocity(sim):
     sim.f.from_numpy(np.ones((L3.Q, N, N, N), np.float32))
     sim.macroscopic()
     
@@ -38,14 +37,14 @@ def test_macroscopic3d(sim):
     assert np.allclose(sim.u.to_numpy(), 0)
 
 # test 2: collide idempotent
-def test_collide3d(sim):
+def test_collide_equilibrium_is_unchanged(sim):
     f = np.tile(L3.W[:,None,None,None], (1,N,N,N)).astype(np.float32)  # rest equilibrium
     sim.f.from_numpy(f); sim.collide(0.8)
     
     assert np.allclose(sim.f.to_numpy(), f, atol=1e-5)
 
 # test 3: BGK conserves mass and momentum per cell; periodic stream is an exact shift
-def test_conservation3d(sim):
+def test_bgk_conserves_mass_momentum_and_stream_shifts(sim):
     f = rng.uniform(0.5, 1.5, (19, N, N, N)).astype(np.float32)
     _load(sim, f)
     sim.collide(rng.uniform(0.5, 1.5))
@@ -61,7 +60,7 @@ def test_conservation3d(sim):
         assert np.array_equal(h[q], np.roll(g[q], shift=tuple(L3.E[q]), axis=(0, 1, 2)))
 
 # test 4: bounce back
-def test_bounce3d(sim):
+def test_bounce_back_reverses_populations(sim):
     c = (5, 5, 5)
     f = np.zeros((L3.Q, N, N, N), np.float32)
     f[1][c] = 5        # East at the cell
@@ -76,7 +75,7 @@ def test_bounce3d(sim):
     assert g[3][c] == 5   # West now holds East's old value
 
 # test 5: free slip walls
-def test_slip3d(sim):
+def test_free_slip_walls(sim):
     f = rng.uniform(0.5, 1.5, (19, N, N, N)).astype(np.float32)
     sim.f.from_numpy(f)
     sim.free_slip_y()
@@ -85,23 +84,8 @@ def test_slip3d(sim):
 
     assert np.allclose(f, f_new, atol=1e-6)
 
-# test 6: inlet
-def test_inlet3d(sim):
-    f = rng.uniform(0.5, 1.5, (19, N, N, N)).astype(np.float32)
-    U = rng.uniform(0.01, 0.1)
-    sim.f.from_numpy(f)
-    sim.inlet(U)
-    sim.macroscopic()
-    rho, u = sim.rho.to_numpy(), sim.u.to_numpy()
-    f_new = sim.f.to_numpy()
-
-    assert np.allclose(u[0, 0], U, atol=1e-5)
-    assert np.allclose(u[1, 0], 0, atol=1e-5)
-    assert np.allclose(u[2, 0], 0, atol=1e-5)
-    assert np.allclose(rho[0], 1, atol=1e-5)
-
-# test 7: TRT conserves mass and momentum per cell
-def test_collideTRT3d(sim):
+# test 6: TRT conserves mass and momentum per cell
+def test_trt_conserves_mass_and_momentum(sim):
     f = rng.uniform(0.5, 1.5, (19, N, N, N)).astype(np.float32)
     _load(sim, f)
     sim.collide_trt(rng.uniform(0.5, 1.5))
@@ -110,8 +94,8 @@ def test_collideTRT3d(sim):
     assert np.allclose(rho1, rho0, atol=1e-4)
     assert np.allclose(m1, m0, atol=1e-4)
 
-# test 8: LES is live (changes the result vs plain BGK) and still conserves per cell
-def test_LES3d(sim):
+# test 7: LES is live (changes the result vs plain BGK) and still conserves per cell
+def test_les_changes_result_and_conserves(sim):
     f = rng.uniform(0.5, 1.5, (19, N, N, N)).astype(np.float32)
     tau = rng.uniform(0.6, 1.5)
     _load(sim, f); sim.collide(tau);           bgk = sim.f.to_numpy()
@@ -122,8 +106,8 @@ def test_LES3d(sim):
     assert np.allclose(rho1, rho0, atol=1e-4)
     assert np.allclose(m1, m0, atol=1e-4)
 
-# test 9: LES BGK match
-def test_LESTinyCSMatchesBGK(sim):
+# test 8: LES BGK match
+def test_les_tiny_smagorinsky_constant_matches_bgk(sim):
     f = rng.uniform(0.5, 1.5, (19, N, N, N)).astype(np.float32)
     tau = rng.uniform(0.5, 1.5)
     sim.f.from_numpy(f)
@@ -136,8 +120,8 @@ def test_LESTinyCSMatchesBGK(sim):
 
     assert np.allclose(f_check, f_new, atol=1e-6)
 
-# test 10: Free slip y reflects y
-def test_freeYReflectY(sim):
+# test 9: Free slip y reflects y
+def test_free_slip_y_reflects_y_velocity(sim):
     rho = np.ones((N, N, N))
     u = np.zeros((3, N, N, N))
     u[0] = 0.08
@@ -156,8 +140,8 @@ def test_freeYReflectY(sim):
     assert np.isclose(uu[0][c],  0.08, atol=1e-5)   # tangential kept
     assert np.isclose(uu[1][c], -0.05, atol=1e-5)   # normal flipped
 
-# test 11: Free slip z reflects z
-def test_freeZReflectZ(sim):
+# test 10: Free slip z reflects z
+def test_free_slip_z_reflects_z_velocity(sim):
     rho = np.ones((N, N, N))
     u = np.zeros((3, N, N, N))
     u[0] = 0.08
@@ -176,8 +160,8 @@ def test_freeZReflectZ(sim):
     assert np.isclose(uu[0][c],  0.08, atol=1e-5)   # tangential kept
     assert np.isclose(uu[2][c], -0.05, atol=1e-5)   # normal flipped
 
-# test 12: bounce back interpolation
-def test_bounceBackInterp(sim):
+# test 11: bounce back interpolation
+def test_bouzidi_half_fraction_reflects_incoming(sim):
     c = (5, 5, 5)
     # solid cell one step East of c along direction d (E-face dir)
     d = int(np.where((L3.E == [1, 0, 0]).all(1))[0][0])
@@ -185,7 +169,8 @@ def test_bounceBackInterp(sim):
     q = np.zeros((L3.Q, N, N, N), np.float32); q[d][c] = 0.5
 
     f = np.zeros((L3.Q, N, N, N), np.float32); f[d][c] = 0.3   # incoming pop toward wall
-    sim.solid.from_numpy(solid); sim.q.from_numpy(q)
+    sim.solid.from_numpy(solid)
+    sim.set_wall_fractions(q)
     sim.f.from_numpy(f); sim.fc.from_numpy(f)   # kernel reads fc as post-collision
     sim.bounce_back_interp()
     g = sim.f.to_numpy()
@@ -193,8 +178,8 @@ def test_bounceBackInterp(sim):
     ob = int(L3.OPP[d])
     assert np.isclose(g[ob][c], 0.3, atol=1e-6)   # q=0.5 -> reflected == incoming
 
-# test 13: drag_interp sums c_i (f_in + f_out) over boundary links
-def test_drag_interp(sim):
+# test 12: drag_interp sums c_i (f_in + f_out) over boundary links
+def test_drag_interp_sums_momentum_exchange(sim):
     c = (5, 5, 5)
     d = int(np.where((L3.E == [1, 0, 0]).all(1))[0][0])   # East, into solid
     ob = int(L3.OPP[d])
@@ -203,7 +188,8 @@ def test_drag_interp(sim):
 
     fc = np.zeros((L3.Q, N, N, N), np.float32); fc[d][c] = 0.3   # incoming
     f  = np.zeros((L3.Q, N, N, N), np.float32); f[ob][c] = 0.2   # reflected
-    sim.solid.from_numpy(solid); sim.q.from_numpy(q)
+    sim.solid.from_numpy(solid)
+    sim.set_wall_fractions(q)
     sim.fc.from_numpy(fc); sim.f.from_numpy(f)
     sim.drag_interp()
     F = sim.force.to_numpy()
@@ -213,7 +199,7 @@ def test_drag_interp(sim):
     assert np.isclose(F[1], 0.0, atol=1e-6)
     assert np.isclose(F[2], 0.0, atol=1e-6)
 
-# test 14: inlet_neem imposes u=(U,0,0) on the x=0 plane
+# test 13: inlet_neem imposes u=(U,0,0) on the x=0 plane
 def test_inlet_neem(sim):
     U = 0.1
     sim.solid.from_numpy(np.zeros((N, N, N), np.int32))
@@ -226,7 +212,7 @@ def test_inlet_neem(sim):
     assert np.allclose(u[1, 0], 0, atol=1e-3)
     assert np.allclose(u[2, 0], 0, atol=1e-3)
 
-# test 15: inlet_neem_open drives open rows, leaves solid inlet columns alone
+# test 14: inlet_neem_open drives open rows, leaves solid inlet columns alone
 def test_inlet_neem_open(sim):
     U = 0.1
     solid = np.zeros((N, N, N), np.int32)
@@ -243,7 +229,7 @@ def test_inlet_neem_open(sim):
     # solid inlet column skipped
     assert np.allclose(g[:, 0, 2, 0], marker, atol=1e-6)
 
-# test 16: outlet copies the second-to-last plane onto the last
+# test 15: outlet copies the second-to-last plane onto the last
 def test_outlet(sim):
     f = rng.uniform(0.5, 1.5, (L3.Q, N, N, N)).astype(np.float32)
     sim.f.from_numpy(f)
@@ -253,7 +239,7 @@ def test_outlet(sim):
     assert np.allclose(g[:, -1, :, :], g[:, -2, :, :])   # zero-gradient at exit
     assert np.allclose(g[:, :-1, :, :], f[:, :-1, :, :]) # interior untouched
 
-# test 17: TRT + LES + forcing together. mass exact per cell, and each cell's x-momentum
+# test 16: TRT + LES + forcing together. mass exact per cell, and each cell's x-momentum
 # goes up by exactly gx per step (Guo). the old antisymmetric-rate bug breaks this
 def test_collide_full_combined(sim):
     gx = 1e-2
@@ -268,7 +254,7 @@ def test_collide_full_combined(sim):
     assert np.allclose(m1[0] - m0[0], gx, atol=1e-4)
     assert np.allclose(m1[1:], m0[1:], atol=1e-4)
 
-# test 18: init_equilibrium sets the right moments (rho and u recovered)
+# test 17: init_equilibrium sets the right moments (rho and u recovered)
 def test_init_equilibrium_moments(sim):
     ux = np.full((N, N, N), 0.05, np.float32)
     uy = np.full((N, N, N), -0.02, np.float32)
@@ -283,7 +269,7 @@ def test_init_equilibrium_moments(sim):
     assert np.allclose(u[1], -0.02, atol=1e-5)
     assert np.allclose(u[2], 0.01, atol=1e-5)
 
-# test 19: an equilibrium state is a collision fixed point (no force) -- this fails if
+# test 18: an equilibrium state is a collision fixed point (no force) -- this fails if
 # init_equilibrium's feq and collide_full's feq ever drift apart
 def test_equilibrium_is_collision_fixed_point(sim):
     ux = (0.05 * (2 * rng.random((N, N, N)) - 1)).astype(np.float32)
@@ -296,7 +282,7 @@ def test_equilibrium_is_collision_fixed_point(sim):
 
     assert np.allclose(sim.f.to_numpy(), f0, atol=1e-5)
 
-# test 19b: collision skips wall nodes, so bounce-back hands populations back unchanged
+# test 19: collision skips wall nodes, so bounce-back hands populations back unchanged
 @pytest.mark.parametrize("kernel", ["full", "reg"])
 def test_collide_skip_walls(sim, kernel):
     f = rng.uniform(0.5, 1.5, (L3.Q, N, N, N)).astype(np.float32)
@@ -502,15 +488,7 @@ def test_les_wale_zero_on_quiescent(sim):
 
     assert np.allclose(sim.nut_les.to_numpy(), 0.0)
 
-# test 31: sponge is zero interior and max on boundary planes
-def test_sponge_profile():
-    
-    s = sponge(40, 10, 30, width=8, nu_max=0.02)
-    assert np.isclose(s[0, 5, 15], 0.02)
-    assert np.isclose(s[20, 5, 15], 0.0)
-    assert np.isclose(s[20, 5, 0], 0.02)
-
-# test 32: pressure outlet sets rho = rho_out on the last plane, keeps the neighbour's velocity,
+# test 31: pressure outlet sets rho = rho_out on the last plane, keeps the neighbour's velocity,
 # and leaves every other plane untouched
 def test_outlet_pressure_pins_density(sim):
     sim.solid.from_numpy(np.zeros((N, N, N), np.int32))
@@ -525,7 +503,7 @@ def test_outlet_pressure_pins_density(sim):
     assert np.allclose(u_b, u_n, atol=1e-5)
     assert np.array_equal(g[:, :-1], f[:, :-1])
 
-# test 33: fused layers in collide_reg == old separate kernels (collide_reg -> sponge_relax -> sponge_relax_mean)
+# test 32: fused layers in collide_reg == old separate kernels (collide_reg -> sponge_relax -> sponge_relax_mean)
 def test_collide_reg_fused_layers():
     n = 12
     f0 = rng.uniform(0.5, 1.5, (19, n, n, n)).astype(np.float32)
@@ -556,7 +534,7 @@ def test_collide_reg_fused_layers():
     assert np.allclose(new.u_bar.to_numpy(), old.u_bar.to_numpy(), atol=1e-7)
     assert np.allclose(new.rho_bar.to_numpy(), old.rho_bar.to_numpy(), atol=1e-7)
 
-# test 34: moving bottom wall (uw) + static top wall gives the exact linear Couette profile
+# test 33: moving bottom wall (uw) + static top wall gives the exact linear Couette profile
 def test_bounce_back_moving_wall_couette():
     nx = 6
     ny = 18
@@ -593,7 +571,7 @@ def test_bounce_back_moving_wall_couette():
     uyz = s.u.to_numpy()[1:, :, 1:-1, :]                      # y, z components, fluid rows only
     assert np.abs(uyz).max() < 1e-4 * U                       # no wall-normal or spanwise flow (0.01% of U)
 
-# test 35: Bouzidi moving wall reproduces Taylor-Couette flow (rotating inner, static outer cylinder)
+# test 34: Bouzidi moving wall reproduces Taylor-Couette flow (rotating inner, static outer cylinder)
 def test_bouzidi_moving_wall_taylor_couette():
     n = 48
     nzz = 4
@@ -613,7 +591,7 @@ def test_bouzidi_moving_wall_taylor_couette():
     
     s = Simulation3D(n, n, nzz, "cpu", interp=True)
     s.solid.from_numpy(solid_from_sdf(phi, n, n, nzz))
-    s.q.from_numpy(q_from_sdf(phi, n, n, nzz))
+    s.set_wall_fractions(q_from_sdf(phi, n, n, nzz))
 
     X, Y, Z = node_grid(n, n, nzz)
     dx = X - cx
@@ -649,3 +627,77 @@ def test_bouzidi_moving_wall_taylor_couette():
     assert fluid.sum() > 4000
     assert err < 0.01 # 1% of the wall speed, RMS
     assert np.abs(ur[fluid]).max() < 0.01 * om * R1 # no spurious radial flow
+
+# test 35: Bouzidi falls back to halfway bounce-back when the upstream node is solid (thin gap)
+def test_bouzidi_falls_back_to_halfway_when_upstream_is_solid(sim):
+
+    center = (5, 5, 5)
+    east = int(np.where((L3.E == [1, 0, 0]).all(1))[0][0])
+    west = int(L3.OPP[east])
+    solid = np.zeros((N, N, N), np.int32)
+    solid[6, 5, 5] = 1
+    solid[4, 5, 5] = 1
+    fractions = np.zeros((L3.Q, N, N, N), np.float32)
+    fractions[east][center] = 0.25
+    populations = np.zeros((L3.Q, N, N, N), np.float32)
+    populations[east][center] = 0.3
+    populations[east][4, 5, 5] = 0.9
+    sim.solid.from_numpy(solid)
+    sim.uw.from_numpy(np.zeros((3, N, N, N), np.float32))
+    sim.set_wall_fractions(fractions)
+    sim.f.from_numpy(populations)
+    sim.fc.from_numpy(populations)
+    sim.bounce_back_interp()
+    reflected = sim.f.to_numpy()[west][center]
+
+    assert np.isclose(reflected, 0.3, atol=1e-6)
+
+# test 36: drag_interp on a moving wall adds the Galilean term -u_w (f_in - f_out)
+def test_drag_interp_moving_wall_galilean_term(sim):
+
+    center = (5, 5, 5)
+    east = int(np.where((L3.E == [1, 0, 0]).all(1))[0][0])
+    west = int(L3.OPP[east])
+    wall_velocity = np.array([0.02, 0.01, 0.0], np.float32)
+    solid = np.zeros((N, N, N), np.int32)
+    solid[6, 5, 5] = 1
+    fractions = np.zeros((L3.Q, N, N, N), np.float32)
+    fractions[east][center] = 0.5
+    velocity_field = np.zeros((3, N, N, N), np.float32)
+    velocity_field[:, 5, 5, 5] = wall_velocity
+    velocity_field[:, 6, 5, 5] = wall_velocity
+    incoming = np.zeros((L3.Q, N, N, N), np.float32)
+    incoming[east][center] = 0.3
+    reflected = np.zeros((L3.Q, N, N, N), np.float32)
+    reflected[west][center] = 0.2
+    sim.solid.from_numpy(solid)
+    sim.uw.from_numpy(velocity_field)
+    sim.set_wall_fractions(fractions)
+    sim.fc.from_numpy(incoming)
+    sim.f.from_numpy(reflected)
+    sim.drag_interp()
+    force = sim.force.to_numpy()
+    sim.uw.from_numpy(np.zeros((3, N, N, N), np.float32))
+
+    assert np.isclose(force[0], 0.5 - 0.02 * 0.1, atol=1e-6)
+    assert np.isclose(force[1], -0.01 * 0.1, atol=1e-6)
+    assert np.isclose(force[2], 0.0, atol=1e-6)
+
+# test 37: WALE sees no velocity gradient when the fluid moves with a moving wall
+def test_les_wale_uses_moving_wall_velocity(sim):
+
+    solid = np.zeros((N, N, N), np.int32)
+    solid[:, 0, :] = 1
+    velocity_field = np.zeros((3, N, N, N), np.float32)
+    velocity_field[0, :, 0, :] = 0.05
+    zero = np.zeros((N, N, N), np.float32)
+    sim.solid.from_numpy(solid)
+    sim.lid.from_numpy(np.zeros((N, N, N), np.int32))
+    sim.uw.from_numpy(velocity_field)
+    sim.init_equilibrium(np.full((N, N, N), 0.05, np.float32), zero, zero)
+    sim.macroscopic()
+    sim.les_wale(0.5)
+    subgrid_viscosity = sim.nut_les.to_numpy()
+    sim.uw.from_numpy(np.zeros((3, N, N, N), np.float32))
+
+    assert np.abs(subgrid_viscosity[:, 1, :]).max() < 1e-9

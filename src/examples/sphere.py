@@ -43,7 +43,7 @@ def main():
         solid = ref
         q = wall_fraction_sphere(nx, ny, nz, cx, cy, cz, D/2)
     sim.solid.from_numpy(solid)
-    sim.q.from_numpy(q)
+    sim.set_wall_fractions(q)
 
     sim.init_equilibrium(np.full((nx, ny, nz), U, np.float32),      # start in uniform flow at U
                          np.zeros((nx, ny, nz), np.float32),
@@ -64,9 +64,9 @@ def main():
         sim.free_slip_y()
         sim.free_slip_z()
         sim.bounce_back_interp()
-        sim.drag_interp()
 
         if s == steps - 5000:
+            sim.drag_interp() # drag only when it is read
             F_mid = float(sim.force.to_numpy()[0])
 
         if s % check_every == 0:
@@ -93,7 +93,7 @@ def main():
    
     u = sim.u.to_numpy()
     U_eff = float(u[0, cx, 20, nz//2])   # near the wall, out of the wake
-    Re_eff = U_eff * D / nu
+    sim.drag_interp() # force on the final state (f and fc from the last step)
     F = sim.force.to_numpy()
     cd = float(F[0] / (0.5 * 1.0 * U * U * A))            # nominal free stream: the inlet now delivers U
     cd_ref = (24 / Re) * (1 + 0.15 * Re ** 0.687)          # Schiller-Naumann at the nominal Re

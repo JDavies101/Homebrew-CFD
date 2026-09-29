@@ -31,7 +31,8 @@ omega = alpha * U / (D / 2)                                  # rad per step, + =
 def main():
     sim = Simulation3D(nx, ny, nz, backend="cuda", interp=True)
     sim.solid.from_numpy(cylinder(nx, ny, nz, cx, cy, D/2))
-    sim.q.from_numpy(wall_fraction_cylinder(nx, ny, nz, cx, cy, D/2))
+    sim.set_wall_fractions(wall_fraction_cylinder(nx, ny, nz, cx, cy, D/2))
+    fluid = sim.solid.to_numpy() == 0
     zero = np.zeros((nx, ny, nz), np.float32)
     sim.init_equilibrium(np.full((nx, ny, nz), U, np.float32), zero, zero)   # start in uniform flow
     sim.sigma.from_numpy(relax_profile(nx, nz, 24, 0, 0.1))                 # x absorbing layers
@@ -61,16 +62,16 @@ def main():
         sim.outlet_pressure(1.0)
         sim.free_slip_y() # top/bottom now free-slip instead of periodic
         sim.bounce_back_interp()       # replaces bounce_back for the cylinder
-        sim.drag_interp()
 
         if s >= warmup and s % sample_every == 0:
+            sim.drag_interp() # drag only on sample steps
             F = sim.force.to_numpy()
             cd_samples.append(F[0] / (0.5 * 1.0 * U * U * A))
             fy_history.append(F[1])
 
         if s % check_every == 0:
             sim.macroscopic()
-            hmax = float(np.nanmax(np.abs(sim.u.to_numpy())))
+            hmax = float(np.nanmax(np.abs(sim.u.to_numpy()[:, fluid])))   # fluid cells only
             prog.update(s, hmax)
 
     prog.done()                          # finish the bar (newline) before any other output
