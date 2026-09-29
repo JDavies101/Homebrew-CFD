@@ -1,6 +1,6 @@
 # analytic sub-cell wall fractions q for interpolated bounce-back
 import numpy as np
-from src.engine import lattice_d3q19 as L3
+from src.engine import lattice_d3q19 as d3q19
 
 def wall_fraction_cylinder(nx, ny, nz, center_x, center_y, radius):
     """
@@ -9,7 +9,7 @@ def wall_fraction_cylinder(nx, ny, nz, center_x, center_y, radius):
     Returns float32 q (19, nx, ny, nz), 0 on non-boundary links.
     """
 
-    q = np.zeros((L3.Q, nx, ny, nz), np.float32)
+    q = np.zeros((d3q19.direction_count, nx, ny, nz), np.float32)
     X, Y = np.meshgrid(np.arange(nx), np.arange(ny), indexing="ij")
     solid = (X - center_x) ** 2 + (Y - center_y) ** 2 < radius ** 2  # (nx, ny) bool
 
@@ -18,8 +18,8 @@ def wall_fraction_cylinder(nx, ny, nz, center_x, center_y, radius):
             # only fluid nodes have boundary links
             if solid[i, j]:
                 continue
-            for d in range(L3.Q):
-                ex, ey = int(L3.E[d, 0]), int(L3.E[d, 1])
+            for d in range(d3q19.direction_count):
+                ex, ey = int(d3q19.lattice_velocities[d, 0]), int(d3q19.lattice_velocities[d, 1])
                 neighbour_i, neighbour_j = i + ex, j + ey
                 # neighbour must be solid
                 if not (0 <= neighbour_i < nx and 0 <= neighbour_j < ny) or not solid[neighbour_i, neighbour_j]:
@@ -47,7 +47,7 @@ def wall_fraction_sphere(nx, ny, nz, center_x, center_y, center_z, radius):
     Returns float32 q (19, nx, ny, nz), 0 on non-boundary links.
     """
 
-    q = np.zeros((L3.Q, nx, ny, nz), np.float32)
+    q = np.zeros((d3q19.direction_count, nx, ny, nz), np.float32)
     X, Y, Z = np.meshgrid(np.arange(nx), np.arange(ny), np.arange(nz), indexing="ij")
     offset_x, offset_y, offset_z = X - center_x, Y - center_y, Z - center_z
     solid = offset_x * offset_x + offset_y * offset_y + offset_z * offset_z < radius * radius
@@ -55,8 +55,8 @@ def wall_fraction_sphere(nx, ny, nz, center_x, center_y, center_z, radius):
     quadratic_c = offset_x * offset_x + offset_y * offset_y + offset_z * offset_z - radius * radius
 
     # 19 iterations, each fully vectorized
-    for d in range(L3.Q):
-        ex, ey, ez = (int(v) for v in L3.E[d])
+    for d in range(d3q19.direction_count):
+        ex, ey, ez = (int(v) for v in d3q19.lattice_velocities[d])
         quadratic_a = ex * ex + ey * ey + ez * ez
         if quadratic_a == 0:
             continue

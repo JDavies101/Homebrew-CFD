@@ -2,7 +2,7 @@
 import numpy as np
 import taichi as ti
 from src.engine import runtime
-from src.engine import lattice_d3q19 as L3
+from src.engine import lattice_d3q19 as d3q19
 from src.geometry.sdf import q_from_sdf
 
 @ti.func
@@ -248,10 +248,10 @@ def q_from_mesh(triangles, phi, nx, ny, nz, backend="cpu"):
 
     runtime.init(backend)
 
-    hit_fraction = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))
+    hit_fraction = ti.field(ti.f32, shape=(d3q19.direction_count, nx, ny, nz))
     hit_fraction.fill(2.0)
 
-    _link_hits(np.ascontiguousarray(triangles, np.float32), np.ascontiguousarray(L3.E, np.int32), hit_fraction)
+    _link_hits(np.ascontiguousarray(triangles, np.float32), np.ascontiguousarray(d3q19.lattice_velocities, np.int32), hit_fraction)
 
     mesh_hits = hit_fraction.to_numpy()
     q_sdf = q_from_sdf(phi, nx, ny, nz)

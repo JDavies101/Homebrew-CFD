@@ -1,7 +1,7 @@
 # geometry: solid masks and sub-cell wall fractions
 import numpy as np
 import pytest
-from src.engine import lattice_d3q19 as L3
+from src.engine import lattice_d3q19 as d3q19
 from src.geometry.cylinder_body import cylinder
 from src.geometry.sphere_body import sphere
 from src.geometry.step_body import step
@@ -16,9 +16,9 @@ def _max_distance_from_sphere(q, center, radius):
     """
 
     max_error = 0.0
-    for d in range(L3.Q):
+    for d in range(d3q19.direction_count):
         for (i, j, k) in np.argwhere(q[d] > 0):
-            crossing = np.array([i, j, k]) + q[d, i, j, k] * L3.E[d]
+            crossing = np.array([i, j, k]) + q[d, i, j, k] * d3q19.lattice_velocities[d]
             max_error = max(max_error, abs(np.linalg.norm(crossing - center) - radius))
 
     return max_error
@@ -59,9 +59,9 @@ def test_wall_fraction_cylinder():
     boundary_q = q[q > 0]
     # crossing distance from the axis (z ignored, xy distance only)
     max_error = 0.0
-    for d in range(L3.Q):
+    for d in range(d3q19.direction_count):
         for (i, j, k) in np.argwhere(q[d] > 0):
-            crossing = np.array([i, j]) + q[d, i, j, k] * L3.E[d, :2]
+            crossing = np.array([i, j]) + q[d, i, j, k] * d3q19.lattice_velocities[d, :2]
             max_error = max(max_error, abs(np.hypot(crossing[0] - 20, crossing[1] - 20) - 6))
 
     assert (boundary_q > 0).all() and (boundary_q <= 1).all()

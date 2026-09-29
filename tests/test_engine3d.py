@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 from src.engine.simulation3d import Simulation3D
-from src.engine import lattice_d3q19 as L3
+from src.engine import lattice_d3q19 as d3q19
 from src.turbulence.wall_function import friction_velocity
 from src.engine import runtime
 from src.geometry.sdf import solid_from_sdf, q_from_sdf, node_grid
@@ -19,7 +19,7 @@ def sim():
 # per-cell mass and momentum, so conservation errors can't cancel across the field
 
 def _moments(f):
-    return f.sum(axis=0), np.einsum("qc, qxyz -> cxyz", L3.E, f)
+    return f.sum(axis=0), np.einsum("qc, qxyz -> cxyz", d3q19.lattice_velocities, f)
 
 # load f on a clean slate: no walls, no wall model, so every cell collides
 def _load(sim, f):
@@ -30,7 +30,7 @@ def _load(sim, f):
 
 # test 1: macroscopic rho and u
 def test_macroscopic_density_and_velocity(sim):
-    sim.f.from_numpy(np.ones((L3.Q, N, N, N), np.float32))
+    sim.f.from_numpy(np.ones((d3q19.direction_count, N, N, N), np.float32))
     sim.macroscopic()
     
     assert np.allclose(sim.rho.to_numpy(), 19)
@@ -38,7 +38,7 @@ def test_macroscopic_density_and_velocity(sim):
 
 # test 2: collide idempotent
 def test_collide_equilibrium_is_unchanged(sim):
-    f = np.tile(L3.W[:,None,None,None], (1,N,N,N)).astype(np.float32)  # rest equilibrium
+    f = np.tile(d3q19.lattice_weights[:,None,None,None], (1,N,N,N)).astype(np.float32)  # rest equilibrium
     sim.f.from_numpy(f); sim.collide(0.8)
     
     assert np.allclose(sim.f.to_numpy(), f, atol=1e-5)
@@ -56,13 +56,13 @@ def test_bgk_conserves_mass_momentum_and_stream_shifts(sim):
 
     sim.stream()
     h = sim.f.to_numpy()
-    for q in range(L3.Q):  # f_new[q](x) = f[q](x - e_q)
-        assert np.array_equal(h[q], np.roll(g[q], shift=tuple(L3.E[q]), axis=(0, 1, 2)))
+    for q in range(d3q19.direction_count):  # f_new[q](x) = f[q](x - e_q)
+        assert np.array_equal(h[q], np.roll(g[q], shift=tuple(d3q19.lattice_velocities[q]), axis=(0, 1, 2)))
 
 # test 4: bounce back
 def test_bounce_back_reverses_populations(sim):
     c = (5, 5, 5)
-    f = np.zeros((L3.Q, N, N, N), np.float32)
+    f = np.zeros((d3q19.direction_count, N, N, N), np.float32)
     f[1][c] = 5        # East at the cell
     f[3][c] = 2        # West at the same cell
     solid = np.zeros((N, N, N), np.int32); solid[c] = 1
@@ -126,9 +126,9 @@ def test_free_slip_y_reflects_y_velocity(sim):
     u = np.zeros((3, N, N, N))
     u[0] = 0.08
     u[1] = 0.05
-    eu = np.einsum("qc,cxyz->qxyz", L3.E, u)
+    eu = np.einsum("qc,cxyz->qxyz", d3q19.lattice_velocities, u)
     usq = (u ** 2).sum(0)
-    f = (L3.W[:, None, None, None] * rho * (1 + (3 * eu) + (4.5 * eu ** 2) - (1.5 * usq))).astype(np.float32)
+    f = (d3q19.lattice_weights[:, None, None, None] * rho * (1 + (3 * eu) + (4.5 * eu ** 2) - (1.5 * usq))).astype(np.float32)
 
     sim.f.from_numpy(f)
     sim.free_slip_y()
@@ -146,9 +146,9 @@ def test_free_slip_z_reflects_z_velocity(sim):
     u = np.zeros((3, N, N, N))
     u[0] = 0.08
     u[2] = 0.05
-    eu = np.einsum("qc,cxyz->qxyz", L3.E, u)
+    eu = np.einsum("qc,cxyz->qxyz", d3q19.lattice_velocities, u)
     usq = (u ** 2).sum(0)
-    f = (L3.W[:, None, None, None] * rho * (1 + (3 * eu) + (4.5 * eu ** 2) - (1.5 * usq))).astype(np.float32)
+    f = (d3q19.lattice_weights[:, None, None, None] * rho * (1 + (3 * eu) + (4.5 * eu ** 2) - (1.5 * usq))).astype(np.float32)
 
     sim.f.from_numpy(f)
     sim.free_slip_z()
@@ -164,30 +164,30 @@ def test_free_slip_z_reflects_z_velocity(sim):
 def test_bouzidi_half_fraction_reflects_incoming(sim):
     c = (5, 5, 5)
     # solid cell one step East of c along direction d (E-face dir)
-    d = int(np.where((L3.E == [1, 0, 0]).all(1))[0][0])
+    d = int(np.where((d3q19.lattice_velocities == [1, 0, 0]).all(1))[0][0])
     solid = np.zeros((N, N, N), np.int32); solid[6, 5, 5] = 1
-    q = np.zeros((L3.Q, N, N, N), np.float32); q[d][c] = 0.5
+    q = np.zeros((d3q19.direction_count, N, N, N), np.float32); q[d][c] = 0.5
 
-    f = np.zeros((L3.Q, N, N, N), np.float32); f[d][c] = 0.3   # incoming pop toward wall
+    f = np.zeros((d3q19.direction_count, N, N, N), np.float32); f[d][c] = 0.3   # incoming pop toward wall
     sim.solid.from_numpy(solid)
     sim.set_wall_fractions(q)
     sim.f.from_numpy(f); sim.fc.from_numpy(f)   # kernel reads fc as post-collision
     sim.bounce_back_interp()
     g = sim.f.to_numpy()
 
-    ob = int(L3.OPP[d])
+    ob = int(d3q19.opposite_direction[d])
     assert np.isclose(g[ob][c], 0.3, atol=1e-6)   # q=0.5 -> reflected == incoming
 
 # test 12: drag_interp sums c_i (f_in + f_out) over boundary links
 def test_drag_interp_sums_momentum_exchange(sim):
     c = (5, 5, 5)
-    d = int(np.where((L3.E == [1, 0, 0]).all(1))[0][0])   # East, into solid
-    ob = int(L3.OPP[d])
+    d = int(np.where((d3q19.lattice_velocities == [1, 0, 0]).all(1))[0][0])   # East, into solid
+    ob = int(d3q19.opposite_direction[d])
     solid = np.zeros((N, N, N), np.int32); solid[6, 5, 5] = 1
-    q = np.zeros((L3.Q, N, N, N), np.float32); q[d][c] = 0.5
+    q = np.zeros((d3q19.direction_count, N, N, N), np.float32); q[d][c] = 0.5
 
-    fc = np.zeros((L3.Q, N, N, N), np.float32); fc[d][c] = 0.3   # incoming
-    f  = np.zeros((L3.Q, N, N, N), np.float32); f[ob][c] = 0.2   # reflected
+    fc = np.zeros((d3q19.direction_count, N, N, N), np.float32); fc[d][c] = 0.3   # incoming
+    f  = np.zeros((d3q19.direction_count, N, N, N), np.float32); f[ob][c] = 0.2   # reflected
     sim.solid.from_numpy(solid)
     sim.set_wall_fractions(q)
     sim.fc.from_numpy(fc); sim.f.from_numpy(f)
@@ -203,7 +203,7 @@ def test_drag_interp_sums_momentum_exchange(sim):
 def test_inlet_neem(sim):
     U = 0.1
     sim.solid.from_numpy(np.zeros((N, N, N), np.int32))
-    f = np.tile(L3.W[:, None, None, None], (1, N, N, N)).astype(np.float32)  # rest state
+    f = np.tile(d3q19.lattice_weights[:, None, None, None], (1, N, N, N)).astype(np.float32)  # rest state
     sim.f.from_numpy(f)
     sim.inlet_neem(U)
     sim.macroscopic()
@@ -218,7 +218,7 @@ def test_inlet_neem_open(sim):
     solid = np.zeros((N, N, N), np.int32)
     solid[0:2, 0:4, :] = 1                       # a solid block spanning the inlet columns
     sim.solid.from_numpy(solid)
-    f = np.tile(L3.W[:, None, None, None], (1, N, N, N)).astype(np.float32)
+    f = np.tile(d3q19.lattice_weights[:, None, None, None], (1, N, N, N)).astype(np.float32)
     sim.f.from_numpy(f)
     marker = sim.f.to_numpy()[:, 0, 2, 0].copy() # a solid inlet cell, pre-call
     sim.inlet_neem_open(U)
@@ -231,7 +231,7 @@ def test_inlet_neem_open(sim):
 
 # test 15: outlet copies the second-to-last plane onto the last
 def test_outlet(sim):
-    f = rng.uniform(0.5, 1.5, (L3.Q, N, N, N)).astype(np.float32)
+    f = rng.uniform(0.5, 1.5, (d3q19.direction_count, N, N, N)).astype(np.float32)
     sim.f.from_numpy(f)
     sim.outlet()
     g = sim.f.to_numpy()
@@ -243,7 +243,7 @@ def test_outlet(sim):
 # goes up by exactly gx per step (Guo). the old antisymmetric-rate bug breaks this
 def test_collide_full_combined(sim):
     gx = 1e-2
-    f = rng.uniform(0.5, 1.5, (L3.Q, N, N, N)).astype(np.float32)
+    f = rng.uniform(0.5, 1.5, (d3q19.direction_count, N, N, N)).astype(np.float32)
     _load(sim, f)
     sim.collide_full(0.8, 0.1, gx, 1)
     g = sim.f.to_numpy()
@@ -285,7 +285,7 @@ def test_equilibrium_is_collision_fixed_point(sim):
 # test 19: collision skips wall nodes, so bounce-back hands populations back unchanged
 @pytest.mark.parametrize("kernel", ["full", "reg"])
 def test_collide_skip_walls(sim, kernel):
-    f = rng.uniform(0.5, 1.5, (L3.Q, N, N, N)).astype(np.float32)
+    f = rng.uniform(0.5, 1.5, (d3q19.direction_count, N, N, N)).astype(np.float32)
     solid = np.zeros((N, N, N), np.int32)
     solid[8, 8, 8] = 1
     sim.solid.from_numpy(solid)
@@ -306,7 +306,7 @@ def test_collide_skip_walls(sim, kernel):
 def test_nut_wall_augments_tau(sim):
     tau0, nut = 0.8, 0.03
     c = (8, 8, 8)
-    f0 = np.tile(L3.W[:, None, None, None], (1, N, N, N)).astype(np.float32)
+    f0 = np.tile(d3q19.lattice_weights[:, None, None, None], (1, N, N, N)).astype(np.float32)
     f0[5][c] += 0.05                                   # a non-equilibrium perturbation at one node
     sim.solid.from_numpy(np.zeros((N, N, N), np.int32))
 
@@ -430,7 +430,7 @@ def test_runtime_rejects_switch(sim):
 def test_wall_model_matches(sim):
     solid = np.zeros((N, N, N), np.int32); solid[:, 0, :] = 1
     sim.solid.from_numpy(solid)
-    f = rng.uniform(0.9, 1.1, (L3.Q, N, N, N)).astype(np.float32)
+    f = rng.uniform(0.9, 1.1, (d3q19.direction_count, N, N, N)).astype(np.float32)
     sim.f.from_numpy(f); sim.nut_wall.from_numpy(np.zeros((N,N,N), np.float32))
     sim.macroscopic(); sim.wall_model(0.01, 10.0)
     slow = sim.nut_wall.to_numpy().copy()
@@ -444,7 +444,7 @@ def test_drag_body_matches_manual(sim):
     body = np.zeros((N, N, N), np.int32)
     solid[8, 8, 8] = 1; body[8, 8, 8] = 1                 # one body voxel = one solid voxel
     sim.solid.from_numpy(solid); sim.body.from_numpy(body)
-    sim.f.from_numpy(rng.uniform(0.9, 1.1, (L3.Q, N, N, N)).astype(np.float32))
+    sim.f.from_numpy(rng.uniform(0.9, 1.1, (d3q19.direction_count, N, N, N)).astype(np.float32))
     sim.drag(); a = sim.force.to_numpy().copy()
     sim.drag_body(); b = sim.force.to_numpy()
     assert np.allclose(a, b)                               # body==solid here -> identical force
@@ -492,13 +492,13 @@ def test_les_wale_zero_on_quiescent(sim):
 # and leaves every other plane untouched
 def test_outlet_pressure_pins_density(sim):
     sim.solid.from_numpy(np.zeros((N, N, N), np.int32))
-    f = rng.uniform(0.9, 1.1, (L3.Q, N, N, N)).astype(np.float32)
+    f = rng.uniform(0.9, 1.1, (d3q19.direction_count, N, N, N)).astype(np.float32)
     sim.f.from_numpy(f)
     sim.outlet_pressure(1.0)
     g = sim.f.to_numpy()
     rho_b = g[:, -1].sum(axis=0)
-    u_b = np.einsum("qc,qjk->cjk", L3.E, g[:, -1]) / rho_b
-    u_n = np.einsum("qc,qjk->cjk", L3.E, g[:, -2]) / g[:, -2].sum(axis=0)
+    u_b = np.einsum("qc,qjk->cjk", d3q19.lattice_velocities, g[:, -1]) / rho_b
+    u_n = np.einsum("qc,qjk->cjk", d3q19.lattice_velocities, g[:, -2]) / g[:, -2].sum(axis=0)
     assert np.allclose(rho_b, 1.0, atol=1e-5)
     assert np.allclose(u_b, u_n, atol=1e-5)
     assert np.array_equal(g[:, :-1], f[:, :-1])
@@ -632,14 +632,14 @@ def test_bouzidi_moving_wall_taylor_couette():
 def test_bouzidi_falls_back_to_halfway_when_upstream_is_solid(sim):
 
     center = (5, 5, 5)
-    east = int(np.where((L3.E == [1, 0, 0]).all(1))[0][0])
-    west = int(L3.OPP[east])
+    east = int(np.where((d3q19.lattice_velocities == [1, 0, 0]).all(1))[0][0])
+    west = int(d3q19.opposite_direction[east])
     solid = np.zeros((N, N, N), np.int32)
     solid[6, 5, 5] = 1
     solid[4, 5, 5] = 1
-    fractions = np.zeros((L3.Q, N, N, N), np.float32)
+    fractions = np.zeros((d3q19.direction_count, N, N, N), np.float32)
     fractions[east][center] = 0.25
-    populations = np.zeros((L3.Q, N, N, N), np.float32)
+    populations = np.zeros((d3q19.direction_count, N, N, N), np.float32)
     populations[east][center] = 0.3
     populations[east][4, 5, 5] = 0.9
     sim.solid.from_numpy(solid)
@@ -656,19 +656,19 @@ def test_bouzidi_falls_back_to_halfway_when_upstream_is_solid(sim):
 def test_drag_interp_moving_wall_galilean_term(sim):
 
     center = (5, 5, 5)
-    east = int(np.where((L3.E == [1, 0, 0]).all(1))[0][0])
-    west = int(L3.OPP[east])
+    east = int(np.where((d3q19.lattice_velocities == [1, 0, 0]).all(1))[0][0])
+    west = int(d3q19.opposite_direction[east])
     wall_velocity = np.array([0.02, 0.01, 0.0], np.float32)
     solid = np.zeros((N, N, N), np.int32)
     solid[6, 5, 5] = 1
-    fractions = np.zeros((L3.Q, N, N, N), np.float32)
+    fractions = np.zeros((d3q19.direction_count, N, N, N), np.float32)
     fractions[east][center] = 0.5
     velocity_field = np.zeros((3, N, N, N), np.float32)
     velocity_field[:, 5, 5, 5] = wall_velocity
     velocity_field[:, 6, 5, 5] = wall_velocity
-    incoming = np.zeros((L3.Q, N, N, N), np.float32)
+    incoming = np.zeros((d3q19.direction_count, N, N, N), np.float32)
     incoming[east][center] = 0.3
-    reflected = np.zeros((L3.Q, N, N, N), np.float32)
+    reflected = np.zeros((d3q19.direction_count, N, N, N), np.float32)
     reflected[west][center] = 0.2
     sim.solid.from_numpy(solid)
     sim.uw.from_numpy(velocity_field)

@@ -1,7 +1,7 @@
 # flow past a cylinder (Phase 2 gate): Re=100 -> Cd ~1.3-1.4, Strouhal ~0.16-0.20
 import numpy as np
 from src.engine.simulation3d import Simulation3D
-from src.engine import lattice_d3q19 as L
+from src.engine import lattice_d3q19 as d3q19
 from src.post.progress import Progress
 from src.post.vtk import write_field
 from src.geometry.wall_fraction import wall_fraction_cylinder

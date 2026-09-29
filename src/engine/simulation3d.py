@@ -2,7 +2,7 @@
 # geometry-agnostic: consumes solid/body/lid/q fields, does not build shapes
 import taichi as ti
 import numpy as np
-from src.engine import lattice_d3q19 as L3
+from src.engine import lattice_d3q19 as d3q19
 from src.engine import runtime
 from src.geometry.sdf import normals_from_sdf
 
@@ -11,8 +11,8 @@ class Simulation3D:
     # allocate fields and load the lattice constants
     def __init__(self, nx, ny, nz, backend="cpu", interp=False):
         runtime.init(backend)
-        self.Q = L3.Q
-        self.D = L3.D
+        self.Q = d3q19.direction_count
+        self.D = d3q19.dimension
         self.nx, self.ny, self.nz = nx, ny, nz
         # populations + macroscopic
         self.f     = ti.field(ti.f32, shape=(self.Q, nx, ny, nz))
@@ -22,14 +22,14 @@ class Simulation3D:
         self.solid = ti.field(ti.i32, shape=(nx, ny, nz))
         self.lid   = ti.field(ti.i32, shape=(nx, ny, nz))
         self.uw = ti.field(ti.f32, shape=(self.D, nx, ny, nz)) # wall velocity at solid nodes (0 = static)
-        self.force = ti.field(ti.f32, shape=L3.D)
-        self.MIRROR_Y = ti.field(ti.i32, shape=L3.Q)
-        self.MIRROR_Y.from_numpy(L3.MIRROR_Y.astype(np.int32))
-        self.MIRROR_Z = ti.field(ti.i32, shape=L3.Q)
-        self.MIRROR_Z.from_numpy(L3.MIRROR_Z.astype(np.int32))
+        self.force = ti.field(ti.f32, shape=d3q19.dimension)
+        self.MIRROR_Y = ti.field(ti.i32, shape=d3q19.direction_count)
+        self.MIRROR_Y.from_numpy(d3q19.mirror_y.astype(np.int32))
+        self.MIRROR_Z = ti.field(ti.i32, shape=d3q19.direction_count)
+        self.MIRROR_Z.from_numpy(d3q19.mirror_z.astype(np.int32))
         if interp: # Bouzidi only: wall fractions + post-collision snapshot
-            self.q  = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))   # wall fractions (0 = not a boundary link)
-            self.fc = ti.field(ti.f32, shape=(L3.Q, nx, ny, nz))   # post-collision snapshot (Bouzidi needs it)
+            self.q  = ti.field(ti.f32, shape=(d3q19.direction_count, nx, ny, nz))   # wall fractions (0 = not a boundary link)
+            self.fc = ti.field(ti.f32, shape=(d3q19.direction_count, nx, ny, nz))   # post-collision snapshot (Bouzidi needs it)
         self.nut_wall = ti.field(ti.f32, shape =(nx, ny, nz))  # wall-model eddy viscosity (0 away from walls)
         self.nut_les = ti.field(ti.f32, shape=(nx, ny, nz)) # WALE subgrid eddy viscosity (0 until les_wale runs)
         self.sigma = ti.field(ti.f32, shape=(nx, nz))              # relaxation layer strength per (x, z) column, 0 by default
@@ -39,11 +39,11 @@ class Simulation3D:
         self.body = ti.field(ti.i32, shape=(nx, ny, nz))       # body-only mask for drag (solid minus tunnel walls)
         # lattice constants as fields, built from the NumPy descriptor
         self.E   = ti.field(ti.i32, shape=(self.Q, self.D))
-        self.E.from_numpy(L3.E.astype(np.int32))
+        self.E.from_numpy(d3q19.lattice_velocities.astype(np.int32))
         self.W   = ti.field(ti.f32, shape=self.Q)
-        self.W.from_numpy(L3.W.astype(np.float32))
+        self.W.from_numpy(d3q19.lattice_weights.astype(np.float32))
         self.OPP = ti.field(ti.i32, shape=self.Q)
-        self.OPP.from_numpy(L3.OPP.astype(np.int32))
+        self.OPP.from_numpy(d3q19.opposite_direction.astype(np.int32))
 
     # density and velocity from the populations
     @ti.kernel
@@ -355,7 +355,7 @@ class Simulation3D:
 
     def build_wall_list(self, phi=None):
         solid = self.solid.to_numpy()
-        E = L3.E
+        E = d3q19.lattice_velocities
         nx, ny, nz = self.nx, self.ny, self.nz
 
         def shift(a, s):                       # a[c] -> a[c+s], zero-filled out of bounds
@@ -667,7 +667,7 @@ class Simulation3D:
     @ti.kernel
     def _drag_interp(self, scale: ti.f32, link_direction: ti.template(), link_node: ti.template(),
                      link_fraction: ti.template(), count: ti.i32):
-        for c in range(L3.D):
+        for c in range(d3q19.dimension):
             self.force[c] = 0.0
         for m in range(count):
             d = link_direction[m]
@@ -688,7 +688,7 @@ class Simulation3D:
     # staircase walls, static bodies only (moving parts use Bouzidi + drag_interp)
     @ti.func
     def _drag_mask(self, use_body: ti.i32):
-        for c in range(L3.D):
+        for c in range(d3q19.dimension):
             self.force[c] = 0.0
         for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
             if self.solid[i, j, k] == 0:

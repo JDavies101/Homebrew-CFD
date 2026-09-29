@@ -1,7 +1,7 @@
 # signed distance fields: phi > 0 fluid, phi < 0 solid, phi = 0 on the surface
 # one phi gives the solid mask, per-link Bouzidi fractions q, wall normals, and wall distance
 import numpy as np
-from src.engine import lattice_d3q19 as L3
+from src.engine import lattice_d3q19 as d3q19
 
 def sdf_sphere(center_x, center_y, center_z, radius):
     """
@@ -47,10 +47,10 @@ def q_from_sdf(phi, nx, ny, nz, iterations=40):
 
     X, Y, Z = node_grid(nx, ny, nz)
     solid = phi(X, Y, Z) < 0.0
-    q = np.zeros((L3.Q, nx, ny, nz), np.float32)
+    q = np.zeros((d3q19.direction_count, nx, ny, nz), np.float32)
 
-    for d in range(L3.Q):
-        ex, ey, ez = (int(v) for v in L3.E[d])
+    for d in range(d3q19.direction_count):
+        ex, ey, ez = (int(v) for v in d3q19.lattice_velocities[d])
         if ex == 0 and ey == 0 and ez == 0:
             continue
 

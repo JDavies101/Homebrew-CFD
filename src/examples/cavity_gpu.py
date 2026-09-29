@@ -1,7 +1,7 @@
 # lid-driven cavity on the 2D taichi engine (gpu)
 import numpy as np
 from src.engine.simulation import Simulation
-from src.engine import lattice_d2q9 as L
+from src.engine import lattice_d2q9 as d2q9
 from src.post import plotting
 import matplotlib.pyplot as plt
 from src.post.run_log import RunRecord
@@ -24,7 +24,7 @@ def main():
     sim.lid.from_numpy(lid)
 
     # init at rest equilibrium, then run
-    sim.f.from_numpy(np.tile(L.W[:, None, None], (1, N, N)).astype(np.float32))
+    sim.f.from_numpy(np.tile(d2q9.lattice_weights[:, None, None], (1, N, N)).astype(np.float32))
     run = RunRecord("cavity_2d_gpu", sim, steps=steps, u_ref=U, nu=nu, tau=round(tau, 6), Re=Re,
                     geometry=f"N={N}", collision="BGK", sgs="none", walls="staircase BB",
                     boundaries="moving lid / no-slip walls", forcing="none")

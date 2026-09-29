@@ -4,7 +4,7 @@ from src.geometry.mesh import read_stl, write_stl, icosphere, box_mesh
 from src.geometry.mesh_distance import band_distance, sdf_from_mesh, q_from_mesh
 from src.geometry.sdf import sdf_sphere, q_from_sdf
 from src.geometry.wall_fraction import wall_fraction_sphere
-from src.engine import lattice_d3q19 as L3
+from src.engine import lattice_d3q19 as d3q19
 
 grid_size = 24
 center = (11.3, 12.1, 11.7)  # off-lattice center so q takes many different values
@@ -29,7 +29,7 @@ def _direction_index(velocity):
     Returns the direction index.
     """
 
-    return int(np.nonzero((L3.E == np.array(velocity)).all(axis=1))[0][0])
+    return int(np.nonzero((d3q19.lattice_velocities == np.array(velocity)).all(axis=1))[0][0])
 
 # test 1: binary STL round-trip preserves every vertex
 def test_stl_round_trip(tmp_path):
@@ -107,7 +107,7 @@ def test_mesh_phi_reduces_to_sphere():
     both = (q_mesh > 0) & (q_reference > 0)
 
     d, i, j, k = np.nonzero(both)
-    link_vectors = L3.E[d].astype(np.float64)  # link vector of each boundary link
+    link_vectors = d3q19.lattice_velocities[d].astype(np.float64)  # link vector of each boundary link
     wall_points = np.stack([i, j, k], axis=1) + q_reference[both][:, None] * link_vectors  # exact wall point on the link
     normals = (wall_points - np.array(center)) / radius  # sphere normal there
     link_normal_cosine = np.abs((link_vectors * normals).sum(axis=1))  # |c . n|, how steeply the link meets the wall
@@ -145,7 +145,7 @@ def test_q_from_mesh_icosphere():
     sag = _sphere_sag(triangles)
     both = (q_mesh > 0) & (q_reference > 0)
     d, i, j, k = np.nonzero(both)
-    link_vectors = L3.E[d].astype(np.float64)
+    link_vectors = d3q19.lattice_velocities[d].astype(np.float64)
     wall_points = np.stack([i, j, k], axis=1) + q_reference[both][:, None] * link_vectors
     normals = (wall_points - np.array(center)) / radius
     link_normal_cosine = np.abs((link_vectors * normals).sum(axis=1))

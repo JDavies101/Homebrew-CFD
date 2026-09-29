@@ -1,7 +1,7 @@
 # forced plane-channel golden oracle: laminar Poiseuille, peak = g*delta^2/(2 nu)
 import numpy as np
 from src.engine.simulation3d import Simulation3D
-from src.engine import lattice_d3q19 as L
+from src.engine import lattice_d3q19 as d3q19
 from src.post.progress import Progress
 from src.geometry.step_body import step
 from src.post.run_log import RunRecord
@@ -37,7 +37,7 @@ def fit_parabola(prof):
 def main():
     sim = Simulation3D(nx, ny, nz, backend="cuda")
     sim.solid.from_numpy(step(nx, ny, nz, x_step, S))
-    sim.f.from_numpy(np.tile(L.W[:,None,None,None], (1,nx,ny,nz)).astype(np.float32))
+    sim.f.from_numpy(np.tile(d3q19.lattice_weights[:,None,None,None], (1,nx,ny,nz)).astype(np.float32))
     
     run = RunRecord("channel_laminar", sim, steps=steps, tau=round(tau, 6),
                     geometry=f"delta={delta}", collision="TRT" if TRT else "BGK", sgs="none",

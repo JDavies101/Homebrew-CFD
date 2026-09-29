@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 from src.engine.simulation3d import Simulation3D as S
-from src.engine import lattice_d3q19 as L
+from src.engine import lattice_d3q19 as d3q19
 
 # validation gate: force-driven channel flow should be an exact parabola
 pytestmark = pytest.mark.slow
@@ -29,7 +29,7 @@ def profile():
 
     # init and rest equilibrium
     # drive with body force g in +x direction
-    sim.f.from_numpy(np.tile(L.W[:, None, None, None], (1, nx, ny, nz)).astype(np.float32))
+    sim.f.from_numpy(np.tile(d3q19.lattice_weights[:, None, None, None], (1, nx, ny, nz)).astype(np.float32))
     for _ in range(steps):
         sim.collide_forced(tau, g)
         sim.stream()
@@ -76,7 +76,7 @@ def test_poiseuille_reg_parabola():
     solid[:, 0, :] = 1
     solid[:, -1, :] = 1
     sim.solid.from_numpy(solid)
-    sim.f.from_numpy(np.tile(L.W[:, None, None, None], (1, nx, ny, nz)).astype(np.float32))
+    sim.f.from_numpy(np.tile(d3q19.lattice_weights[:, None, None, None], (1, nx, ny, nz)).astype(np.float32))
     for _ in range(steps):
         sim.collide_reg(tau, 0.0, g)          # cs=0, forced
         sim.stream()
