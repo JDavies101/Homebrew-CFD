@@ -2,7 +2,7 @@
 # geometry-agnostic: consumes solid/body/lid/q fields, does not build shapes
 import taichi as ti
 import numpy as np
-from src.engine import lattice3d as L3
+from src.engine import lattice_d3q19 as L3
 from src.engine import runtime
 from src.geometry.sdf import normals_from_sdf
 

@@ -1,5 +1,5 @@
 # sub-cell wall fractions q for interpolated bounce-back
-from src.engine import lattice3d as L3
+from src.engine import lattice_d3q19 as L3
 import numpy as np
 
 def wall_fraction_cylinder(nx, ny, nz, cx, cy, R):

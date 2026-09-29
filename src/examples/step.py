@@ -3,7 +3,7 @@ import numpy as np
 from src.engine.simulation3d import Simulation3D
 from src.post.progress import Progress
 from src.post.vtk import write_field
-from src.geometry.step import step
+from src.geometry.step_body import step
 from src.post.run_log import RunRecord
 
 S = 30

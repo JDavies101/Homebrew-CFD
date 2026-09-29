@@ -1,7 +1,7 @@
 # lid-driven cavity on the 2D taichi engine (gpu)
 import numpy as np
 from src.engine.simulation import Simulation
-from src.engine import lattice as L
+from src.engine import lattice_d2q9 as L
 from src.post import plotting
 import matplotlib.pyplot as plt
 from src.post.run_log import RunRecord

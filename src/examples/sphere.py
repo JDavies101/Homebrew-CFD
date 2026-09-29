@@ -1,10 +1,10 @@
 # flow past a sphere
 import numpy as np
 from src.engine.simulation3d import Simulation3D
-from src.engine import lattice3d as L
+from src.engine import lattice_d3q19 as L
 from src.post.progress import Progress
 from src.post.vtk import write_field
-from src.geometry.sphere import sphere
+from src.geometry.sphere_body import sphere
 from src.geometry.wall_fraction import wall_fraction_sphere
 from src.post.run_log import RunRecord
 import sys

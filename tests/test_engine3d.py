@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 from src.engine.simulation3d import Simulation3D
-from src.engine import lattice3d as L3
+from src.engine import lattice_d3q19 as L3
 from src.turbulence.wall_function import friction_velocity
 from src.engine import runtime
 from src.geometry.sdf import solid_from_sdf, q_from_sdf, node_grid

@@ -1,7 +1,7 @@
 # signed distance fields: phi > 0 fluid, phi < 0 solid, phi = 0 on the surface.
 # one phi gives the solid mask, per-link Bouzidi fractions q, wall normals, and wall distance.
 # import numpy as np
-from src.engine import lattice3d as L3
+from src.engine import lattice_d3q19 as L3
 import numpy as np
 
 def sdf_sphere(cx, cy, cz, R):

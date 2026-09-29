@@ -8,7 +8,7 @@
 import numpy as np
 import pytest
 from src.engine.simulation3d import Simulation3D as S
-from src.engine import lattice3d as L
+from src.engine import lattice_d3q19 as L
 
 pytestmark = pytest.mark.slow
 

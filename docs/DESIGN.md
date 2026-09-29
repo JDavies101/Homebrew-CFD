@@ -104,7 +104,7 @@ homebrew-cfd/
 +-- src/
 |   +-- lbm/            # 2D NumPy solver: lattice, moments, equilibrium, collision,
 |   |                   #   streaming, boundary conditions, advance (Phase 1 reference)
-|   +-- engine/         # 3D Taichi solver: lattice3d, Simulation3D (GPU/CPU) (Phase 2)
+|   +-- engine/         # 3D Taichi solver: lattice_d2q9, lattice_d3q19, Simulation3D (GPU/CPU) (Phase 2)
 |   +-- examples/       # runnable cases: cavity, cylinder, sphere
 |   +-- post/           # plotting, VTK export, progress/health monitor
 |   +-- config/         # run configuration, environment check

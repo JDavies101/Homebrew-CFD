@@ -3,9 +3,9 @@
 # at fixed forcing, relaminarizing means running away to the laminar state -> diverges.
 import numpy as np
 from src.engine.simulation3d import Simulation3D
-from src.engine import lattice3d as L
+from src.engine import lattice_d3q19 as L
 from src.post.progress import Progress
-from src.geometry.step import step
+from src.geometry.step_body import step
 from src.post.plotting import plot_law_of_wall
 from src.turbulence.wall_function import friction_velocity
 from src.post.run_log import RunRecord

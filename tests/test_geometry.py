@@ -1,9 +1,9 @@
 # geometry: solid masks and sub-cell wall fractions
 import numpy as np
-from src.engine import lattice3d as L
-from src.geometry.cylinder import cylinder
-from src.geometry.sphere import sphere
-from src.geometry.step import step
+from src.engine import lattice_d3q19 as L
+from src.geometry.cylinder_body import cylinder
+from src.geometry.sphere_body import sphere
+from src.geometry.step_body import step
 from src.geometry.wall_fraction import wall_fraction_cylinder, wall_fraction_sphere
 import pytest
 from src.geometry.ahmed_body import ahmed_body

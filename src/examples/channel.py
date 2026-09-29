@@ -1,9 +1,9 @@
 # forced plane-channel golden oracle: laminar Poiseuille, peak = g*delta^2/(2 nu)
 import numpy as np
 from src.engine.simulation3d import Simulation3D
-from src.engine import lattice3d as L
+from src.engine import lattice_d3q19 as L
 from src.post.progress import Progress
-from src.geometry.step import step
+from src.geometry.step_body import step
 from src.post.run_log import RunRecord
 
 S = 0                       # S=0 -> step() gives the two no-slip wall rows only

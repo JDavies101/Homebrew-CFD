@@ -4,7 +4,7 @@ from src.geometry.mesh import read_stl, write_stl, icosphere, box_mesh
 from src.geometry.mesh_distance import band_distance, sdf_from_mesh, q_from_mesh
 from src.geometry.sdf import sdf_sphere, q_from_sdf
 from src.geometry.wall_fraction import wall_fraction_sphere
-from src.engine import lattice3d as L3
+from src.engine import lattice_d3q19 as L3
 
 N = 24
 C = (11.3, 12.1, 11.7)

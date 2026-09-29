@@ -2,7 +2,7 @@
 import numpy as np
 import taichi as ti
 from src.engine import runtime
-from src.engine import lattice3d as L3
+from src.engine import lattice_d3q19 as L3
 from src.geometry.sdf import q_from_sdf
 
 @ti.func

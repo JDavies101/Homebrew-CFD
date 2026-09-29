@@ -6,7 +6,7 @@ from src.lbm.stream import stream as np_stream
 from src.lbm.boundary_conditions import bounce_back as np_bounce_back
 from src.lbm.boundary_conditions import moving_wall as np_moving_wall
 from src.lbm.advance import initial as np_initial
-from src.engine.lattice import W
+from src.engine.lattice_d2q9 import W
 import pytest
 
 rng = np.random.default_rng(0)
