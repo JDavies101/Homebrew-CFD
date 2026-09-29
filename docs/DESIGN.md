@@ -511,7 +511,18 @@ relative comparisons and credible trends, not certification-grade absolute Cd. S
   Original plan: Read a triangle mesh, voxelize to the solid mask plus the
   per-link `q` field via the SDF (so curved car surfaces are not staircased). *Gate: an STL of
   a sphere/cylinder recovers the analytic-mask Cd/St (validation by reduction).*
-- *4.2 Moving ground + rotating wheels.* Generalize the moving-wall velocity BC to the floor
+- *4.2 progress - moving ground. Gate passed (run 55).* A wall-velocity field `uw` read by
+  `bounce_back(scale)`: at solid nodes with u_w != 0 I add the Ladd correction 6 w_q (c_q . u_w)
+  to every population whose destination (periodic, as in streaming) is fluid; `scale` follows the
+  inlet ramp. The first attempt (run 54) corrected all pairs, so in-plane populations circulating
+  along the x-periodic floor row gained 6 w U per step without bound, and the wall model used the
+  absolute velocity, engaging the whole moving floor (79244 nodes). Fixes: fluid-bound links only,
+  and `build_wall_list` now stores the mean wall velocity of each node's solid neighbours so
+  `wall_model_fast(nu, scale)` works on u - u_w. Tests: exact Couette profile (0.1% of U) with no
+  cross-flow. Ahmed: mean mid-span u/U one cell above the floor at x0 - 56 is 0.995 (moving) vs
+  0.419 (static), within 2% of the free stream over j = 1-6; underbody u/U at j = 1 is 1.09 vs
+  0.30; Cd 0.6848 vs 0.7011 (-2.3%).
+- *4.2 Moving ground + rotating wheels (original plan).* Generalize the moving-wall velocity BC to the floor
   (belt at inlet U) and to wheel surfaces (local tangential speed). *Gate: moving belt removes
   the floor boundary layer (measured vs static floor); a spinning cylinder shows the expected
   Magnus lift sign.*

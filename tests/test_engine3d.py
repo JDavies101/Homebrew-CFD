@@ -554,3 +554,40 @@ def test_collide_reg_fused_layers():
     assert np.allclose(new.f.to_numpy(), old.f.to_numpy(), atol=1e-6)
     assert np.allclose(new.u_bar.to_numpy(), old.u_bar.to_numpy(), atol=1e-7)
     assert np.allclose(new.rho_bar.to_numpy(), old.rho_bar.to_numpy(), atol=1e-7)
+
+# test 34: moving bottom wall (uw) + static top wall gives the exact linear Couette profile
+def test_bounce_back_moving_wall_couette():
+    nx = 6
+    ny = 18
+    nz = 6
+    U = 0.05
+    tau = 0.8
+    s = Simulation3D(nx, ny, nz, "cpu")
+
+    solid = np.zeros((nx, ny, nz), np.int32)
+    solid[:, 0, :] = 1
+    solid[:, -1, :] = 1
+    s.solid.from_numpy(solid)
+
+    uw = np.zeros((3, nx, ny, nz), np.float32)
+    uw[0, :, 0, :] = U  # bottom wall moves in +x
+    s.uw.from_numpy(uw)
+    s.init_equilibrium(np.zeros((nx, ny, nz), np.float32),
+                       np.zeros((nx, ny, nz), np.float32),
+                       np.zeros((nx, ny, nz), np.float32))
+    
+    for _ in range(8000): # ~3 diffusion times H^2/nu
+        s.collide(tau)
+        s.stream()
+        s.bounce_back()
+    
+    s.macroscopic()
+
+    ux = s.u.to_numpy()[0, nx // 2, 1:-1, nz // 2]
+    j = np.arange(1, ny - 1)
+    H = ny - 2 # walls sit halfway: y = 0.5 and y = ny - 1.5
+    exact = U * (ny - 1.5 - j) / H
+
+    assert np.allclose(ux, exact, atol=5e-5) # 0.1% of U
+    uyz = s.u.to_numpy()[1:, :, 1:-1, :]                      # y, z components, fluid rows only
+    assert np.abs(uyz).max() < 1e-4 * U                       # no wall-normal or spanwise flow (0.01% of U)

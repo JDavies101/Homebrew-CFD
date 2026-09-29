@@ -21,6 +21,7 @@ class Simulation3D:
         self.u     = ti.field(ti.f32, shape=(self.D, nx, ny, nz))
         self.solid = ti.field(ti.i32, shape=(nx, ny, nz))
         self.lid   = ti.field(ti.i32, shape=(nx, ny, nz))
+        self.uw = ti.field(ti.f32, shape=(self.D, nx, ny, nz)) # wall velocity at solid nodes (0 = static)
         self.force = ti.field(ti.f32, shape=L3.D)
         self.MIRROR_Y = ti.field(ti.i32, shape=L3.Q)
         self.MIRROR_Y.from_numpy(L3.MIRROR_Y.astype(np.int32))
@@ -248,7 +249,7 @@ class Simulation3D:
         
 
     @ti.kernel
-    def wall_model_fast(self, nu: ti.f32):
+    def _wall_model_fast(self, nu: ti.f32, scale: ti.f32):
         for m in range(self.n_wall):
             y1 = self.wall_y1[m]
 
@@ -257,9 +258,9 @@ class Simulation3D:
             k = self.wall_ijk[m, 2]
 
             mom = self._moments(i, j, k, 0.0)
-            ux = mom[1]
-            uy = mom[2]
-            uz = mom[3]
+            ux = mom[1] - scale * self.wall_uw[m, 0]
+            uy = mom[2] - scale * self.wall_uw[m, 1]
+            uz = mom[3] - scale * self.wall_uw[m, 2]
 
             nxn = self.wall_n[m, 0]
             nyn = self.wall_n[m, 1]
@@ -276,6 +277,9 @@ class Simulation3D:
                 val = ti.max(0.0, u_tau * u_tau * y1 / u1 - nu)
             
             self.nut_wall[i, j, k] = val
+
+    def wall_model_fast(self, nu, scale=1.0):
+        self._wall_model_fast(nu, scale)
 
     @ti.kernel
     def les_wale(self, cw: ti.f32):
@@ -361,10 +365,17 @@ class Simulation3D:
             for d in range(3):
                 g[d] += E[q, d] * nbr
 
+        uwn = self.uw.to_numpy()
+        uw_sum = np.zeros((3, nx, ny, nz), np.float32)
+        for q in range(self.Q):
+            for d in range(3):
+                uw_sum[d] += shift(uwn[d] * solid, E[q])  # wall velocity of each solid neighbour
+
         gmag = np.sqrt((g * g).sum(axis=0))
         cand = (solid == 0) & (nsolid > 0) & (gmag > 0.0)
         ijk = np.argwhere(cand).astype(np.int32)                    # (M,3)
         normals = (-g[:, cand] / gmag[cand]).T.astype(np.float32)   # (M,3)
+        wall_uw = (uw_sum[:, cand] / nsolid[cand]).T.astype(np.float32) # (M,3) mean wall velocity seen by each node
 
         M = ijk.shape[0]
         self.n_wall = M
@@ -383,6 +394,8 @@ class Simulation3D:
         self.wall_n.from_numpy(normals)
         self.wall_y1 = ti.field(ti.f32, shape=M)
         self.wall_y1.from_numpy(y1)
+        self.wall_uw = ti.field(ti.f32, shape=(M, 3))
+        self.wall_uw.from_numpy(wall_uw)
     
     # pull each population from its upstream neighbour into f_new
     @ti.kernel
@@ -399,17 +412,37 @@ class Simulation3D:
         self._stream()
         self.f.copy_from(self.f_new)
 
-    # no-slip wall: reverse the populations at solid nodes
+    # no-slip wall: reverse the populations at solid nodes; moving walls (uw != 0) add the
+    # Ladd momentum correction 6 w_q (c_q . u_w). scale multiplies every wall speed (inlet ramp).
     @ti.kernel
-    def bounce_back(self):
-        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):        # parallel over cells
-            if self.solid[i, j, k] == 1:               # only at walls
+    def _bounce_back(self, scale: ti.f32):
+        for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
+            if self.solid[i, j, k] == 1:
+                wx = scale * self.uw[0, i, j, k]
+                wy = scale * self.uw[1, i, j, k]
+                wz = scale * self.uw[2, i, j, k]
+                #moving = wx != 0.0 or wy != 0.0 or wz != 0.0
+
                 for q in range(self.Q):
                     o = self.OPP[q]
-                    if q < o:                  # visit each opposite-pair once
+
+                    if q < o:
                         tmp = self.f[q, i, j, k]
                         self.f[q, i, j, k] = self.f[o, i, j, k]
                         self.f[o, i, j, k] = tmp
+
+                if wx != 0.0 or wy != 0.0 or wz != 0.0:
+                    for q in range(self.Q):
+                        ni = (i + self.E[q, 0]) % self.nx
+                        nj = (j + self.E[q, 1]) % self.ny
+                        nk = (k + self.E[q, 2]) % self.nz
+
+                        if self.solid[ni, nj, nk] == 0: # link leads into the fluid
+                            cu = self.E[q, 0] * wx + self.E[q, 1] * wy + self.E[q, 2] * wz
+                            self.f[q, i, j, k] += 6.0 * self.W[q] * cu
+
+    def bounce_back(self, scale=1.0):
+        self._bounce_back(scale)
 
     # Bouzidi wall: interpolate the reflected population using the sub-cell
     # wall fraction q, so curved surfaces are not staircased

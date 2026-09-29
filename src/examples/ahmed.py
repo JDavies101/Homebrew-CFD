@@ -23,13 +23,11 @@ A = Wb * H                 # frontal area for Cd
 T_ft = nx / U                        # flow-through time in steps (~14000 at H=32)
 warmup = round(5 * T_ft)             # establish flow + wake
 steps  = round(11 * T_ft)            # + ~6 flow-throughs (~30 shedding periods) to average
-#warmup = round(3 * T_ft)
-#steps  = round(6 * T_ft)
-#steps = 15000 
 ramp = round(T_ft)
 sample_every = 25   # sample force every N steps (avoids per-step GPU sync)
 check_every  = max(1, steps // 300) # progress readout interval
 sgs = sys.argv[3] if len(sys.argv) > 3 else "wale"      # "smag" or "wale"
+ground = sys.argv[4] if len(sys.argv) > 4 else "static" # "static" or "moving" floor
 cs_floor = 0.04 # Smagorinsky floor under WALE: damps grid-scale noise where WALE's nut ~ 0
 cs = 0.084 if sgs == "smag" else cs_floor
 cw = 0.5
@@ -45,7 +43,7 @@ relax_alpha = 1.0 / 2000.0  # z-layer running-mean rate (about a 2000-step memor
 outlet_bc = "pressure"              # "pressure" (rho = 1 at the exit) or "copy" (zero-gradient)
 phi = int(sys.argv[1]) if len(sys.argv) > 1 else 25   # slant angle, deg
 nose = sys.argv[2] if len(sys.argv) > 2 else "round"   # "round" or "square"
-tag = f"phi{phi}" + ("" if nose == "round" else f"_{nose}") + ("" if sgs == "smag" else f"_{sgs}")
+tag = f"phi{phi}" + ("" if nose == "round" else f"_{nose}") + ("" if sgs == "smag" else f"_{sgs}") + ("" if ground == "static" else "_mground")
 
 # block-averaged mean and standard error of a correlated series
 def block_stats(x, nb):
@@ -79,6 +77,10 @@ def main():
     solid[:, 0, :] = 1
     solid[:, -1, :] = 1   # + floor & ceiling (no-slip)
     sim.solid.from_numpy(solid)
+    if ground == "moving":
+        uw = np.zeros((3, nx, ny, nz), np.float32)
+        uw[0, :, 0, :] = U # rolling road: floor row moves at the free-stream speed
+        sim.uw.from_numpy(uw)
     sim.body.from_numpy(body)
     sim.build_wall_list()
 
@@ -101,17 +103,17 @@ def main():
                     geometry=f"H={H} phi={phi} {nose}", warmup=warmup, avg_Tft=round((steps - warmup) / T_ft, 1),
                     collision="regularized", sgs=f"smag cs={cs}" if sgs == "smag" else f"wale cw={cw} + smag floor cs={cs}",
                     wall_model="log-law y+>30", walls="staircase BB", forcing="none",
-                    boundaries=f"NEEM-open inlet / {outlet_bc} outlet / free-slip z / no-slip floor+ceiling",
+                    boundaries=f"NEEM-open inlet / {outlet_bc} outlet / free-slip z / no-slip floor+ceiling / {ground} floor",
                     sponge=f"relax x {relax_width} (free stream) / z {relax_width_z} (running mean from ramp end, alpha {relax_alpha:.1e}), sigma {relax_sigma}")
     
     prog = Progress(steps)
     for s in range(steps):
+        r = min(s / ramp, 1.0)
+        U_in = U * 0.5 * (1.0 - np.cos(np.pi * r))
         if sgs == "wale":
             sim.macroscopic()               # WALE needs current u (not needed on the smag path)
             sim.les_wale(cw)
-        sim.wall_model_fast(nu)
-        r = min(s / ramp, 1.0)
-        U_in = U * 0.5 * (1.0 - np.cos(np.pi * r))
+        sim.wall_model_fast(nu, U_in / U)
         if s == ramp:
             sim.macroscopic()
             sim.rho_bar.copy_from(sim.rho)
@@ -132,7 +134,7 @@ def main():
         else:
             sim.outlet()
         sim.free_slip_z()                # side walls
-        sim.bounce_back()                # floor + ceiling + body
+        sim.bounce_back(U_in / U)        # floor + ceiling + body; moving floor ramps with the inlet
 
         if s % check_every == 0:
             sim.macroscopic()
