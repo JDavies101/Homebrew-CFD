@@ -522,6 +522,17 @@ relative comparisons and credible trends, not certification-grade absolute Cd. S
   cross-flow. Ahmed: mean mid-span u/U one cell above the floor at x0 - 56 is 0.995 (moving) vs
   0.419 (static), within 2% of the free stream over j = 1-6; underbody u/U at j = 1 is 1.09 vs
   0.30; Cd 0.6848 vs 0.7011 (-2.3%).
+- *4.2 progress - rotating wheels. Gate passed (run 58).* `bounce_back_interp(scale)` adds the
+  moving-wall term delta = 6 w (c_ob . u_w) to the Bouzidi reflection, divided by 2q on the q > 1/2
+  branch (Bouzidi et al. 2001). u_w is interpolated to the wall point, (1-q) uw[x_f] + q uw[x_s],
+  which is exact for rigid-body motion provided `uw` holds the rigid velocity on both sides of the
+  surface (convention: a band of about 2 cells). Tests: Taylor-Couette flow between a rotating
+  inner and a static outer cylinder (both walls from one SDF, all q and directions exercised)
+  matches u_theta = A r + B / r within 1% RMS of the wall speed with no radial flow. Flow gate:
+  cylinder at Re 100 (D = 45, 7.5% blockage) after the same boundary fix as the sphere (NEEM inlet,
+  pressure outlet, start at U, x layers): non-rotating Cd 1.378, St 0.165 (run 56); at spin ratio
+  alpha = 1 (counter-clockwise), Cl -2.653 with the Magnus sign, Cd 1.166, St 0.165 (run 58),
+  against about |Cl| 2.5 and Cd 1.1 reported for unconfined flow at Re 100.
 - *4.2 Moving ground + rotating wheels (original plan).* Generalize the moving-wall velocity BC to the floor
   (belt at inlet U) and to wheel surfaces (local tangential speed). *Gate: moving belt removes
   the floor boundary layer (measured vs static floor); a spinning cylinder shows the expected

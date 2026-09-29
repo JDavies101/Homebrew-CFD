@@ -444,28 +444,44 @@ class Simulation3D:
     def bounce_back(self, scale=1.0):
         self._bounce_back(scale)
 
-    # Bouzidi wall: interpolate the reflected population using the sub-cell
-    # wall fraction q, so curved surfaces are not staircased
-    # reads fc (post-collision), writes f (post-stream)
+    # Bouzidi wall with moving-wall term: delta = 6 w (c_ob . u_w), divided by 2q on the q > 1/2
+    # branch (Bouzidi et al. 2001). u_w is interpolated to the wall point along the link, exact for
+    # rigid-body motion when uw is set on both sides of the surface. reads fc, writes f.
     @ti.kernel
-    def bounce_back_interp(self):
+    def _bounce_back_interp(self, scale: ti.f32):
         for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
             for d in range(self.Q):
                 qf = self.q[d, i, j, k]
                 if qf > 0.0:                          # dir d from (i,j,k) crosses the wall
                     ob = self.OPP[d]
                     fi = self.fc[d, i, j, k]          # post-collision f_i at x_f
+
+                    si = (i + self.E[d, 0]) % self.nx
+                    sj = (j + self.E[d, 1]) % self.ny
+                    sk = (k + self.E[d, 2]) % self.nz
+                    wx = scale * ((1.0 - qf) * self.uw[0, i, j, k] + qf * self.uw[0, si, sj, sk])
+                    wy = scale * ((1.0 - qf) * self.uw[1, i, j, k] + qf * self.uw[1, si, sj, sk])
+                    wz = scale * ((1.0 - qf) * self.uw[2, i, j, k] + qf * self.uw[2, si, sj, sk])
+                    delta = 6.0 * self.W[ob] * (self.E[ob, 0] * wx + self.E[ob, 1] * wy + self.E[ob, 2] * wz)
+
                     if qf <= 0.5:
-                        iff = i - self.E[d, 0]; jff = j - self.E[d, 1]; kff = k - self.E[d, 2]
+                        iff = i - self.E[d, 0]
+                        jff = j - self.E[d, 1]
+                        kff = k - self.E[d, 2]
+
                         if 0 <= iff < self.nx and 0 <= jff < self.ny and 0 <= kff < self.nz:
                             fiff = self.fc[d, iff, jff, kff]
-                            self.f[ob, i, j, k] = 2.0 * qf * fi + (1.0 - 2.0*qf) * fiff
+                            self.f[ob, i, j, k] = 2.0 * qf * fi + (1.0 - 2.0*qf) * fiff + delta
                         else:                          # no upstream node -> fall back to halfway
-                            self.f[ob, i, j, k] = fi
+                            self.f[ob, i, j, k] = fi + delta
                     else:
                         fib = self.fc[ob, i, j, k]     # post-collision f_ibar at x_f
-                        self.f[ob, i, j, k] = fi / (2.0 * qf) + (2.0 * qf - 1.0) / (2.0 * qf) * fib
-        
+                        invq2 = 1.0 / (2.0 * qf)
+                        self.f[ob, i, j, k] = fi * invq2 + (2.0 * qf - 1.0) * invq2 * fib + delta * invq2
+
+    def bounce_back_interp(self, scale=1.0):
+        self._bounce_back_interp(scale)
+
     # free-slip y walls: specular reflection, mirrors the y component
     @ti.kernel
     def free_slip_y(self):

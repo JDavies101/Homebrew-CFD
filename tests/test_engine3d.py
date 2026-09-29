@@ -6,6 +6,7 @@ from src.engine import lattice3d as L3
 from src.turbulence.wall_function import friction_velocity
 from src.engine import runtime 
 from src.geometry.sponge import sponge
+from src.geometry.sdf import solid_from_sdf, q_from_sdf, node_grid
 
 rng = np.random.default_rng(0)
 N = 16
@@ -591,3 +592,60 @@ def test_bounce_back_moving_wall_couette():
     assert np.allclose(ux, exact, atol=5e-5) # 0.1% of U
     uyz = s.u.to_numpy()[1:, :, 1:-1, :]                      # y, z components, fluid rows only
     assert np.abs(uyz).max() < 1e-4 * U                       # no wall-normal or spanwise flow (0.01% of U)
+
+# test 35: Bouzidi moving wall reproduces Taylor-Couette flow (rotating inner, static outer cylinder)
+def test_bouzidi_moving_wall_taylor_couette():
+    n = 48
+    nzz = 4
+    cx = 23.4
+    cy = 23.7
+    R1 = 8.3
+    R2 = 20.6
+    om = 0.004 # inner wall speed om * R1 ~ 0.033
+
+    def phi(x, y, z):
+        dx = x - cx
+        dy = y - cy
+        
+        r = np.sqrt(dx * dx + dy * dy)
+
+        return np.minimum(r - R1, R2 - r) # fluid only in the annulus
+    
+    s = Simulation3D(n, n, nzz, "cpu", interp=True)
+    s.solid.from_numpy(solid_from_sdf(phi, n, n, nzz))
+    s.q.from_numpy(q_from_sdf(phi, n, n, nzz))
+
+    X, Y, Z = node_grid(n, n, nzz)
+    dx = X - cx
+    dy = Y - cy
+    r = np.sqrt(dx * dx + dy * dy)
+    
+    uw = np.zeros((3, n, n, nzz), np.float32)
+    band = r < R1 + 2.0 # rigid rotation on both sides of the inner wall
+
+    uw[0][band] = -om * dy[band]
+    uw[1][band] = om * dx[band]
+    s.uw.from_numpy(uw)
+    zero = np.zeros((n, n, nzz), np.float32)
+    s.init_equilibrium(zero, zero, zero)
+
+    for _ in range(12000): # ~8 diffusion times (R2-R1)^2 / nu
+        s.collide(0.8)
+        s.fc.copy_from(s.f)
+        s.stream()
+        s.bounce_back_interp()
+    
+    s.macroscopic()
+    u = s.u.to_numpy()
+    ut = (-dy * u[0] + dx * u[1]) / r  # azimuthal velocity
+    ur = (dx * u[0] + dy * u[1]) / r  # radial velocity
+
+    A = -om * R1 * R1 / (R2 * R2 - R1 * R1)
+    B = om * R1 * R1 * R2 * R2 / (R2 * R2 - R1 * R1)
+    exact = A * r + B / r
+    fluid = (r > R1 + 0.5) & (r < R2 - 0.5)
+    err = np.sqrt(np.mean((ut[fluid] - exact[fluid]) * (ut[fluid] - exact[fluid]))) / (om * R1)
+
+    assert fluid.sum() > 4000
+    assert err < 0.01 # 1% of the wall speed, RMS
+    assert np.abs(ur[fluid]).max() < 0.01 * om * R1 # no spurious radial flow
