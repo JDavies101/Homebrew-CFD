@@ -1,4 +1,4 @@
-# BGK collision: conservation, tau independence, equilibrium fixed point
+# BGK collision: conservation, relaxation time independence, equilibrium fixed point
 import numpy as np
 from src.lbm.collision import collide
 from src.lbm.moments import macroscopic
@@ -6,39 +6,39 @@ from src.lbm.equilibrium import equilibrium
 
 rng = np.random.default_rng(0)
 # test 1: mass and momentum conservation
-def test_conservation():
+def test_mass_momentum_conservation():
 
-    f = rng.uniform(0.5, 1.5, (9, 4, 3))
+    populations = rng.uniform(0.5, 1.5, (9, 4, 3))
 
-    f_coll = collide(f, 1)
+    collided_populations = collide(populations, 1)
 
-    rho, u = macroscopic(f)
-    rho_coll, u_coll = macroscopic(f_coll)
+    density, velocity = macroscopic(populations)
+    collided_density, collided_velocity = macroscopic(collided_populations)
 
-    assert np.allclose(rho, rho_coll)
-    assert np.allclose(u, u_coll)
+    assert np.allclose(density, collided_density)
+    assert np.allclose(velocity, collided_velocity)
 
-# test 2: mass and momentum conservation for any valid tau
-def test_conservation_tau():
+# test 2: mass and momentum conservation for any valid relaxation time
+def test_conservation_any_relaxation_time():
 
-    for i in range(5):
-        tau = rng.uniform(0.5, 2)
-        f = rng.uniform(0.5, 1.5, (9, 4, 3))
+    for _ in range(5):
+        relaxation_time = rng.uniform(0.5, 2)
+        populations = rng.uniform(0.5, 1.5, (9, 4, 3))
 
-        f_coll = collide(f, tau)
+        collided_populations = collide(populations, relaxation_time)
 
-        rho, u = macroscopic(f)
-        rho_coll, u_coll = macroscopic(f_coll)
+        density, velocity = macroscopic(populations)
+        collided_density, collided_velocity = macroscopic(collided_populations)
 
-        assert np.allclose(rho, rho_coll)
-        assert np.allclose(u, u_coll)
+        assert np.allclose(density, collided_density)
+        assert np.allclose(velocity, collided_velocity)
 
-# test 3: idempotence at equilibrium
-def test_idempotence():
+# test 3: equilibrium is a fixed point of collision
+def test_equilibrium_is_fixed_point():
 
-    f = rng.uniform(0.5, 1.5, (9, 4, 3))
-    rho, u = macroscopic(f)
-    f_eq = equilibrium(rho, u)
-    f_coll = collide(f_eq, 1)
+    populations = rng.uniform(0.5, 1.5, (9, 4, 3))
+    density, velocity = macroscopic(populations)
+    equilibrium_populations = equilibrium(density, velocity)
+    collided_populations = collide(equilibrium_populations, 1)
 
-    assert np.allclose(f_coll, f_eq)
+    assert np.allclose(collided_populations, equilibrium_populations)

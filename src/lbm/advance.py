@@ -1,63 +1,82 @@
 # 2D timestep and run loop, with Guo body force
 import numpy as np
 from .stream import stream
-from .collision import collide
 from .boundary_conditions import bounce_back
 from .equilibrium import equilibrium
 from . import lattice as lt
 from .moments import macroscopic
 
-def guo_source(u, F, tau):
+def guo_source(velocity, force, relaxation_time):
+    """
+    Compute the Guo forcing term for every direction and cell.
 
-    eu = np.einsum("qc,cxy->qxy", lt.E, u)
-    eF = np.einsum("qc,cxy->qxy", lt.E, F)
-    uF = np.einsum("cxy,cxy->xy", u, F)
+    Returns the source term (9, nx, ny).
+    """
 
-    prefac = 1 - 1/ (2 * tau)
-    S = prefac * lt.W[:, None, None] * (3 * (eF- uF) + 9* eu * eF)
+    velocity_dot_direction = np.einsum("qc,cxy->qxy", lt.lattice_velocities, velocity)
+    force_dot_direction = np.einsum("qc,cxy->qxy", lt.lattice_velocities, force)
+    velocity_dot_force = np.einsum("cxy,cxy->xy", velocity, force)
 
-    return S
+    prefactor = 1 - 1 / (2 * relaxation_time)
+    source = prefactor * lt.lattice_weights[:, None, None] * (3 * (force_dot_direction - velocity_dot_force) + 9 * velocity_dot_direction * force_dot_direction)
 
-def body_force(g):
+    return source
 
-    F = (lt.W * lt.E[:,0] * g * 3)[:, None, None]
+def collide_forced(populations, relaxation_time, force, solid=None):
+    """
+    BGK collision with the Guo force: half-force velocity shift plus source term.
 
-    return F
+    Returns the post-collision populations.
+    """
 
-def collide_forced(f, tau, F, solid=None):
+    density, raw_velocity = macroscopic(populations)
+    velocity = raw_velocity + force / (2 * density)
+    equilibrium_populations = equilibrium(density, velocity)
+    source = guo_source(velocity, force, relaxation_time)
 
-    rho, u_raw = macroscopic(f)
-    u = u_raw + F / (2 * rho)
-    f_eq = equilibrium(rho, u)
-    S = guo_source(u, F, tau)
-
-    f_coll = f - (1 / tau) * (f - f_eq) + S
+    collided_populations = populations - (1 / relaxation_time) * (populations - equilibrium_populations) + source
     if solid is not None:
-        f_coll = np.where(solid[None], f, f_coll)   # no relaxation, no force at walls
-    return f_coll
+        collided_populations = np.where(solid[None], populations, collided_populations)  # no relaxation, no force at walls
 
-def step(f, tau, solid, g=0):
+    return collided_populations
 
-    nx, ny = f.shape[1], f.shape[2]
-    F = np.zeros((2, nx, ny))
-    F[0] = g
-    f_coll = collide_forced(f, tau, F, solid)
-    f_str = stream(f_coll)    
-    f_bc = bounce_back(f_str, solid)
+def step(populations, relaxation_time, solid, body_force_x=0):
+    """
+    Advance one timestep: forced collision, streaming, bounce-back.
 
-    return f_bc
+    Returns the populations after one step.
+    """
 
-def run(f, tau, solid, steps, g=0):
+    nx, ny = populations.shape[1], populations.shape[2]
+    force = np.zeros((2, nx, ny))
+    force[0] = body_force_x
+    collided_populations = collide_forced(populations, relaxation_time, force, solid)
+    streamed_populations = stream(collided_populations)
+    bounced_populations = bounce_back(streamed_populations, solid)
 
-    for i in range(steps):
-        f = step(f, tau, solid, g)
+    return bounced_populations
 
-    return f
+def run(populations, relaxation_time, solid, steps, body_force_x=0):
+    """
+    Advance the populations a given number of steps.
+
+    Returns the final populations.
+    """
+
+    for _ in range(steps):
+        populations = step(populations, relaxation_time, solid, body_force_x)
+
+    return populations
 
 def initial(nx, ny):
+    """
+    Build equilibrium populations at unit density and rest.
 
-    rho = np.ones((nx, ny))
-    u = np.zeros((2, nx, ny))
-    f = equilibrium(rho, u)
+    Returns the initial populations (9, nx, ny).
+    """
 
-    return f
+    density = np.ones((nx, ny))
+    velocity = np.zeros((2, nx, ny))
+    populations = equilibrium(density, velocity)
+
+    return populations

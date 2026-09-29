@@ -3,52 +3,66 @@ import numpy as np
 import pytest
 from src.lbm.advance import initial
 from src.lbm.moments import macroscopic
-from src.lbm.advance import collide, stream
+from src.lbm.collision import collide
+from src.lbm.stream import stream
 from src.lbm.boundary_conditions import bounce_back, moving_wall
 
 pytestmark = pytest.mark.slow
-N = 64
-U = 0.1
-Re = 100
-nu = U * N / Re
-tau = 3 * nu + 0.5
+grid_size = 64
+lid_velocity = 0.1
+reynolds_number = 100
+viscosity = lid_velocity * grid_size / reynolds_number  # nu
+relaxation_time = 3 * viscosity + 0.5  # tau
 steps = 15000
+# run the solver once, share the centerline profile across all tests
 @pytest.fixture(scope="module")
 def profile():
+
     # geometry: 4 solid walls, top row is the moving lid
-    solid = np.zeros((N, N), bool)
-    solid[0,:] = solid[-1,:] = solid[:,0] = solid[:,-1] = True
-    lid = np.zeros((N, N), bool); lid[:,-1] = True
-    stationary = solid & ~lid          # the 3 fixed walls
+    solid = np.zeros((grid_size, grid_size), bool)
+    solid[0, :] = True
+    solid[-1, :] = True
+    solid[:, 0] = True
+    solid[:, -1] = True
+    lid = np.zeros((grid_size, grid_size), bool)
+    lid[:, -1] = True
+    stationary = solid & ~lid  # the 3 fixed walls
 
-    f = initial(N, N)
+    populations = initial(grid_size, grid_size)
     for _ in range(steps):
-        f = collide(f, tau, solid)            # from src.lbm.collision
-        f = stream(f)
-        f = bounce_back(f, stationary)
-        f = moving_wall(f, lid, U)
-    rho, u = macroscopic(f)
+        populations = collide(populations, relaxation_time, solid)
+        populations = stream(populations)
+        populations = bounce_back(populations, stationary)
+        populations = moving_wall(populations, lid, lid_velocity)
+    density, velocity = macroscopic(populations)
 
-    ux = u[0, N//2, :] / U             # centerline u, normalized by lid speed
-    y  = (np.arange(N) + 0.5) / N
-    return y, ux
+    # centerline x velocity, normalized by lid speed
+    velocity_x = velocity[0, grid_size // 2, :] / lid_velocity
+    y = (np.arange(grid_size) + 0.5) / grid_size
 
-# test 1: lid drags fluid
-def test_drag(profile):
-    y, ux = profile
-    assert ux[-3] > 0
+    return y, velocity_x
 
-# test 2: vortex structure
-def test_vortex(profile):
-    y, ux = profile
-    assert ux.min() < 0
-    assert ux.max() > 0
-    assert ux[-2] > 0 
-    assert ux[2] < 0
+# test 1: lid drags the fluid below it
+def test_lid_drags_fluid(profile):
 
-# test 3: interior magnitude check
-def test_interior(profile):
-    y, ux = profile
-    ghia_min = -0.2058
-    assert abs(ux.min() - (ghia_min)) / ghia_min < 0.05
-    # n = 128 and < 0.01 passes in 70s
+    y, velocity_x = profile
+
+    assert velocity_x[-3] > 0
+
+# test 2: primary vortex gives reversed flow near the bottom
+def test_vortex_structure(profile):
+
+    y, velocity_x = profile
+
+    assert velocity_x.min() < 0
+    assert velocity_x.max() > 0
+    assert velocity_x[-2] > 0
+    assert velocity_x[2] < 0
+
+# test 3: minimum centerline velocity within 5% of Ghia (grid_size 128 passes at 1% in about 70 s)
+def test_minimum_velocity_vs_ghia(profile):
+
+    y, velocity_x = profile
+    ghia_minimum = -0.2058
+
+    assert abs(velocity_x.min() - ghia_minimum) / ghia_minimum < 0.05

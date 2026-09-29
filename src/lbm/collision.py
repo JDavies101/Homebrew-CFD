@@ -3,13 +3,18 @@ import numpy as np
 from .moments import macroscopic
 from .equilibrium import equilibrium
 
-def collide(f, tau, solid=None):
-    
-    rho, u = macroscopic(f)
-    f_eq = equilibrium(rho, u)
-    f_coll = f - 1 / tau * (f - f_eq)
+def collide(populations, relaxation_time, solid=None):
+    """
+    Relax the populations toward equilibrium with the BGK operator.
+
+    Returns the post-collision populations.
+    """
+
+    density, velocity = macroscopic(populations)
+    equilibrium_populations = equilibrium(density, velocity)
+    collided_populations = populations - 1 / relaxation_time * (populations - equilibrium_populations)
 
     if solid is not None:
-        f_coll = np.where(solid[None], f, f_coll) # wall nodes keep their bounced populations
-    
-    return f_coll
+        collided_populations = np.where(solid[None], populations, collided_populations)  # wall nodes keep their bounced populations
+
+    return collided_populations

@@ -2,11 +2,16 @@
 import numpy as np
 from . import lattice as lt
 
-def stream(f):
+def stream(populations):
+    """
+    Shift each population one cell along its lattice velocity (periodic).
 
-    f_new = np.empty_like(f)
+    Returns the streamed populations.
+    """
 
-    for i in range(lt.Q):
-        f_new[i] = np.roll(f[i], shift=lt.E[i], axis=(0,1))
+    streamed_populations = np.empty_like(populations)
 
-    return f_new
+    for q in range(lt.direction_count):
+        streamed_populations[q] = np.roll(populations[q], shift=lt.lattice_velocities[q], axis=(0, 1))
+
+    return streamed_populations

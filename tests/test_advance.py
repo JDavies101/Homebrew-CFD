@@ -5,15 +5,14 @@ from src.lbm.moments import macroscopic
 
 nx = 4
 ny = 3
-# test 1: rest stays rest and stable
-def test_stability():
+# test 1: rest stays at rest and stable
+def test_rest_stays_at_rest():
 
-    f = initial(nx, ny)
+    populations = initial(nx, ny)
     solid = np.zeros((nx, ny), dtype=bool)
-    f_new = run(f, tau=1, solid=solid, steps=200)
+    final_populations = run(populations, relaxation_time=1, solid=solid, steps=200)
+    density, velocity = macroscopic(final_populations)
 
-    rho, u = macroscopic(f_new)
-
-    assert not np.isnan(f_new).any()
-    assert np.allclose(u, 0)
-    assert np.allclose(f_new.sum(), f.sum())
+    assert not np.isnan(final_populations).any()
+    assert np.allclose(velocity, 0)
+    assert np.allclose(final_populations.sum(), populations.sum())

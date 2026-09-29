@@ -1,29 +1,34 @@
 # density and velocity from known population states
 import numpy as np
-from src.lbm import moments
+from src.lbm.moments import macroscopic
 
 rng = np.random.default_rng(0)
 nx = 4
 ny = 3
-
-# test 1: uniform populations
+# test 1: uniform populations give density 9 and zero velocity
 def test_uniform_populations():
-    f = np.ones((9, nx, ny))
-    rho, u = moments.macroscopic(f)
-    assert np.allclose(rho, 9)
-    assert np.allclose(u, 0)
 
-# test 2: all mass in one direction
-def test_mass_direction():
-    f = np.zeros((9, nx, ny))
-    f[1] = rng.integers(1,10)
-    rho, u = moments.macroscopic(f)
-    assert np.allclose(u[0], 1)
-    assert np.allclose(u[1], 0)
+    populations = np.ones((9, nx, ny))
+    density, velocity = macroscopic(populations)
 
-# test 3: shape check
-def test_shape_check():
-    f = np.ones((9, nx, ny))
-    rho, u = moments.macroscopic(f)
-    assert rho.shape == (nx, ny)
-    assert u.shape == (2, nx, ny)
+    assert np.allclose(density, 9)
+    assert np.allclose(velocity, 0)
+
+# test 2: all mass in the east direction gives unit x velocity
+def test_all_mass_east():
+
+    populations = np.zeros((9, nx, ny))
+    populations[1] = rng.integers(1, 10)
+    density, velocity = macroscopic(populations)
+
+    assert np.allclose(velocity[0], 1)
+    assert np.allclose(velocity[1], 0)
+
+# test 3: output shapes
+def test_output_shapes():
+
+    populations = np.ones((9, nx, ny))
+    density, velocity = macroscopic(populations)
+
+    assert density.shape == (nx, ny)
+    assert velocity.shape == (2, nx, ny)
