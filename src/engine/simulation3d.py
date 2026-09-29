@@ -793,7 +793,7 @@ class Simulation3D:
     @ti.kernel
     def sponge_relax(self, inlet_velocity: ti.f32):
         """
-        Separate relaxation absorbing layer (superseded by the fused layers in collide_reg; kept for test 32):
+        Separate relaxation absorbing layer for collide_full / collide_trt cases (collide_reg fuses it):
         f -> f - sigma (f - feq(1, inlet_velocity, 0, 0)) near x = 0 and x = nx - 1.
         """
 
