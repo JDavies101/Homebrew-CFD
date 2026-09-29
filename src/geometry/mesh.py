@@ -19,7 +19,7 @@ def read_stl(path):
         return np.frombuffer(body, record)["v"].astype(np.float64)
 
     # ASCII STL: collect every vertex line
-    text = (header + body).decode("ascii", erros="ignore")
+    text = (header + body).decode("ascii", errors="ignore")
     vertices = [line.split()[1:4] for line in text.splitlines() if line.strip().startswith("vertex")]
 
     return np.array(vertices, np.float64).reshape(-1, 3, 3)
