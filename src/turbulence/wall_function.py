@@ -17,12 +17,13 @@ def friction_velocity(first_node_speed, y1, viscosity, von_karman=0.41, log_law_
     u_tau = np.sqrt(viscosity * first_node_speed / y1)
 
     for _ in range(iterations):
-        residual = u_tau * (inverse_von_karman * np.log(y1 * u_tau / viscosity) + log_law_constant) - first_node_speed
+        log_term = inverse_von_karman * np.log(y1 * u_tau / viscosity) + log_law_constant
+        residual = u_tau * log_term - first_node_speed
 
         if abs(residual) < tolerance:
             break
 
-        residual_derivative = inverse_von_karman * np.log(y1 * u_tau / viscosity) + log_law_constant + inverse_von_karman
+        residual_derivative = log_term + inverse_von_karman
         u_tau_next = u_tau - residual / residual_derivative
 
         u_tau = u_tau_next if u_tau_next > 0 else u_tau / 2  # guard the proposed value

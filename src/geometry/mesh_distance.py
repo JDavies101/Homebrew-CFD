@@ -75,9 +75,9 @@ def _band_distance(triangles: ti.types.ndarray(), distance: ti.template(), band:
                 for k in range(k_start, k_end + 1):
                     node = ti.Vector([ti.cast(i, ti.f32), ti.cast(j, ti.f32), ti.cast(k, ti.f32)])
                     offset = node - _closest_on_tri(node, a, b, c)
-                    node_distance = ti.sqrt(offset.dot(offset))
-                    if node_distance <= band:
-                        ti.atomic_min(distance[i, j, k], node_distance)
+                    squared_distance = offset.dot(offset)
+                    if squared_distance <= band * band:
+                        ti.atomic_min(distance[i, j, k], ti.sqrt(squared_distance))
 
 def band_distance(triangles, nx, ny, nz, band=3.0, backend="cpu"):
     """
@@ -213,20 +213,21 @@ def _link_hits(triangles: ti.types.ndarray(), lattice_velocities: ti.types.ndarr
         j_end = ti.min(ti.cast(box_upper[1], ti.i32), q.shape[2] - 1)
         k_end = ti.min(ti.cast(box_upper[2], ti.i32), q.shape[3] - 1)
 
-        for i in range(i_start, i_end + 1):
-            for j in range(j_start, j_end + 1):
-                for k in range(k_start, k_end + 1):
-                    node = ti.Vector([ti.cast(i, ti.f32), ti.cast(j, ti.f32), ti.cast(k, ti.f32)])
-                    node_from_a = node - a
+        # direction terms depend only on (triangle, direction): compute once, then sweep the nodes
+        for d in range(1, lattice_velocities.shape[0]):
+            link = ti.Vector([ti.cast(lattice_velocities[d, 0], ti.f32), ti.cast(lattice_velocities[d, 1], ti.f32), ti.cast(lattice_velocities[d, 2], ti.f32)])
+            # Moller-Trumbore: barycentric u, v and link parameter t
+            link_cross_edge_2 = link.cross(edge_2)
+            determinant = edge_1.dot(link_cross_edge_2)
 
-                    for d in range(lattice_velocities.shape[0]):
-                        link = ti.Vector([ti.cast(lattice_velocities[d, 0], ti.f32), ti.cast(lattice_velocities[d, 1], ti.f32), ti.cast(lattice_velocities[d, 2], ti.f32)])
-                        # Moller-Trumbore: barycentric u, v and link parameter t
-                        link_cross_edge_2 = link.cross(edge_2)
-                        determinant = edge_1.dot(link_cross_edge_2)
+            if ti.abs(determinant) > 1e-12:
+                inverse_determinant = 1.0 / determinant
 
-                        if ti.abs(determinant) > 1e-12:
-                            inverse_determinant = 1.0 / determinant
+                for i in range(i_start, i_end + 1):
+                    for j in range(j_start, j_end + 1):
+                        for k in range(k_start, k_end + 1):
+                            node = ti.Vector([ti.cast(i, ti.f32), ti.cast(j, ti.f32), ti.cast(k, ti.f32)])
+                            node_from_a = node - a
                             u = node_from_a.dot(link_cross_edge_2) * inverse_determinant
 
                             if u >= 0.0 and u <= 1.0:

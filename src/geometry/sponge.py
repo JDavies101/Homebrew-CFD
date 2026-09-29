@@ -22,4 +22,6 @@ def relax_profile(nx, nz, width_x, width_z, sigma_max):
     else:
         ramp_z = np.zeros_like(distance_z)
 
-    return (sigma_max * np.maximum(ramp_x, ramp_z) ** 2).astype(np.float32)
+    ramp = np.maximum(ramp_x, ramp_z)
+
+    return (sigma_max * ramp * ramp).astype(np.float32)

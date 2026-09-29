@@ -38,16 +38,23 @@ def ahmed_body(nx, ny, nz, x_start, body_height=48, slant_angle=35, nose="round"
         solid[i, j_bottom : slant_top_j, k_start : k_end] = 1
 
     # rounded nose (square nose: keep the sharp box front)
-    for i in range(x_start, x_start + nose_radius if nose == "round" else x_start):
-        for j in range(j_bottom, j_top):
-            for k in range(k_start, k_end):
-                edge_distance_y = min(j - j_bottom, (j_top - 1) - j)  # distance to nearest top/bottom edge
-                edge_distance_z = min(k - k_start, (k_end - 1) - k)  # distance to nearest side edge
-                # how far the fillet pushes the front face back, per axis (0 when that edge is far)
-                setback_y = nose_radius - np.sqrt(nose_radius ** 2 - (nose_radius - edge_distance_y) ** 2) if edge_distance_y < nose_radius else 0
-                setback_z = nose_radius - np.sqrt(nose_radius ** 2 - (nose_radius - edge_distance_z) ** 2) if edge_distance_z < nose_radius else 0
+    if nose == "round":
+        i = np.arange(x_start, x_start + nose_radius)[:, None, None]
+        j = np.arange(j_bottom, j_top)[None, :, None]
+        k = np.arange(k_start, k_end)[None, None, :]
+        edge_distance_y = np.minimum(j - j_bottom, (j_top - 1) - j)  # distance to nearest top/bottom edge
+        edge_distance_z = np.minimum(k - k_start, (k_end - 1) - k)  # distance to nearest side edge
 
-                if i < x_start + max(setback_y, setback_z):
-                    solid[i, j, k] = 0
+        # how far the fillet pushes the front face back, per axis (0 when that edge is far)
+        gap_y = nose_radius - edge_distance_y
+        gap_z = nose_radius - edge_distance_z
+        # np.maximum(..., 0) keeps sqrt off negatives on the discarded branch of np.where
+        setback_y = np.where(edge_distance_y < nose_radius,
+                             nose_radius - np.sqrt(np.maximum(nose_radius * nose_radius - gap_y * gap_y, 0)), 0)
+        setback_z = np.where(edge_distance_z < nose_radius,
+                             nose_radius - np.sqrt(np.maximum(nose_radius * nose_radius - gap_z * gap_z, 0)), 0)
+
+        carve = i < x_start + np.maximum(setback_y, setback_z)  # broadcasts to (nose_radius, H, W)
+        solid[x_start : x_start + nose_radius, j_bottom : j_top, k_start : k_end][carve] = 0
 
     return solid

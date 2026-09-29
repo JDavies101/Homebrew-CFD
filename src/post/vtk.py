@@ -15,7 +15,7 @@ def write_field(path, density, velocity):
     velocity_x = np.ascontiguousarray(velocity[0])
     velocity_y = np.ascontiguousarray(velocity[1])
     velocity_z = np.ascontiguousarray(velocity[2])
-    speed = np.sqrt(velocity_x ** 2 + velocity_y ** 2 + velocity_z ** 2)
+    speed = np.sqrt(velocity_x * velocity_x + velocity_y * velocity_y + velocity_z * velocity_z)
     imageToVTK(path, pointData={
         "rho": np.ascontiguousarray(density),
         "u": (velocity_x, velocity_y, velocity_z),  # a proper vector field in ParaView

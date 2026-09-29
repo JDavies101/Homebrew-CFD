@@ -9,7 +9,7 @@ def plot_velocity_magnitude(velocity):
     Returns fig, ax.
     """
 
-    speed = np.sqrt(velocity[0] ** 2 + velocity[1] ** 2)
+    speed = np.sqrt(velocity[0] * velocity[0] + velocity[1] * velocity[1])
     fig, ax = plt.subplots()
     image = ax.imshow(speed.T, origin="lower", cmap="viridis")
     fig.colorbar(image, ax=ax, label="|u|")
@@ -28,7 +28,7 @@ def plot_streamlines(velocity):
     nx, ny = velocity.shape[1], velocity.shape[2]
     x, y = np.arange(nx), np.arange(ny)
     fig, ax = plt.subplots()
-    ax.streamplot(x, y, velocity[0].T, velocity[1].T, color=np.sqrt(velocity[0] ** 2 + velocity[1] ** 2).T, cmap="viridis", density=1.5)
+    ax.streamplot(x, y, velocity[0].T, velocity[1].T, color=np.sqrt(velocity[0] * velocity[0] + velocity[1] * velocity[1]).T, cmap="viridis", density=1.5)
     ax.set_xlabel("x")
     ax.set_ylabel("y")
 

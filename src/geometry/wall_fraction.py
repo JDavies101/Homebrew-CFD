@@ -11,32 +11,31 @@ def wall_fraction_cylinder(nx, ny, nz, center_x, center_y, radius):
 
     q = np.zeros((d3q19.direction_count, nx, ny, nz), np.float32)
     X, Y = np.meshgrid(np.arange(nx), np.arange(ny), indexing="ij")
-    solid = (X - center_x) ** 2 + (Y - center_y) ** 2 < radius ** 2  # (nx, ny) bool
+    offset_x = X - center_x
+    offset_y = Y - center_y
+    squared_distance = offset_x * offset_x + offset_y * offset_y
+    solid = squared_distance < radius * radius  # (nx, ny) bool
+    # quadratic a t^2 + b t + c = 0 for |p + t e| = radius; c is the same for all directions
+    quadratic_c = squared_distance - radius * radius
 
-    for i in range(nx):
-        for j in range(ny):
-            # only fluid nodes have boundary links
-            if solid[i, j]:
-                continue
-            for d in range(d3q19.direction_count):
-                ex, ey = int(d3q19.lattice_velocities[d, 0]), int(d3q19.lattice_velocities[d, 1])
-                neighbour_i, neighbour_j = i + ex, j + ey
-                # neighbour must be solid
-                if not (0 <= neighbour_i < nx and 0 <= neighbour_j < ny) or not solid[neighbour_i, neighbour_j]:
-                    continue
-                # quadratic a t^2 + b t + c = 0 for |p + t e| = radius
-                quadratic_a = ex * ex + ey * ey
-                # pure-z link can't hit the cylinder
-                if quadratic_a == 0:
-                    continue
-                offset_x, offset_y = i - center_x, j - center_y
-                quadratic_b = 2 * (offset_x * ex + offset_y * ey)
-                quadratic_c = offset_x * offset_x + offset_y * offset_y - radius * radius
-                discriminant = quadratic_b * quadratic_b - 4 * quadratic_a * quadratic_c
-                if discriminant < 0:
-                    continue
-                crossing = (-quadratic_b - np.sqrt(discriminant)) / (2 * quadratic_a)  # first crossing from fluid side
-                q[d, i, j, :] = crossing  # same for every z (cylinder spans z)
+    for d in range(d3q19.direction_count):
+        ex = int(d3q19.lattice_velocities[d, 0])
+        ey = int(d3q19.lattice_velocities[d, 1])
+        quadratic_a = ex * ex + ey * ey
+        # pure-z link can't hit the cylinder
+        if quadratic_a == 0:
+            continue
+
+        # neighbour_solid[i, j] = solid[i + ex, j + ey], False out of bounds (no wrap)
+        neighbour_solid = np.zeros_like(solid)
+        neighbour_solid[max(-ex, 0) : nx - max(ex, 0), max(-ey, 0) : ny - max(ey, 0)] = solid[max(ex, 0) : nx + min(ex, 0), max(ey, 0) : ny + min(ey, 0)]
+        link = (~solid) & neighbour_solid
+
+        quadratic_b = 2 * (offset_x * ex + offset_y * ey)
+        discriminant = quadratic_b * quadratic_b - 4 * quadratic_a * quadratic_c
+        crossing_links = link & (discriminant >= 0)
+        crossing = (-quadratic_b[crossing_links] - np.sqrt(discriminant[crossing_links])) / (2 * quadratic_a)  # first crossing from fluid side
+        q[d][crossing_links] = crossing[:, None]  # same for every z (cylinder spans z)
 
     return q
 

@@ -146,7 +146,8 @@ def field_health(velocity, density, solid=None, u_ref=None, band=4):
     Returns a dict of run-log fields.
     """
 
-    speed = np.sqrt((velocity.astype(np.float64) ** 2).sum(axis=0))
+    velocity64 = velocity.astype(np.float64)
+    speed = np.sqrt((velocity64 * velocity64).sum(axis=0))
     fluid = np.ones(speed.shape, bool) if solid is None else (solid == 0)
     finite = np.isfinite(speed) & np.isfinite(density)
     health = {}

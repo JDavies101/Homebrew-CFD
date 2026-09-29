@@ -990,12 +990,14 @@ class Simulation3D:
             von_karman = 0.41
             log_law_constant = 5.2
             u_tau = ti.sqrt(viscosity * parallel_speed / y1)  # viscous initial guess
+            inverse_von_karman = 1.0 / von_karman
             # bound must be a compile-time constant
             for _ in range(50):
-                residual = u_tau * ((1.0 / von_karman) * ti.log(y1 * u_tau / viscosity) + log_law_constant) - parallel_speed
+                log_term = inverse_von_karman * ti.log(y1 * u_tau / viscosity) + log_law_constant
+                residual = u_tau * log_term - parallel_speed
                 if ti.abs(residual) < 1e-8:
                     break
-                residual_derivative = (1.0 / von_karman) * ti.log(y1 * u_tau / viscosity) + log_law_constant + 1.0 / von_karman
+                residual_derivative = log_term + inverse_von_karman
                 u_tau_next = u_tau - residual / residual_derivative
                 u_tau = u_tau_next if u_tau_next > 0.0 else u_tau * 0.5
 

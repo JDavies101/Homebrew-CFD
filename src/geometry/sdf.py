@@ -11,7 +11,11 @@ def sdf_sphere(center_x, center_y, center_z, radius):
     """
 
     def phi(x, y, z):
-        return np.sqrt((x - center_x) ** 2 + (y - center_y) ** 2 + (z - center_z) ** 2) - radius
+        offset_x = x - center_x
+        offset_y = y - center_y
+        offset_z = z - center_z
+
+        return np.sqrt(offset_x * offset_x + offset_y * offset_y + offset_z * offset_z) - radius
 
     return phi
 
@@ -47,6 +51,7 @@ def q_from_sdf(phi, nx, ny, nz, iterations=40):
 
     X, Y, Z = node_grid(nx, ny, nz)
     solid = phi(X, Y, Z) < 0.0
+    del X, Y, Z  # free the float64 coordinate grids before the direction loop
     q = np.zeros((d3q19.direction_count, nx, ny, nz), np.float32)
 
     for d in range(d3q19.direction_count):
@@ -54,14 +59,15 @@ def q_from_sdf(phi, nx, ny, nz, iterations=40):
         if ex == 0 and ey == 0 and ez == 0:
             continue
 
-        in_bounds = ((X + ex >= 0) & (X + ex < nx) & (Y + ey >= 0) & (Y + ey < ny)
-                     & (Z + ez >= 0) & (Z + ez < nz))
-        neighbour_solid = np.roll(solid, (-ex, -ey, -ez), axis=(0, 1, 2))
-        link = (~solid) & neighbour_solid & in_bounds
+        # neighbour_solid[i, j, k] = solid[i + ex, j + ey, k + ez], False out of bounds (no wrap)
+        neighbour_solid = np.zeros_like(solid)
+        neighbour_solid[max(-ex, 0) : nx - max(ex, 0), max(-ey, 0) : ny - max(ey, 0), max(-ez, 0) : nz - max(ez, 0)] = \
+            solid[max(ex, 0) : nx + min(ex, 0), max(ey, 0) : ny + min(ey, 0), max(ez, 0) : nz + min(ez, 0)]
+        link = (~solid) & neighbour_solid
         link_index = np.nonzero(link)
-        x_start = X[link_index]
-        y_start = Y[link_index]
-        z_start = Z[link_index]
+        x_start = link_index[0].astype(np.float64)
+        y_start = link_index[1].astype(np.float64)
+        z_start = link_index[2].astype(np.float64)
         lower = np.zeros_like(x_start)
         upper = np.ones_like(x_start)
 
