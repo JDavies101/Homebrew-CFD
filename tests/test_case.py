@@ -67,7 +67,7 @@ def test_validate_part_shape():
 # test 6: Bouzidi and staircase parts in one case are rejected
 def test_validate_mixed_wall_types():
 
-    bouzidi_part = Part(name="wing", solid=np.zeros(grid_shape, np.int32), reference_area=1.0, signed_distance=np.ones(grid_shape))
+    bouzidi_part = Part(name="wing", solid=np.zeros(grid_shape, np.int32), reference_area=1.0, wall_fractions=np.zeros((19,) + grid_shape, np.float32))
     staircase_part = Part(name="box", solid=np.zeros(grid_shape, np.int32), reference_area=1.0)
     case = small_case(parts=[bouzidi_part, staircase_part])
 
@@ -94,7 +94,7 @@ def test_validate_fused_layers_need_regularized():
 def test_wing_case_step_counts():
 
     wing_solid = np.zeros((800, 400, 4), np.int32)
-    wing = Part(name="wing", solid=wing_solid, reference_area=80 * 4, signed_distance=np.ones((800, 400, 4), np.float32))
+    wing = Part(name="wing", solid=wing_solid, reference_area=80 * 4, wall_fractions=np.zeros((19, 800, 400, 4), np.float32))
     domain = Domain(nx=800, ny=400, nz=4, floor="moving", ceiling="moving")
     case = Case(name="wing_ground", tag="h0.3_a4", flow=Flow(), domain=domain, turbulence=Turbulence(), timing=Timing(), parts=[wing])
     case.validate()
@@ -114,7 +114,7 @@ def test_validate_custom_start_needs_velocity():
 # test 11: the wall model with Bouzidi walls is rejected
 def test_validate_wall_model_needs_staircase():
 
-    part = Part(name="wing", solid=np.zeros(grid_shape, np.int32), reference_area=1.0, signed_distance=np.ones(grid_shape))
+    part = Part(name="wing", solid=np.zeros(grid_shape, np.int32), reference_area=1.0, wall_fractions=np.zeros((19,) + grid_shape, np.float32))
     case = small_case(parts=[part], turbulence=Turbulence(wall_model=True))
 
     with pytest.raises(ValueError, match="wall model needs staircase"):
@@ -126,4 +126,13 @@ def test_validate_lid_velocity_reserved():
     case = small_case(domain=Domain(nx=8, ny=4, nz=2, lid_velocity=0.1))
 
     with pytest.raises(ValueError, match="lid_velocity is reserved"):
+        case.validate()
+
+# test 13: wall fractions that do not match the grid are rejected
+def test_validate_wall_fraction_shape():
+
+    part = Part(name="wing", solid=np.zeros(grid_shape, np.int32), reference_area=1.0, wall_fractions=np.zeros((19, 8, 4, 3), np.float32))
+    case = small_case(parts=[part])
+
+    with pytest.raises(ValueError, match="wall fractions"):
         case.validate()

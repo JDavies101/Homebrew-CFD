@@ -11,7 +11,7 @@ def check_choice(name, value, choices):
 
     if value not in choices:
         raise ValueError(f"{name} = {value!r}, expected one of {choices}")
-    
+
 @dataclass
 class Flow:
     """
@@ -43,7 +43,7 @@ class Flow:
 
         if self.relaxation_time_override is not None:
             return self.relaxation_time_override
-        
+
         return 3 * self.viscosity + 0.5
 
 @dataclass
@@ -95,6 +95,7 @@ class Timing:
     steps_override: int | None = None
     warmup_override: int | None = None
     sample_every: int = 25
+    check_every: int | None = None # progress readout interval, None -> steps // 300
     sample_window: str = "series" # "series" (every sample_every after warmup) or "end" (last step only)
 
 @dataclass
@@ -106,7 +107,7 @@ class Part:
     name: str
     solid: np.ndarray # (nx, ny, nz) int32 mask
     reference_area: float # A for the coefficients, cells^2
-    signed_distance: np.ndarray | None = None # phi: given -> Bouzidi walls, None -> staircase
+    wall_fractions: np.ndarray | None = None # q (19, nx, ny, nz): given -> Bouzidi walls, None -> staircase
     wall_velocity: np.ndarray | None = None # (3, nx, ny, nz) rigid surface velocity (spin), None -> at rest
 
 @dataclass
@@ -139,7 +140,7 @@ class Case:
         """
 
         return self.domain.nx / self.flow.free_stream_velocity
-    
+
     def total_steps(self):
         """
         Returns the run length in steps.
@@ -147,9 +148,9 @@ class Case:
 
         if self.timing.steps_override is not None:
             return self.timing.steps_override
-        
+
         return round(self.flow_through_steps() * self.timing.total_flow_throughs)
-    
+
     def warmup_steps(self):
         """
         Returns the steps discarded before averaging.
@@ -157,16 +158,16 @@ class Case:
 
         if self.timing.warmup_override is not None:
             return self.timing.warmup_override
-        
+
         return round(self.flow_through_steps() * self.timing.warmup_flow_throughs)
-    
+
     def ramp_steps(self):
         """
         Returns the cosine inlet ramp length in steps.
         """
 
         return round(self.flow_through_steps() * self.timing.ramp_flow_throughs)
-    
+
     def validate(self):
         """
         Reject settings the solver cannot run or that contradict each other.
@@ -199,13 +200,15 @@ class Case:
             raise ValueError("fused layers live in collide_reg: use layer_kind = 'separate' for bgk / trt")
         if self.domain.lid_velocity != 0.0:
             raise ValueError("lid_velocity is reserved for the 2D engine port")
-        
+
         # parts
         grid_shape = (self.domain.nx, self.domain.ny, self.domain.nz)
         for part in self.parts:
             if part.solid.shape != grid_shape:
                 raise ValueError(f"part {part.name} mask {part.solid.shape} != grid {grid_shape}")
-        if len({part.signed_distance is None for part in self.parts}) > 1:
+            if part.wall_fractions is not None and part.wall_fractions.shape != (19,) + grid_shape:
+                raise ValueError(f"part {part.name} wall fractions {part.wall_fractions.shape} != (19,) + grid {grid_shape}")
+        if len({part.wall_fractions is None for part in self.parts}) > 1:
             raise ValueError("mixed Bouzidi and staircase parts are not supported yet")
-        if self.turbulence.wall_model and any(part.signed_distance is not None for part in self.parts):
+        if self.turbulence.wall_model and any(part.wall_fractions is not None for part in self.parts):
             raise ValueError("wall model needs staircase walls")
