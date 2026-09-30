@@ -663,7 +663,7 @@ dropped it agrees with the spectral value within 0.0006, so I report the spectra
 vs Williamson (about 0.164 at Re 100) on the inlet velocity and -0.9% on the local velocity beside the
 cylinder (U_eff about 1.05 U, blockage 7.5%): the offset is blockage, consistent with E2.
 
-### E5: wing Reynolds number (NACA 4412 inverted, alpha 4, c = 80, moving ground, runs 75-82, 141-149)
+### E5: wing Reynolds number (NACA 4412 inverted, alpha 4, c = 80, moving ground, runs 75-82, 141-150)
 
 -CL, and change vs h/c 1.5:
 
@@ -671,11 +671,13 @@ cylinder (U_eff about 1.05 U, blockage 7.5%): the offset is blockage, consistent
 |---|---|---|---|
 | 1.5 | 0.2619 | 0.3089 | 0.3059 |
 | 0.3 | 0.2506 (-4.3%) | 0.3368 (+9.0%) | 0.3396 (+11.0%) |
+| 0.2 | - | 0.3350 (+8.4%) | 0.3473 (+13.5%) |
 | 0.15 | 0.1990 (-24.0%) | 0.3154 (+2.1%) | 0.3424 (+11.9%) |
 | 0.1 | 0.1308 (-50.1%) | 0.2553 (-17.4%) | 0.3098 (+1.3%) |
 
 The ground-effect peak moves toward the ground as Re rises: none at Re 2000 (the ground only costs
-downforce), h/c 0.2-0.3 at Re 5000, h/c 0.15-0.3 at Re 10000 (the two tie within SE 0.002-0.006). Low
+downforce), h/c 0.2-0.3 at Re 5000, h/c about 0.2 at Re 10000 (run 150; above h/c 0.15 and 0.3 by 1.3-1.6 combined SE, so the location is
+resolved to about +/-0.05). Low
 Re is therefore a credible reason the peak sits above the experimental h/c of about 0.1 (Zerihan and Zhang,
 Re about 4.6e5, turbulent): thick viscous layers on the wing and in the gap choke the underside flow
 earlier. Re 10000 sheds an unsteady wake (SE 3-10x larger than Re 5000). Quasi-2D laminar LBM at
