@@ -678,6 +678,21 @@ both angles (attached fraction 0.05-0.12), so the attached-to-separated change t
 35 deg differ in experiments does not occur at Re_H 30000. The Ahmed body at this Reynolds number is
 therefore not a usable test of relative accuracy; a case with a large, regime-stable difference is needed.
 
+### Relative accuracy under refinement (wing in ground effect, chord 80 and 120, runs 74-82, 132-137)
+
+| h/c | 1.5 | 0.6 | 0.3 | 0.15 | 0.1 |
+|---|---|---|---|---|---|
+| -CL, c = 80 | 0.309 | 0.320 | 0.337 | 0.315 | 0.255 |
+| -CL, c = 120 | 0.321 | 0.335 | 0.354 | 0.330 | 0.260 |
+| change vs h/c 1.5, c = 80 | - | +3.6% | +9.0% | +2.1% | -17.4% |
+| change vs h/c 1.5, c = 120 | - | +4.5% | +10.3% | +2.8% | -18.9% |
+
+The absolute level rises about 4-5% with refinement, but the shape of the curve is preserved: the peak
+stays at h/c 0.3 and every relative change agrees to within 1.5 percentage points (10-30% of the change
+itself, same sign everywhere). Relative trends are therefore more robust to resolution than absolute
+coefficients, which supports the project's stated accuracy target; the Ahmed body could not show this
+because its 25 and 35 degree cases are in the same separated regime at Re_H 30000.
+
 ## 8. Additional lattice stencils (future)
 
 The lattice is a pure-data descriptor (`Q, D, E, W, OPP, CS2`) that the operators

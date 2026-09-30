@@ -1,6 +1,6 @@
 # inverted NACA 4412 wing in ground effect (quasi-2D, periodic z): downforce vs ride height, moving ground
-# usage: python -m src.examples.wing_ground [h_over_c] [angle_degrees]
-import sys
+# usage: python -m src.examples.wing_ground [h_over_c] [angle_degrees] [--chord C]
+import argparse
 import numpy as np
 from src.engine.simulation3d import Simulation3D
 from src.geometry.airfoil import naca_four_digit, place_section, extruded_section_sdf
@@ -11,41 +11,46 @@ from src.post.progress import Progress
 from src.post.run_log import RunRecord
 from src.post.statistics import block_statistics
 
-# command-line options
-ride_height_ratio = float(sys.argv[1]) if len(sys.argv) > 1 else 0.3  # h / c, lowest point of the wing above the ground
-angle_degrees = float(sys.argv[2]) if len(sys.argv) > 2 else 4.0 # incidence, positive = more downforce
+# command-line options (defaults reproduce run 74)
+parser = argparse.ArgumentParser()
+parser.add_argument("ride_height_ratio", nargs="?", type=float, default=0.3)  # h / c, lowest point of the wing above the ground
+parser.add_argument("angle_degrees", nargs="?", type=float, default=4.0)  # incidence, positive = more downforce
+parser.add_argument("--chord", type=int, default=80)  # c, cells (envelope: relative-accuracy check)
+options = parser.parse_args()
+ride_height_ratio = options.ride_height_ratio
+angle_degrees = options.angle_degrees
 section = "4412"
-tag = f"h{ride_height_ratio:g}_a{angle_degrees:g}"
+tag = f"h{ride_height_ratio:g}_a{angle_degrees:g}" + ("" if options.chord == 80 else f"_c{options.chord}")
 
 # geometry
-chord = 80 # c, cells
+chord = options.chord  # c, cells
 nx = 10 * chord
 ny = 5 * chord
-nz = 4 # periodic z: quasi-2D section
+nz = 4  # periodic z: quasi-2D section
 leading_edge_x = 3 * chord
 ground_plane_y = 0.5  # halfway bounce-back plane in front of floor row 0
 ride_height = ride_height_ratio * chord
-reference_area = chord * nz # c x span, for the coefficients
+reference_area = chord * nz  # c x span, for the coefficients
 
 # flow
-free_stream_velocity = 0.05 # U
-reynolds_number = 5000 # on chord
+free_stream_velocity = 0.05  # U
+reynolds_number = 5000  # on chord
 viscosity = free_stream_velocity * chord / reynolds_number
-relaxation_time = 3 * viscosity + 0.5 # ~0.5024 -> regularized collision
+relaxation_time = 3 * viscosity + 0.5  # ~0.5024 -> regularized collision
 smagorinsky_floor = 0.04
 wale_constant = 0.5
 
 # relaxation layers (x only)
-relax_width_x = 24
+relax_width_x = round(0.3 * chord)  # 24 cells at c = 80
 relax_sigma = 0.1
 
 # timing
-flow_through_steps = nx / free_stream_velocity 
-warmup = round(4 * flow_through_steps) 
-steps = round(10 * flow_through_steps) 
+flow_through_steps = nx / free_stream_velocity
+warmup = round(4 * flow_through_steps)
+steps = round(10 * flow_through_steps)
 ramp = round(flow_through_steps)
-sample_every = 25 
-check_every = max(1, steps // 300) 
+sample_every = 25
+check_every = max(1, steps // 300)
 
 def main():
     """
