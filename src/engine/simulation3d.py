@@ -15,9 +15,10 @@ class Simulation3D:
     f (populations), rho (density), u (velocity), uw (wall velocity), solid, body, lid.
     """
 
-    def __init__(self, nx, ny, nz, backend="cpu", interp=False):
+    def __init__(self, nx, ny, nz, backend="cpu", interp=False, max_parts=8):
         """
         Allocate fields and load the lattice constants. interp=True adds the Bouzidi fields (q, fc).
+        max_parts is the largest part id body may hold (part_force has max_parts + 1 rows).
         """
 
         runtime.init(backend)
@@ -47,7 +48,9 @@ class Simulation3D:
         self.sigma_z = ti.field(ti.f32, shape=(nx, nz))  # z-layer strength (relaxes to running mean), 0 by default
         self.rho_bar = ti.field(ti.f32, shape=(nx, ny, nz))  # running-mean density, z-layer target
         self.u_bar = ti.field(ti.f32, shape=(self.dimension, nx, ny, nz))  # running-mean velocity, z-layer target
-        self.body = ti.field(ti.i32, shape=(nx, ny, nz))  # body-only mask for drag (solid minus tunnel walls)
+        self.body = ti.field(ti.i32, shape=(nx, ny, nz))  # part id per solid node for drag: 0 = not measured (tunnel walls), 1..max_parts = part
+        self.max_parts = max_parts
+        self.part_force = ti.field(ti.f32, shape=(max_parts + 1, self.dimension))  # force per part id (row 0 unused)
 
         # lattice constants as fields, built from the NumPy descriptor
         self.lattice_velocities = ti.field(ti.i32, shape=(self.direction_count, self.dimension))  # c_q (E)
@@ -586,6 +589,7 @@ class Simulation3D:
         Load the per-link wall fractions q (Q, nx, ny, nz) and build the compact boundary-link list.
 
         Bouzidi and drag_interp loop over this list instead of scanning all 19 x N entries each step.
+        Call after body is loaded; link_part is taken from it.
         """
 
         self.q.from_numpy(q)
@@ -596,10 +600,18 @@ class Simulation3D:
         self.link_direction = ti.field(ti.i32, shape=size)
         self.link_node = ti.field(ti.i32, shape=(size, 3))
         self.link_fraction = ti.field(ti.f32, shape=size)
+        self.link_part = ti.field(ti.i32, shape=size)
         if count > 0:
             self.link_direction.from_numpy(direction.astype(np.int32))
             self.link_node.from_numpy(np.stack([i, j, k], axis=1).astype(np.int32))
             self.link_fraction.from_numpy(q[direction, i, j, k].astype(np.float32))
+
+            # part id at the solid end of each link (body must be loaded before this call)
+            body = self.body.to_numpy()
+            solid_i = (i + d3q19.lattice_velocities[direction, 0]) % self.nx
+            solid_j = (j + d3q19.lattice_velocities[direction, 1]) % self.ny
+            solid_k = (k + d3q19.lattice_velocities[direction, 2]) % self.nz
+            self.link_part.from_numpy(body[solid_i, solid_j, solid_k].astype(np.int32))
 
     @ti.func
     def _link_wall_velocity(self, i, j, k, direction, fraction, scale):
@@ -837,7 +849,7 @@ class Simulation3D:
 
     @ti.kernel
     def _drag_interp(self, scale: ti.f32, link_direction: ti.template(), link_node: ti.template(),
-                     link_fraction: ti.template(), count: ti.i32):
+                     link_fraction: ti.template(), link_part: ti.template(), count: ti.i32):
         """
         Momentum exchange for interpolated walls over the boundary-link list, Galilean-invariant form
         (Wen et al. 2014): F = sum c_d (f_in + f_out) - u_w (f_in - f_out), u_w at the wall point.
@@ -846,24 +858,30 @@ class Simulation3D:
 
         for axis in range(self.dimension):
             self.force[axis] = 0.0
+        for part, axis in ti.ndrange(self.max_parts + 1, self.dimension):
+            self.part_force[part, axis] = 0.0
         for m in range(count):
             direction = link_direction[m]
             i = link_node[m, 0]
             j = link_node[m, 1]
             k = link_node[m, 2]
+            part = link_part[m]
             opposite = self.opposite_direction[direction]
             population_in = self.fc[direction, i, j, k]  # post-collision, into the wall
             population_out = self.f[opposite, i, j, k]  # reconstructed reflection
             wall_velocity = self._link_wall_velocity(i, j, k, direction, link_fraction[m], scale)
             for axis in ti.static(range(3)):
-                self.force[axis] += (population_in + population_out) * self.lattice_velocities[direction, axis] - wall_velocity[axis] * (population_in - population_out)
+                contribution = (population_in + population_out) * self.lattice_velocities[direction, axis] - wall_velocity[axis] * (population_in - population_out)
+                self.force[axis] += contribution
+                if part > 0:
+                    self.part_force[part, axis] += contribution
 
     def drag_interp(self, scale=1.0):
         """
         Galilean-invariant momentum-exchange force for Bouzidi walls, into force.
         """
 
-        self._drag_interp(scale, self.link_direction, self.link_node, self.link_fraction, self.link_count)
+        self._drag_interp(scale, self.link_direction, self.link_node, self.link_fraction, self.link_part, self.link_count)
 
     @ti.func
     def _drag_mask(self, use_body: ti.i32):
@@ -874,6 +892,8 @@ class Simulation3D:
 
         for axis in range(self.dimension):
             self.force[axis] = 0.0
+        for part, axis in ti.ndrange(self.max_parts + 1, self.dimension):
+            self.part_force[part, axis] = 0.0
         for i, j, k in ti.ndrange(self.nx, self.ny, self.nz):
             if self.solid[i, j, k] == 0:
                 for q in range(self.direction_count):
@@ -881,16 +901,26 @@ class Simulation3D:
                     neighbour_j = j + self.lattice_velocities[q, 1]
                     neighbour_k = k + self.lattice_velocities[q, 2]
                     if 0 <= neighbour_i < self.nx and 0 <= neighbour_j < self.ny and 0 <= neighbour_k < self.nz:
-                        link_hits_target = (self.body[neighbour_i, neighbour_j, neighbour_k] == 1) if use_body else (self.solid[neighbour_i, neighbour_j, neighbour_k] == 1)
+                        part = 0
+                        link_hits_target = False
+                        if use_body:
+                            part = self.body[neighbour_i, neighbour_j, neighbour_k]
+                            link_hits_target = part > 0
+                        else:
+                            link_hits_target = self.solid[neighbour_i, neighbour_j, neighbour_k] == 1
                         if link_hits_target:
-                            self.force[0] += 2.0 * self.f[q, i, j, k] * self.lattice_velocities[q, 0]
-                            self.force[1] += 2.0 * self.f[q, i, j, k] * self.lattice_velocities[q, 1]
-                            self.force[2] += 2.0 * self.f[q, i, j, k] * self.lattice_velocities[q, 2]
+                            momentum_exchange = 2.0 * self.f[q, i, j, k]
+                            for axis in ti.static(range(3)):
+                                contribution = momentum_exchange * self.lattice_velocities[q, axis]
+                                self.force[axis] += contribution
+                                if part > 0:
+                                    self.part_force[part, axis] += contribution
 
     @ti.kernel
     def drag_body(self):
         """
-        Same as drag but only links into the body, so tunnel walls don't pollute Cd. Call after collide, before stream.
+        Same as drag but only links into body parts (body > 0), so tunnel walls don't pollute Cd; also fills part_force per part id.
+        Call after collide, before stream.
         """
 
         self._drag_mask(1)
