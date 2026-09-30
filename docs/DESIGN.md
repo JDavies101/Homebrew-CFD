@@ -548,6 +548,10 @@ relative comparisons and credible trends, not certification-grade absolute Cd. S
   Magnus lift sign.*
 - *4.3 Per-part force breakdown.* Multiple named body masks, each with its own momentum-
   exchange sum. *Gate: per-part forces sum to the single-mask `drag_body` within rounding.*
+  *Done (dca55f5):* `body` holds part ids (0 = not measured), `part_force` is accumulated in
+  `drag_body` and `drag_interp` (Bouzidi links carry `link_part`, read from `body` in
+  `set_wall_fractions`). Tests 38-39 split a sphere into two parts; the parts sum to the total within
+  float32 rounding of the part magnitudes. Ahmed with a single part reproduces run 72 exactly (run 73).
 - *4.4 Integration run.* A front wing (simplest real part) or full car. *Exit: sane, stable
   coefficients + a relative gate - e.g. a wing-angle or ride-height sweep with the expected
   monotonic downforce / ground-effect trend.*
