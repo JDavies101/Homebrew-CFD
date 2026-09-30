@@ -651,6 +651,27 @@ U <= 0.05 is at the incompressible limit; U = 0.1 carries about +0.7% compressib
 is not usable for quantitative work. Strouhal read 0.165 in every run, but the FFT bin width is about
 0.015 at these record lengths, so St is not resolved finely enough to show a Mach trend.
 
+### E6: Ahmed body resolution (25 deg, round nose, WALE, static floor, Re_H 30000, runs 123-126)
+
+| H (cells) | 24 | 32 | 40 | 48 |
+|---|---|---|---|---|
+| Cd (SE) | 0.755 (0.002) | 0.700 (0.002) | 0.667 (0.002) | 0.628 (0.002) |
+| wall-model nodes | 3350 | 974 | 334 | 1 |
+
+Not grid-converged: Cd falls monotonically by 4-8% per step with no plateau up to H = 48. Absolute Ahmed
+Cd values from this setup are resolution-dependent at the 10% level and are not reported as results;
+comparisons at a fixed H (for example static against moving ground) remain meaningful. The study is
+confounded by the log-law model, whose y+ > 30 gate switches it off as the grid is refined (3350
+engaged nodes at H = 24, one at H = 48), and by the implicit LES filter width shrinking with the cell
+size.
+
+With the wall model disabled (runs 127-129) Cd is 0.754, 0.700 and 0.629 at H = 24, 32 and 48, identical
+to the wall-modelled runs within the standard error. The log-law model has no measurable effect on Cd
+here, so the resolution trend comes from the grid and the implicit LES filter: the mean WALE eddy
+viscosity falls from 6.2 nu at H = 24 to 3.0 nu at H = 48, and Cd falls with it. The differences between
+successive grids (0.055, 0.033, 0.039) are not decreasing geometrically, so the runs are not yet in the
+asymptotic range and a Richardson extrapolation would not be meaningful.
+
 ## 8. Additional lattice stencils (future)
 
 The lattice is a pure-data descriptor (`Q, D, E, W, OPP, CS2`) that the operators

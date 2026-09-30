@@ -1,6 +1,6 @@
 # Ahmed body in a wind tunnel: WALE + Smagorinsky floor, relaxation layers, static or moving ground
-# usage: python -m src.examples.ahmed [slant_angle] [nose round|square] [sgs wale|smag] [ground static|moving]
-import sys
+# usage: python -m src.examples.ahmed [slant_angle] [nose round|square] [sgs wale|smag] [ground static|moving] [--height H] [--no-wall-model]
+import argparse
 import numpy as np
 from src.engine.simulation3d import Simulation3D
 from src.geometry.ahmed_body import ahmed_body
@@ -11,15 +11,23 @@ from src.post.run_log import RunRecord
 from src.post.statistics import block_statistics
 from src.post.vtk import write_field
 
-# command-line options
-slant_angle = int(sys.argv[1]) if len(sys.argv) > 1 else 25  # degrees
-nose = sys.argv[2] if len(sys.argv) > 2 else "round"  # "round" or "square"
-sgs = sys.argv[3] if len(sys.argv) > 3 else "wale"  # "smag" or "wale"
-ground = sys.argv[4] if len(sys.argv) > 4 else "static"  # "static" or "moving" floor
-tag = f"phi{slant_angle}" + ("" if nose == "round" else f"_{nose}") + ("" if sgs == "smag" else f"_{sgs}") + ("" if ground == "static" else "_mground")
+# command-line options (defaults reproduce run 73)
+parser = argparse.ArgumentParser()
+parser.add_argument("slant_angle", nargs="?", type=int, default=25)  # degrees
+parser.add_argument("nose", nargs="?", default="round", choices=["round", "square"])
+parser.add_argument("sgs", nargs="?", default="wale", choices=["wale", "smag"])
+parser.add_argument("ground", nargs="?", default="static", choices=["static", "moving"])
+parser.add_argument("--height", type=int, default=32)  # H, cells (envelope E6)
+parser.add_argument("--no-wall-model", action="store_true")  # E6/E7: wall model off (nut_wall stays 0)
+options = parser.parse_args()
+slant_angle = options.slant_angle
+nose = options.nose
+sgs = options.sgs
+ground = options.ground
+tag = f"phi{slant_angle}" + ("" if nose == "round" else f"_{nose}") + ("" if sgs == "smag" else f"_{sgs}") + ("" if ground == "static" else "_mground") + ("" if options.height == 32 else f"_H{options.height}") + ("_nowm" if options.no_wall_model else "")
 
 # geometry: tunnel sized from the body height
-body_height = 32  # small for iteration; go to 48 for real runs
+body_height = options.height  # small for iteration; go to 48 for real runs
 body_length = round(1044 / 288 * body_height)
 body_width = round(389 / 288 * body_height)
 body_x_start = body_length  # 1 body-length upstream
@@ -40,11 +48,11 @@ smagorinsky_floor = 0.04  # Smagorinsky floor under WALE: damps grid-scale noise
 smagorinsky_constant = 0.084 if sgs == "smag" else smagorinsky_floor  # c_s
 wale_constant = 0.5  # c_w
 
-# relaxation layers
-relax_width_x = 24  # x layers (inlet/outlet), cells
-relax_width_z = 12  # z-wall layers, cells
+# relaxation layers, scaled with the body so every resolution sees the same physical layers (24 / 12 cells, 1/2000 at H = 32)
+relax_width_x = round(0.75 * body_height)  # x layers (inlet/outlet), cells
+relax_width_z = round(0.375 * body_height)  # z-wall layers, cells
 relax_sigma = 0.1
-relax_mean_rate = 1.0 / 2000.0  # z-layer running-mean rate (about a 2000-step memory)
+relax_mean_rate = 1.0 / (62.5 * body_height)  # z-layer running-mean rate, memory ~ one body-height transit x 62.5
 
 # timing
 flow_through_steps = nx / free_stream_velocity  # T_ft (~14000 at H=32)
@@ -116,7 +124,7 @@ def main():
     run = RunRecord("ahmed", sim, steps=steps, u_ref=free_stream_velocity, nu=viscosity, tau=round(relaxation_time, 6), Re=reynolds_number,
                     geometry=f"H={body_height} phi={slant_angle} {nose}", warmup=warmup, avg_Tft=round((steps - warmup) / flow_through_steps, 1),
                     collision="regularized", sgs=f"smag cs={smagorinsky_constant}" if sgs == "smag" else f"wale cw={wale_constant} + smag floor cs={smagorinsky_constant}",
-                    wall_model="log-law y+>30", walls="staircase BB", forcing="none",
+                    wall_model="off" if options.no_wall_model else "log-law y+>30", walls="staircase BB", forcing="none",
                     boundaries=f"NEEM-open inlet / pressure outlet / free-slip z / no-slip floor+ceiling / {ground} floor",
                     sponge=f"relax x {relax_width_x} (free stream) / z {relax_width_z} (running mean from ramp end, alpha {relax_mean_rate:.1e}), sigma {relax_sigma}")
 
@@ -131,7 +139,8 @@ def main():
         if sgs == "wale":
             sim.macroscopic()
             sim.les_wale(wale_constant, wall_speed_scale)  # moving walls enter the gradients at their ramped speed
-        sim.wall_model_fast(viscosity, wall_speed_scale)
+        if not options.no_wall_model:
+            sim.wall_model_fast(viscosity, wall_speed_scale)
 
         # z layers start from the flow at the end of the ramp
         if time_step == ramp:
