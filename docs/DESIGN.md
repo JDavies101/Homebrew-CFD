@@ -614,8 +614,10 @@ the non-wave residual decays.
   30 L (BGK/TRT) and 150 L (regularized), with L the resolved length in cells. For example L = 100
   cells gives Re of about 3000 and 15000. Higher Re needs the eddy viscosity of an LES model.
 - TRT with Lambda = 3/16 is less stable than BGK below tau = 0.502. That value of Lambda is chosen for
-  the exact halfway wall in Poiseuille flow; Lambda = 1/4 is the usual stability optimum. Whether to
-  offer 1/4 as an option is an open decision.
+  the exact halfway wall in Poiseuille flow; Lambda = 1/4 is the usual stability optimum. Decision
+  (2026-09-30): I keep 3/16 and do not add a 1/4 option. Production cases (Ahmed, wing) use the regularized
+  collision, which has no Lambda; TRT runs only in the channel, step and sphere cases, where staircase
+  bounce-back walls need the exact wall location and tau stays above the 0.505 floor.
 - Caveat: stability here is for a smooth resolved wave with a small seed. Flows with sharp gradients
   (separation, corners) are less forgiving, so treat these as upper bounds.
 
