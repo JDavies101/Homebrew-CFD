@@ -555,6 +555,13 @@ relative comparisons and credible trends, not certification-grade absolute Cd. S
 - *4.4 Integration run.* A front wing (simplest real part) or full car. *Exit: sane, stable
   coefficients + a relative gate - e.g. a wing-angle or ride-height sweep with the expected
   monotonic downforce / ground-effect trend.*
+  *Progress (runs 74-82):* inverted NACA 4412, 4 deg, chord 80 cells, Re_c 5000, quasi-2D (nz = 4),
+  moving ground and ceiling, Bouzidi wing as part 1. -CL rises from 0.309 at h/c 1.5 to a peak of
+  0.337 at h/c 0.3 (+9%), holds at 0.2, then falls (0.255 at 0.1, 0.188 at 0.075). CD rises
+  monotonically as the gap closes (0.094 to 0.145). All runs stable, drift below 0.5%. The
+  enhancement-then-reduction trend is reproduced; the peak sits at larger h/c and the enhancement
+  is weaker than in high-Re moving-ground experiments, which I attribute provisionally to the low
+  Reynolds number (thicker wing and ground boundary layers) and will test in the envelope study.
 
 **Phase 5 - Interactivity & sweeps.** Taichi GGUI live viewer (in-run visualization, no
 export round-trip), parameter sweeps, A/B comparison tables, mixed-precision for larger
