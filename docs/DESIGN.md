@@ -570,8 +570,8 @@ moment a real car domain exceeds the 24 GB cap - it is the memory headroom the b
 
 **Phase 6 - Application (UI).** A standalone setup / run-control / post app: load an STL,
 assign boundary conditions, set domain/Re, launch, monitor live, and A/B compare - wrapping the
-validated engine so a case does not need a hand-edited example script. Likely Streamlit (the
-stack already used for the F1 race simulator) plus a 3D viewer; ParaView stays for heavy post.
+validated engine so a case does not need a hand-edited example script. Framework open (2026-09-30):
+Streamlit or a standalone desktop application, to be decided; ParaView stays for heavy post.
 
 **Scope note - one engine, many problems.** The core is a general incompressible / low-Mach
 LBM solver; external aero (F1 the flagship) is the first domain, not the boundary. Same core,
@@ -761,6 +761,17 @@ descriptor tests (weights sum to 1, opposites reverse, isotropy moments).
 - FP16 storage - how much accuracy is traded for domain size? (measure in Phase 5).
 - Real F1 geometry source and its licensing (needed by Phase 4).
 - Cylinder Cd calibration: blockage, resolution, tau, MEM factor (Phase 2, in progress).
+
+- Generic runner (2026-09-30): every example is ported to one `Case` + `run_case` so runs compare
+  like for like; each port must reproduce its logged reference run exactly. `Case` carries `lattice`
+  and `dimensions` from the start so the case format survives new stencils. Order: runner and ports,
+  then the Phase 6 app, then D3Q15/D3Q27 and the 2D engine.
+- 2D engine parity (after the app): `src/engine/simulation.py` gets the 3D physics (regularized and TRT
+  collision, Bouzidi walls, NEEM inlet and pressure outlet, relaxation layers, WALE) for cases where 2D
+  speed matters. The NumPy D2Q9 reference in `src/lbm/` stays as the validation reference.
+- Tau floor under LES: `Case.validate` rejects tau below 0.501 unless the case sets
+  `allow_below_floor`; the flag is logged. The floor is measured without LES (E2); the limit with WALE
+  is unmapped.
 
 ## 10. Code-health backlog
 
