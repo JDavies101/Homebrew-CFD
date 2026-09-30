@@ -585,6 +585,40 @@ is deliberately not pursued here - it would break the validation-first charter.
 Each phase ends only when its validation gate passes. Docs and tests are updated within
 the same phase, not after.
 
+## 7a. Operating envelope
+
+Each entry changes one parameter on a validated case and measures it against a reference. Runs are in
+`docs/run_log.csv`.
+
+### E2: relaxation time limit (shear-wave decay, runs 84-107)
+
+Fully periodic 4 x 32 x 4 box, u_x = 0.05 sin(ky) plus a 1e-4 broadband seed that excites the unstable
+modes. Viscosity is fitted from the exponential decay over one e-folding; a run counts as stable only if
+the non-wave residual decays.
+
+| tau | BGK nu error | TRT (Lambda 3/16) | Regularized |
+|---|---|---|---|
+| 0.6 | +0.32% | -0.14% | +0.21% |
+| 0.55 | +0.33% | -0.15% | +0.27% |
+| 0.52 | +0.34% | -0.14% | +0.32% |
+| 0.51 | +0.37% | -0.13% | +0.33% |
+| 0.505 | +0.42% | -0.12% | +0.37% |
+| 0.502 | +0.51%, residual grows | -0.08%, residual grows | +0.46% |
+| 0.501 | +0.57%, residual grows | blow-up | +0.51% |
+| 0.5005 | +0.80%, residual grows | blow-up | +15.9%, residual grows |
+
+- Viscosity itself is accurate to well under 1% wherever a model is stable. The limit is stability, not
+  the recovered viscosity.
+- Lowest usable tau: BGK 0.505, TRT 0.505, regularized 0.501 (a fivefold lower viscosity).
+- Reynolds ceiling this sets, Re = U L / nu with nu = (tau - 1/2) / 3: at U = 0.05, Re_max is about
+  30 L (BGK/TRT) and 150 L (regularized), with L the resolved length in cells. For example L = 100
+  cells gives Re of about 3000 and 15000. Higher Re needs the eddy viscosity of an LES model.
+- TRT with Lambda = 3/16 is less stable than BGK below tau = 0.502. That value of Lambda is chosen for
+  the exact halfway wall in Poiseuille flow; Lambda = 1/4 is the usual stability optimum. Whether to
+  offer 1/4 as an option is an open decision.
+- Caveat: stability here is for a smooth resolved wave with a small seed. Flows with sharp gradients
+  (separation, corners) are less forgiving, so treat these as upper bounds.
+
 ## 8. Additional lattice stencils (future)
 
 The lattice is a pure-data descriptor (`Q, D, E, W, OPP, CS2`) that the operators
