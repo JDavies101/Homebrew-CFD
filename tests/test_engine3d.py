@@ -56,15 +56,30 @@ def _rest_equilibrium(nx=grid_size, ny=grid_size, nz=grid_size):
 
 def _equilibrium(density, velocity):
     """
-    NumPy D3Q19 equilibrium, independent of the engine's feq.
+    NumPy D3Q19 equilibrium, independent of the engine's feq. velocity is (3, ...) with any trailing shape.
 
-    Returns float32 (19, N, N, N).
+    Returns float32 (19, ...).
     """
 
-    velocity_dot_direction = np.einsum("qc,cxyz->qxyz", d3q19.lattice_velocities, velocity)
+    velocity_dot_direction = np.einsum("qc,c...->q...", d3q19.lattice_velocities, velocity)
     velocity_squared = (velocity * velocity).sum(0)
+    weights = d3q19.lattice_weights.reshape((-1,) + (1,) * (velocity.ndim - 1))
 
-    return (d3q19.lattice_weights[:, None, None, None] * density * (1 + 3 * velocity_dot_direction + 4.5 * velocity_dot_direction * velocity_dot_direction - 1.5 * velocity_squared)).astype(np.float32)
+    return (weights * density * (1 + 3 * velocity_dot_direction + 4.5 * velocity_dot_direction * velocity_dot_direction - 1.5 * velocity_squared)).astype(np.float32)
+
+def _nonequilibrium_stress(populations):
+    """
+    Pi_ab = sum_q c_qa c_qb (f_q - feq_q) from the populations' own density and velocity; populations are (19, ...).
+
+    Returns (3, 3, ...) in float64.
+    """
+
+    populations = populations.astype(np.float64)
+    density = populations.sum(axis=0)
+    velocity = np.einsum("qc,q...->c...", d3q19.lattice_velocities, populations) / density
+    nonequilibrium = populations - _equilibrium(density, velocity).astype(np.float64)
+
+    return np.einsum("qa,qb,q...->ab...", d3q19.lattice_velocities, d3q19.lattice_velocities, nonequilibrium)
 
 def _two_part_sphere():
     """
@@ -133,15 +148,18 @@ def test_bounce_back_reverses_populations(sim):
     assert bounced[1][center] == 2  # east now holds west's old value
     assert bounced[3][center] == 5  # west now holds east's old value
 
-# test 5: free-slip y applied twice is the identity
+# test 5: free-slip y changes the wall populations once and restores them when applied twice
 def test_free_slip_is_involution(sim):
 
     populations = _random_populations()
     sim.f.from_numpy(populations)
     sim.free_slip_y()
+    once = sim.f.to_numpy()
     sim.free_slip_y()
+    twice = sim.f.to_numpy()
 
-    assert np.allclose(populations, sim.f.to_numpy(), atol=1e-6)
+    assert not np.allclose(once, populations, atol=1e-6)  # a no-op kernel would fail here
+    assert np.allclose(twice, populations, atol=1e-6)
 
 # test 6: TRT conserves mass and momentum per cell
 def test_trt_conserves_mass_and_momentum(sim):
@@ -217,17 +235,20 @@ def test_free_slip_z_reflects_z_velocity(sim):
     assert np.isclose(reflected[0][wall_cell], 0.08, atol=1e-5)  # tangential kept
     assert np.isclose(reflected[2][wall_cell], -0.05, atol=1e-5)  # normal flipped
 
-# test 11: Bouzidi with q = 0.5 reflects the incoming population unchanged
-def test_bouzidi_half_fraction_reflects_incoming(sim):
+# test 11: Bouzidi q < 1/2 with fluid upstream: f_west(x_f) = 2q f_east(x_f) + (1 - 2q) f_east(x_f - c_east)
+# hand value at q = 0.25: 2 (0.25) (0.3) + (1 - 0.5) (0.9) = 0.15 + 0.45 = 0.6 (halfway would give 0.3)
+def test_bouzidi_quarter_fraction_interpolates_upstream(sim):
 
     center = (5, 5, 5)
     solid = np.zeros((grid_size, grid_size, grid_size), np.int32)
-    solid[6, 5, 5] = 1  # solid cell one step east of the center
+    solid[6, 5, 5] = 1  # solid cell one step east of the center; (4, 5, 5) upstream stays fluid
     fractions = np.zeros((d3q19.direction_count, grid_size, grid_size, grid_size), np.float32)
-    fractions[east][center] = 0.5
+    fractions[east][center] = 0.25
     populations = np.zeros((d3q19.direction_count, grid_size, grid_size, grid_size), np.float32)
     populations[east][center] = 0.3  # incoming population toward the wall
+    populations[east][4, 5, 5] = 0.9  # same direction, one node upstream
     sim.solid.from_numpy(solid)
+    sim.uw.from_numpy(np.zeros((3, grid_size, grid_size, grid_size), np.float32))
     sim.body.from_numpy(np.zeros((grid_size, grid_size, grid_size), np.int32))
     sim.set_wall_fractions(fractions)
     sim.f.from_numpy(populations)
@@ -235,7 +256,7 @@ def test_bouzidi_half_fraction_reflects_incoming(sim):
     sim.bounce_back_interp()
     reflected = sim.f.to_numpy()
 
-    assert np.isclose(reflected[west][center], 0.3, atol=1e-6)  # q = 0.5 -> reflected == incoming
+    assert np.isclose(reflected[west][center], 0.6, atol=1e-6)
 
 # test 12: drag_interp sums c_q (f_in + f_out) over boundary links
 def test_drag_interp_sums_momentum_exchange(sim):
@@ -262,19 +283,24 @@ def test_drag_interp_sums_momentum_exchange(sim):
     assert np.isclose(force[1], 0.0, atol=1e-6)
     assert np.isclose(force[2], 0.0, atol=1e-6)
 
-# test 13: inlet_neem imposes u = (U, 0, 0) on the x = 0 plane
+# test 13: inlet_neem imposes u = (U, 0, 0) with the x = 1 density, and copies the x = 1 non-equilibrium stress
+# (second-order Hermite reconstruction reproduces Pi exactly and adds no mass or momentum)
 def test_inlet_neem(sim):
 
     inlet_velocity = 0.1
     sim.solid.from_numpy(np.zeros((grid_size, grid_size, grid_size), np.int32))
-    sim.f.from_numpy(_rest_equilibrium())
+    populations = _random_populations(0.9, 1.1)  # strongly non-equilibrium neighbour plane
+    sim.f.from_numpy(populations)
     sim.inlet_neem(inlet_velocity)
-    sim.macroscopic()
-    velocity = sim.u.to_numpy()
+    inlet_plane = sim.f.to_numpy()[:, 0].astype(np.float64)
+    neighbour_plane = populations[:, 1].astype(np.float64)
+    inlet_density = inlet_plane.sum(axis=0)
+    inlet_velocity_field = np.einsum("qc,qjk->cjk", d3q19.lattice_velocities, inlet_plane) / inlet_density
 
-    assert np.allclose(velocity[0, 0], inlet_velocity, atol=1e-3)
-    assert np.allclose(velocity[1, 0], 0, atol=1e-3)
-    assert np.allclose(velocity[2, 0], 0, atol=1e-3)
+    assert np.allclose(inlet_density, neighbour_plane.sum(axis=0), atol=1e-5)
+    assert np.allclose(inlet_velocity_field[0], inlet_velocity, atol=1e-5)
+    assert np.allclose(inlet_velocity_field[1:], 0.0, atol=1e-5)
+    assert np.allclose(_nonequilibrium_stress(inlet_plane), _nonequilibrium_stress(neighbour_plane), atol=1e-5)
 
 # test 14: inlet_neem_open drives open rows, leaves solid inlet columns alone
 def test_inlet_neem_open(sim):
@@ -512,22 +538,32 @@ def test_runtime_rejects_backend_switch(sim):
     with pytest.raises(RuntimeError):
         runtime.init("cuda")
 
-# test 27: fast (wall-list) wall model matches the full-grid wall model
+# test 27: fast (wall-list) wall model matches the full-grid wall model, with at least one engaged node
 def test_wall_model_fast_matches_full_grid(sim):
 
+    viscosity, y1 = 0.01, 10.0
     solid = np.zeros((grid_size, grid_size, grid_size), np.int32)
     solid[:, 0, :] = 1
+    velocity_x = np.zeros((grid_size, grid_size, grid_size), np.float32)
+    velocity_x[4, 1, 4] = 0.737  # y+ ~ 50: engages
+    velocity_x[6, 1, 6] = 0.02  # y+ < 30: stays off
+    zero = np.zeros((grid_size, grid_size, grid_size), np.float32)
     sim.solid.from_numpy(solid)
-    sim.f.from_numpy(_random_populations(0.9, 1.1))
-    sim.nut_wall.from_numpy(np.zeros((grid_size, grid_size, grid_size), np.float32))
+    sim.uw.from_numpy(np.zeros((3, grid_size, grid_size, grid_size), np.float32))
+    sim.init_equilibrium(velocity_x, zero, zero)  # equilibrium moments are exact, so f carries this velocity
     sim.macroscopic()
-    sim.wall_model(0.01, 10.0)
+    sim.nut_wall.from_numpy(zero)
+    sim.wall_model(viscosity, y1)
     full_grid = sim.nut_wall.to_numpy().copy()
-    sim.nut_wall.from_numpy(np.zeros((grid_size, grid_size, grid_size), np.float32))
+    sim.nut_wall.from_numpy(zero)
     sim.build_wall_list()
-    sim.wall_model_fast(0.01)
+    sim.wall_y1.fill(y1)  # same first-node distance as the full-grid call
+    sim.wall_model_fast(viscosity)
+    fast = sim.nut_wall.to_numpy()
 
-    assert np.allclose(sim.nut_wall.to_numpy(), full_grid, atol=1e-6)
+    assert full_grid[4, 1, 4] > 0.0  # the comparison below is not between two all-zero fields
+    assert np.count_nonzero(full_grid) == 1
+    assert np.allclose(fast, full_grid, rtol=1e-5, atol=1e-9)
 
 # test 28: drag_body matches drag when the body is all the solid
 def test_drag_body_matches_drag(sim):
@@ -546,7 +582,7 @@ def test_drag_body_matches_drag(sim):
 
     assert np.allclose(all_solid_force, body_force)  # body == solid here -> identical force
 
-# test 29: WALE matches an independent NumPy evaluation (interior, central differences)
+# test 29: WALE matches an independent NumPy evaluation (central inside, one-sided at the domain edge)
 def test_les_wale_matches_numpy(sim):
 
     sim.solid.from_numpy(np.zeros((grid_size, grid_size, grid_size), np.int32))
@@ -575,7 +611,8 @@ def test_les_wale_matches_numpy(sim):
     traceless_contraction = np.einsum("ab...,ab...->...", traceless_symmetric, traceless_symmetric)
     reference_eddy_viscosity = (wale_constant * filter_width) ** 2 * traceless_contraction ** 1.5 / (strain_contraction ** 2.5 + traceless_contraction ** 1.25 + epsilon)
 
-    assert np.allclose(engine_eddy_viscosity[1:-1, 1:-1, 1:-1], reference_eddy_viscosity[1:-1, 1:-1, 1:-1], atol=1e-6)
+    # whole field: at the domain edge the engine clamps to the cell and halves the divisor, which is np.gradient's first-order one-sided edge
+    assert np.allclose(engine_eddy_viscosity, reference_eddy_viscosity, atol=1e-6)
 
 # test 30: WALE is zero on a quiescent field
 def test_les_wale_zero_on_quiescent(sim):
@@ -837,3 +874,66 @@ def test_part_forces_sum_to_drag_interp(sim):
     assert np.allclose(part_force[1] + part_force[2], total, rtol=0.0, atol=rounding_tolerance)
     assert np.abs(part_force[1]).max() > 1e-3 and np.abs(part_force[2]).max() > 1e-3
     assert np.allclose(part_force[0], 0.0)
+
+# test 40: Bouzidi q > 1/2: f_west(x_f) = f_east / (2q) + (2q - 1) / (2q) f_west, both post-collision at x_f
+# hand value at q = 0.75: 0.3 / 1.5 + (0.5 / 1.5) (0.2) = 0.2 + 0.0667 = 0.26667 (halfway would give 0.3)
+def test_bouzidi_three_quarter_fraction(sim):
+
+    center = (5, 5, 5)
+    solid = np.zeros((grid_size, grid_size, grid_size), np.int32)
+    solid[6, 5, 5] = 1
+    fractions = np.zeros((d3q19.direction_count, grid_size, grid_size, grid_size), np.float32)
+    fractions[east][center] = 0.75
+    populations = np.zeros((d3q19.direction_count, grid_size, grid_size, grid_size), np.float32)
+    populations[east][center] = 0.3
+    populations[west][center] = 0.2
+    sim.solid.from_numpy(solid)
+    sim.uw.from_numpy(np.zeros((3, grid_size, grid_size, grid_size), np.float32))
+    sim.body.from_numpy(np.zeros((grid_size, grid_size, grid_size), np.int32))
+    sim.set_wall_fractions(fractions)
+    sim.f.from_numpy(populations)
+    sim.fc.from_numpy(populations)
+    sim.bounce_back_interp()
+    reflected = sim.f.to_numpy()
+
+    assert np.isclose(reflected[west][center], 0.3 / 1.5 + 0.5 / 1.5 * 0.2, atol=1e-6)
+
+# test 41: sponge_relax on its own: f -> f - sigma (f - feq(1, U, 0, 0)) where sigma > 0, fluid only; untouched elsewhere
+def test_sponge_relax_matches_formula(sim):
+
+    inlet_velocity = 0.05
+    layer_strength = 0.2
+    populations = _random_populations(0.9, 1.1)
+    solid = np.zeros((grid_size, grid_size, grid_size), np.int32)
+    solid[2, 7, 3] = 1  # a solid node inside the layer column stays untouched
+    layer = np.zeros((grid_size, grid_size), np.float32)
+    layer[2, 3] = layer_strength  # one (x, z) column
+    sim.solid.from_numpy(solid)
+    sim.sigma.from_numpy(layer)
+    sim.f.from_numpy(populations)
+    sim.sponge_relax(inlet_velocity)
+    relaxed = sim.f.to_numpy()
+    sim.sigma.from_numpy(np.zeros((grid_size, grid_size), np.float32))  # shared fixture: layers back off
+    target = _equilibrium(np.ones(()), np.array([inlet_velocity, 0.0, 0.0]))  # (19,)
+    column = populations[:, 2, :, 3]
+    expected_column = column - layer_strength * (column - target[:, None])
+    expected_column[:, 7] = column[:, 7]  # solid node skipped
+    outside = np.ones((grid_size, grid_size, grid_size), bool)
+    outside[2, :, 3] = False
+
+    assert np.allclose(relaxed[:, 2, :, 3], expected_column, atol=1e-6)
+    assert np.array_equal(relaxed[:, outside], populations[:, outside])
+
+# test 42: f_absmax returns max |f|, and 1e30 when any population is NaN
+def test_f_absmax(sim):
+
+    populations = _random_populations(0.9, 1.1)
+    populations[7, 3, 4, 5] = -5.0
+    sim.f.from_numpy(populations)
+    finite_max = sim.f_absmax()
+    populations[2, 1, 1, 1] = np.nan
+    sim.f.from_numpy(populations)
+    nan_max = sim.f_absmax()
+
+    assert np.isclose(finite_max, 5.0)
+    assert nan_max >= 1e29

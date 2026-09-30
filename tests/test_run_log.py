@@ -2,7 +2,8 @@
 import csv
 import numpy as np
 import pytest
-from src.post.run_log import log_run, field_health, RunRecord, FIELDS
+from src.post.run_log import log_run, field_health, fields_gb, RunRecord, FIELDS
+from src.engine.simulation3d import Simulation3D
 
 def _read_rows(path):
     """
@@ -71,3 +72,13 @@ def test_run_record_with_arrays(tmp_path):
     assert row["grid"] == "8x8" and row["cells"] == "64"
     assert row["err_pct"] == "10.0"
     assert row["hot_cells"] == "0"
+
+# test 6: fields_gb counts field bytes: interp=True adds exactly q and fc (2 x 19 x N float32)
+def test_fields_gb_counts_bouzidi_fields():
+
+    plain = Simulation3D(4, 4, 4, "cpu")
+    with_bouzidi = Simulation3D(4, 4, 4, "cpu", interp=True)
+    expected_bytes = 2 * 19 * 4 * 4 * 4 * 4
+
+    assert fields_gb(plain) > 0
+    assert np.isclose((fields_gb(with_bouzidi) - fields_gb(plain)) * 1e9, expected_bytes)

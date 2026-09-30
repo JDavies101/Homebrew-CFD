@@ -43,7 +43,7 @@ def main():
     run.stop()
     density, velocity = macroscopic(populations)
     run.finish(u=velocity, rho=density, solid=solid.astype(np.int32),
-               metric="u_min/U centerline", value=round(float(velocity[0, grid_size // 2, :].min() / lid_velocity), 4), reference=-0.2109)
+               metric="u_min/U centerline", value=round(float(velocity[0, grid_size // 2, 1:-1].min() / lid_velocity), 4), reference=-0.2109)
 
     plotting.plot_velocity_magnitude(velocity)
     plt.savefig("src/examples/results/velocity_magnitude.png")

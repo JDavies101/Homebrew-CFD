@@ -153,3 +153,23 @@ def test_q_from_mesh_icosphere():
 
     assert both.sum() > 0.99 * (q_reference > 0).sum()
     assert (q_error * link_normal_cosine).max() < sag + 1e-4  # no trilinear term: q comes from the exact mesh hit
+
+# test 8: ASCII STL is read back to the same triangles (the binary round trip does not cover this path)
+def test_ascii_stl_read(tmp_path):
+
+    triangles = icosphere(center, radius, subdivisions=1)
+    lines = ["solid ascii_test"]
+    for triangle in triangles:
+        lines.append("  facet normal 0 0 0")
+        lines.append("    outer loop")
+        for vertex in triangle:
+            lines.append(f"      vertex {vertex[0]:.17g} {vertex[1]:.17g} {vertex[2]:.17g}")
+        lines.append("    endloop")
+        lines.append("  endfacet")
+    lines.append("endsolid ascii_test")
+    path = tmp_path / "ascii.stl"
+    path.write_text("\n".join(lines) + "\n", encoding="ascii")
+    read_back = read_stl(path)
+
+    assert read_back.shape == triangles.shape
+    assert np.allclose(read_back, triangles, atol=1e-12)

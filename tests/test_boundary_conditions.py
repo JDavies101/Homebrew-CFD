@@ -18,14 +18,13 @@ def test_swap_on_solid_node():
     assert bounced_populations[1, 1, 1] == 2
     assert bounced_populations[3, 1, 1] == 5
 
-# test 2: fluid nodes untouched
+# test 2: every fluid node untouched
 def test_fluid_nodes_untouched():
 
     populations = rng.uniform(0.5, 1.5, (9, nx, ny))
-    populations[2, 0, 0] = 4
     bounced_populations = bounce_back(populations, solid)
 
-    assert bounced_populations[2, 0, 0] == 4
+    assert np.array_equal(bounced_populations[:, ~solid], populations[:, ~solid])
 
 # test 3: bouncing twice returns the original populations
 def test_bounce_back_is_involution():

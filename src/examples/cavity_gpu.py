@@ -41,7 +41,7 @@ def main():
 
     sim.macroscopic()
     velocity = sim.u.to_numpy()
-    run.finish(metric="u_min/U centerline", value=round(float(velocity[0, grid_size // 2, :].min() / lid_velocity), 4), reference=-0.2109)
+    run.finish(metric="u_min/U centerline", value=round(float(velocity[0, grid_size // 2, 1:-1].min() / lid_velocity), 4), reference=-0.2109)
     plotting.plot_velocity_magnitude(velocity)
     plt.savefig("src/examples/results/velocity_magnitude_gpu.png")
     plotting.plot_streamlines(velocity)

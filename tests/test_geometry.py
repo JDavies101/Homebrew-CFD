@@ -7,6 +7,7 @@ from src.geometry.sphere_body import sphere
 from src.geometry.step_body import step
 from src.geometry.ahmed_body import ahmed_body
 from src.geometry.wall_fraction import wall_fraction_cylinder, wall_fraction_sphere
+from src.geometry.sponge import relax_profile
 
 def _max_distance_from_sphere(q, center, radius):
     """
@@ -100,3 +101,18 @@ def test_ahmed_mask(slant_angle):
     assert solid[x_cells.min(), y_cells.min(), z_cells.min()] == 0  # nose: leading bottom-side corner carved
     assert solid[x_cells.min(), (y_cells.min() + y_cells.max()) // 2, nz // 2] == 1  # middle of the front face kept
     assert abs(np.degrees(np.arctan(-slope)) - slant_angle) < 1.5
+
+# test 7: relaxation profile: sigma_max on the faces, quadratic ramp over the width, zero in the interior
+def test_relax_profile():
+
+    nx, nz, width_x, width_z, sigma_max = 40, 20, 10, 5, 0.1
+    profile = relax_profile(nx, nz, width_x, width_z, sigma_max)
+    x_only = relax_profile(nx, nz, width_x, 0, sigma_max)
+
+    assert profile.shape == (nx, nz) and profile.dtype == np.float32
+    assert np.isclose(profile[0, 10], sigma_max) and np.isclose(profile[nx - 1, 10], sigma_max)  # inlet and outlet planes
+    assert np.isclose(profile[5, 10], sigma_max * 0.5 * 0.5)  # half-way into the x layer: (1 - 5/10)^2
+    assert np.isclose(profile[20, 0], sigma_max)  # z wall
+    assert profile[20, 10] == 0.0  # interior
+    assert np.array_equal(profile, profile[::-1, :]) and np.array_equal(profile, profile[:, ::-1])  # symmetric
+    assert x_only[20, 0] == 0.0  # width_z = 0 switches the z layers off

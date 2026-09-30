@@ -937,8 +937,9 @@ class Simulation3D:
         max_magnitude = 0.0
         for q, i, j, k in self.f:
             value = self.f[q, i, j, k]
-            # NaN is the only value not equal to itself
-            if value != value:
+            # NaN by bit pattern (fast-math folds value != value to False): exponent all ones, mantissa nonzero
+            magnitude_bits = ti.bit_cast(value, ti.u32) & ti.u32(0x7FFFFFFF)
+            if magnitude_bits > ti.u32(0x7F800000):
                 ti.atomic_max(max_magnitude, 1e30)
             else:
                 ti.atomic_max(max_magnitude, ti.abs(value))

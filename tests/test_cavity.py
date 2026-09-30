@@ -54,8 +54,8 @@ def test_vortex_structure(profile):
 
     y, velocity_x = profile
 
-    assert velocity_x.min() < 0
-    assert velocity_x.max() > 0
+    assert velocity_x[1:-1].min() < 0  # fluid nodes only: wall rows hold bounced populations, not flow
+    assert velocity_x[1:-1].max() > 0
     assert velocity_x[-2] > 0
     assert velocity_x[2] < 0
 
@@ -65,4 +65,5 @@ def test_minimum_velocity_vs_ghia(profile):
     y, velocity_x = profile
     ghia_minimum = -0.2058
 
-    assert abs(velocity_x.min() - ghia_minimum) / ghia_minimum < 0.05
+    # fluid nodes only (the wall rows' stored populations accumulate the lid term and are not flow); abs(): ghia_minimum < 0
+    assert abs(velocity_x[1:-1].min() - ghia_minimum) / abs(ghia_minimum) < 0.05
