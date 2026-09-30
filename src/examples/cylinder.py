@@ -1,6 +1,6 @@
 # flow past a cylinder (Phase 2 gate): Re=100 -> Cd ~1.3-1.4, Strouhal ~0.16-0.20; optional spin (Magnus)
-# usage: python -m src.examples.cylinder [spin_ratio]
-import sys
+# usage: python -m src.examples.cylinder [spin_ratio] [--velocity U] [--diameter D] [--reynolds Re]
+import argparse
 import numpy as np
 from src.engine.simulation3d import Simulation3D
 from src.geometry.cylinder_body import cylinder
@@ -10,27 +10,34 @@ from src.post.progress import Progress
 from src.post.run_log import RunRecord
 from src.post.vtk import write_field
 
-spin_ratio = float(sys.argv[1]) if len(sys.argv) > 1 else 0.0  # alpha = omega R / U
+# command-line options (defaults reproduce the reference case, run 71 at spin 1)
+parser = argparse.ArgumentParser()
+parser.add_argument("spin_ratio", nargs="?", type=float, default=0.0)  # alpha = omega R / U
+parser.add_argument("--velocity", type=float, default=0.1)  # U (envelope E3: Mach sweep at fixed Re)
+parser.add_argument("--diameter", type=int, default=45)  # D, cells
+parser.add_argument("--reynolds", type=float, default=100)
+options = parser.parse_args()
+spin_ratio = options.spin_ratio
 
-# geometry
-diameter = 45  # D, cells
-nx = 1800
-ny = 600
+# geometry: proportions of the reference domain (1800 x 600 x 4 at D = 45)
+diameter = options.diameter
+nx = 40 * diameter
+ny = round(40 / 3 * diameter)
 nz = 4
-center_x = 450
+center_x = 10 * diameter
 center_y = ny // 2
 frontal_area = diameter * nz
 
 # flow
-free_stream_velocity = 0.1  # U, keep < ~0.1 for low Mach
-reynolds_number = 100
+free_stream_velocity = options.velocity
+reynolds_number = options.reynolds
 viscosity = free_stream_velocity * diameter / reynolds_number
-relaxation_time = 3 * viscosity + 0.5  # ~0.59, safely above 0.5
+relaxation_time = 3 * viscosity + 0.5  # ~0.59 at the defaults
 angular_velocity = spin_ratio * free_stream_velocity / (diameter / 2)  # omega, rad per step, + = counter-clockwise about z
 
-# timing
-steps = 60000
-warmup = 30000  # discard transient before averaging
+# timing: same number of flow-throughs for every U (60000 / 30000 at the defaults)
+steps = round(6000 / free_stream_velocity)
+warmup = steps // 2  # discard transient before averaging
 sample_every = 20  # sample force every N steps (avoids per-step GPU sync)
 check_every = 500  # progress readout interval
 
@@ -63,7 +70,7 @@ def main():
     drag_coefficients = []
     lift_force_history = []
     run = RunRecord("cylinder", sim, steps=steps, u_ref=free_stream_velocity, nu=viscosity, tau=round(relaxation_time, 6), Re=reynolds_number,
-                    geometry=f"D={diameter}, alpha={spin_ratio}", warmup=warmup, collision="BGK", sgs="none", walls="Bouzidi",
+                    geometry=f"D={diameter}, alpha={spin_ratio}, U={free_stream_velocity:g}",
                     boundaries="NEEM inlet / pressure outlet / free-slip y / periodic z", forcing="none",
                     sponge="relax x 24, sigma 0.1")
     progress = Progress(steps)
