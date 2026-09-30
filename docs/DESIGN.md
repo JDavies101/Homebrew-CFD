@@ -672,6 +672,12 @@ viscosity falls from 6.2 nu at H = 24 to 3.0 nu at H = 48, and Cd falls with it.
 successive grids (0.055, 0.033, 0.039) are not decreasing geometrically, so the runs are not yet in the
 asymptotic range and a Richardson extrapolation would not be meaningful.
 
+Relative test (runs 130-131): Cd(35 deg) - Cd(25 deg) is +0.004 at H = 24 and +0.010 at H = 32, the same
+sign but a factor of 2.4 apart and within 1.5-4.5 standard errors of zero. The slant flow is separated at
+both angles (attached fraction 0.05-0.12), so the attached-to-separated change that makes 25 deg and
+35 deg differ in experiments does not occur at Re_H 30000. The Ahmed body at this Reynolds number is
+therefore not a usable test of relative accuracy; a case with a large, regime-stable difference is needed.
+
 ## 8. Additional lattice stencils (future)
 
 The lattice is a pure-data descriptor (`Q, D, E, W, OPP, CS2`) that the operators
