@@ -619,6 +619,38 @@ the non-wave residual decays.
 - Caveat: stability here is for a smooth resolved wave with a small seed. Flows with sharp gradients
   (separation, corners) are less forgiving, so treat these as upper bounds.
 
+### E1: resolution (sphere, Re 50, W = 6.4 D, runs 108, 110-113)
+
+| D (cells) | 10 | 15 | 20 | 30 | 40 |
+|---|---|---|---|---|---|
+| Cd | 1.5986 | 1.6351 | 1.6228 | 1.6183 | 1.6173 |
+
+Cd is converged to about 0.1% by D = 30 and to about 0.3% at D = 20, the default. D = 10 is
+under-resolved. The remaining gap to Schiller-Naumann is therefore not a discretization error.
+
+### E4: blockage (sphere, D = 20, runs 108, 119-122)
+
+| W (diameters) | 4 | 5 | 6.4 | 8 | 12 |
+|---|---|---|---|---|---|
+| blockage | 4.9% | 3.1% | 1.9% | 1.2% | 0.55% |
+| Cd | 1.7194 | 1.6578 | 1.6228 | 1.6068 | 1.5957 |
+
+Blockage accounts for most of the historical +5% offset. Linear extrapolation from W = 8 and 12 gives
+about 1.587 at zero blockage, +3.2% against Schiller-Naumann (itself a correlation with scatter of a
+few percent). A tunnel of at least 8 D keeps blockage bias below about 1%.
+
+### E3: Mach number (2D cylinder, Re 100, D = 45, runs 114-118)
+
+| U | 0.025 | 0.05 | 0.1 | 0.15 | 0.2 |
+|---|---|---|---|---|---|
+| Ma | 0.043 | 0.087 | 0.17 | 0.26 | 0.35 |
+| Cd | 1.3686 | 1.3688 | 1.3780 | 1.4110 | 1.4421 |
+| vs incompressible | - | 0.0% | +0.7% | +3.1% | +5.4% |
+
+U <= 0.05 is at the incompressible limit; U = 0.1 carries about +0.7% compressibility error; U >= 0.15
+is not usable for quantitative work. Strouhal read 0.165 in every run, but the FFT bin width is about
+0.015 at these record lengths, so St is not resolved finely enough to show a Mach trend.
+
 ## 8. Additional lattice stencils (future)
 
 The lattice is a pure-data descriptor (`Q, D, E, W, OPP, CS2`) that the operators
