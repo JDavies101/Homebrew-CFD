@@ -138,7 +138,7 @@ forcing, Zou-He/NEEM velocity inlet, zero-gradient outlet, free-slip walls, cyli
 voxelized obstacle, drag via momentum exchange, VTK export, live progress/ETA + divergence
 monitor. Cylinder result:
 - **Flow validated.** Rigid NEEM inlet holds the free-stream (measured Re=101 vs nominal
-  100); vortex shedding **Strouhal = 0.165** at Re=100 (ref ~0.16-0.18); **no shedding at
+  100); vortex shedding **Strouhal = 0.171** at Re=100 (runs 138-140, refined FFT; ref ~0.164, offset is blockage, see E3); **no shedding at
   Re=40** (correct sub-critical behavior).
 - **Drag: correct method, known discretization offset.** Momentum-exchange force is
   `sum 2 c_i f_i` (post-collision, over fluid->solid links). Cd ~ 1.9 vs unbounded ref ~1.4
@@ -648,8 +648,20 @@ few percent). A tunnel of at least 8 D keeps blockage bias below about 1%.
 | vs incompressible | - | 0.0% | +0.7% | +3.1% | +5.4% |
 
 U <= 0.05 is at the incompressible limit; U = 0.1 carries about +0.7% compressibility error; U >= 0.15
-is not usable for quantitative work. Strouhal read 0.165 in every run, but the FFT bin width is about
-0.015 at these record lengths, so St is not resolved finely enough to show a Mach trend.
+is not usable for quantitative work.
+
+Strouhal (runs 138-140, `dominant_frequency`: Hann FFT peak + parabolic log-magnitude interpolation):
+
+| U | 0.025 | 0.05 | 0.1 |
+|---|---|---|---|
+| St (spectral) | 0.1711 | 0.1710 | 0.1710 |
+| St (zero crossings, full record / first quarter dropped) | 0.1755 / 0.1716 | 0.1686 / 0.1712 | 0.1689 / 0.1712 |
+
+Cd reproduced runs 114-116 exactly. St shows no Mach trend up to Ma 0.17. The zero-crossing estimate on the
+full 11-cycle record scatters by about 0.004 from the residual start transient; with the first quarter
+dropped it agrees with the spectral value within 0.0006, so I report the spectral value. St 0.171 is +4.3%
+vs Williamson (about 0.164 at Re 100) on the inlet velocity and -0.9% on the local velocity beside the
+cylinder (U_eff about 1.05 U, blockage 7.5%): the offset is blockage, consistent with E2.
 
 ### E6: Ahmed body resolution (25 deg, round nose, WALE, static floor, Re_H 30000, runs 123-126)
 

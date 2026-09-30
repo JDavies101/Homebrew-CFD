@@ -9,6 +9,7 @@ from src.geometry.wall_fraction import wall_fraction_cylinder
 from src.post.progress import Progress
 from src.post.run_log import RunRecord
 from src.post.vtk import write_field
+from src.post.statistics import dominant_frequency
 
 # command-line options (defaults reproduce the reference case, run 71 at spin 1)
 parser = argparse.ArgumentParser()
@@ -107,17 +108,16 @@ def main():
     lift_coefficient = float(np.mean(lift_force_history)) / (0.5 * 1.0 * free_stream_velocity * free_stream_velocity * frontal_area)  # Magnus: alpha > 0 (CCW) -> Cl < 0
     print(f"Cl (time-averaged) = {lift_coefficient:.3f}   [alpha = {spin_ratio}; Magnus sign for CCW spin: negative]")
 
-    # Strouhal from the dominant frequency of the lift (F_y) signal
-    lift_fluctuation = np.array(lift_force_history) - np.mean(lift_force_history)
-    spectrum = np.abs(np.fft.rfft(lift_fluctuation))
-    frequencies = np.fft.rfftfreq(len(lift_fluctuation), d=sample_every)
-    shedding_frequency = frequencies[1 + np.argmax(spectrum[1:])]
+    # Strouhal from the lift (F_y) signal: refined spectral peak, cross-checked by zero crossings
+    np.save(f"results/cylinder_lift_a{spin_ratio:g}_U{free_stream_velocity:g}.npy", np.array(lift_force_history))
+    shedding_frequency, zero_crossing_frequency = dominant_frequency(lift_force_history, sample_every)
     strouhal = shedding_frequency * diameter / free_stream_velocity
+    strouhal_zero_crossing = zero_crossing_frequency * diameter / free_stream_velocity
 
     print(f"Re = {reynolds_number}, D = {diameter}, tau = {relaxation_time:.3f}, blockage = {diameter / ny:.1%}")
     print(f"Cd (time-averaged) = {drag_coefficient:.3f}   [reference ~1.3-1.4]")
-    print(f"Strouhal = {strouhal:.3f}        [reference ~0.16-0.20]")
-    run.finish(metric="Cd", value=round(drag_coefficient, 4), reference=1.4, other=f"Cl {lift_coefficient:.3f}; St {strouhal:.3f}; U_eff {effective_velocity:.4f}")
+    print(f"Strouhal = {strouhal:.4f} (zero crossings {strouhal_zero_crossing:.4f})")
+    run.finish(metric="Cd", value=round(drag_coefficient, 4), reference=1.4, other=f"Cl {lift_coefficient:.3f}; St {strouhal:.4f} (zc {strouhal_zero_crossing:.4f}); U_eff {effective_velocity:.4f}")
 
 if __name__ == "__main__":
     main()
