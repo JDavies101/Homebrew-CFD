@@ -3,12 +3,13 @@ from pathlib import Path
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QFileDialog, QLabel, QMainWindow, QMessageBox, QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem,
-                               QVBoxLayout, QWidget, QToolBar)
+                               QVBoxLayout, QWidget, QToolBar, QDockWidget, QPlainTextEdit, QProgressBar)
 from src import __version__
 from src.run.case import Case, setting_choices, check_choice
 from src.run.case_file import load_case_file, save_case_file, geometry_choices
 from app.property_form import PropertyForm
 from app.viewport import CaseViewport, named_views, corner_views
+from app.run_control import RunController
 
 template_directory = Path(__file__).resolve().parent.parent / "cases" / "templates"
 autosave_milliseconds = 60_000
@@ -53,6 +54,23 @@ class MainWindow(QMainWindow):
         splitter.addWidget(right_pane)
         splitter.setSizes([200, 380, 620])
         self.setCentralWidget(splitter)
+
+        # runs: controller, console dock, status-bar progress
+        self.runs = RunController(self)
+        self.runs.output.connect(self.on_run_output)
+        self.runs.progress.connect(self.on_run_progress)
+        self.runs.finished.connect(self.on_run_finished)
+        self.last_result = None
+        self.console = QPlainTextEdit()
+        self.console.setReadOnly(True)
+        self.console.setMaximumBlockCount(5000)
+        console_dock = QDockWidget("Console", self)
+        console_dock.setWidget(self.console)
+        self.addDockWidget(Qt.BottomDockWidgetArea, console_dock)
+        self.run_progress = QProgressBar()
+        self.run_progress.setVisible(False)
+        self.statusBar().addPermanentWidget(self.run_progress)
+
         self.build_menus()
 
         # autosave beside the case file, never over it
@@ -107,6 +125,20 @@ class MainWindow(QMainWindow):
         
         for name in corner_views:
             corner_menu.addAction(name).triggered.connect(lambda checked=False, name=name: self.viewport.set_view(name))
+
+        # run: start / stop, also on the toolbar
+        run_menu = self.menuBar().addMenu("&Run")
+        self.run_action = QAction("Run", self)
+        self.run_action.setShortcut(QKeySequence("F5"))
+        self.run_action.triggered.connect(self.start_run)
+        self.stop_action = QAction("Stop", self)
+        self.stop_action.setShortcut(QKeySequence("Shift+F5"))
+        self.stop_action.setEnabled(False)
+        self.stop_action.triggered.connect(self.runs.stop)
+        toolbar.addSeparator()
+        for action in (self.run_action, self.stop_action):
+            run_menu.addAction(action)
+            toolbar.addAction(action)
 
     def open_dialog(self):
         """
@@ -197,14 +229,9 @@ class MainWindow(QMainWindow):
         case = Case(name=case_file.name, tag=case_file.name, flow=case_file.flow, domain=case_file.domain, turbulence=case_file.turbulence,
                     timing=case_file.timing, collision=case_file.collision, inlet=case_file.inlet, start=case_file.start,
                     allow_below_floor=case_file.allow_below_floor)
-        try:
-            case.validate()
-            for spec in case_file.geometry:
-                check_choice("geometry kind", spec.kind, geometry_choices["kind"])
-                check_choice("geometry wall", spec.wall, geometry_choices["wall"])
-            verdict = "<span style='color:#2a2'>Ready to run</span>"
-        except (ValueError, ZeroDivisionError) as error:
-            verdict = f"<span style='color:#d33'>{error}</span>"
+        
+        error = self.validation_error()
+        verdict = "<span style='color:#2a2'>Ready to run</span>" if error is None else f"<span style='color:#d33'>{error}</span>"
 
         cells = case_file.domain.nx * case_file.domain.ny * case_file.domain.nz
         mach_number = case_file.flow.free_stream_velocity * 3 ** 0.5
@@ -212,8 +239,32 @@ class MainWindow(QMainWindow):
                  f"tau = {case_file.flow.relaxation_time:.5f}", f"Mach = {mach_number:.3f}",
                  f"cells = {cells:,}", f"steps = {case.total_steps():,} (warmup {case.warmup_steps():,})",
                 "", "<b>Parts</b>", *self.part_reports]
+        if self.last_result is not None:
+            lines += ["", "<b>Last run</b>", *self.result_lines(self.last_result)]
+
         self.summary.setText("<br>".join(lines))
         self.update_title()
+
+    def validation_error(self):
+        """
+        The engine's verdict on the current case, without building geometry.
+
+        Returns the error message, or None when the case can run.
+        """
+
+        case_file = self.case_file
+        case = Case(name=case_file.name, tag=case_file.name, flow=case_file.flow, domain=case_file.domain, turbulence=case_file.turbulence,
+                    timing=case_file.timing, collision=case_file.collision, inlet=case_file.inlet, start=case_file.start,
+                    allow_below_floor=case_file.allow_below_floor)
+        try:
+            case.validate()
+            for spec in case_file.geometry:
+                check_choice("geometry kind", spec.kind, geometry_choices["kind"])
+                check_choice("geometry wall", spec.wall, geometry_choices["wall"])
+        except (ValueError, ZeroDivisionError) as error:
+            return str(error)
+
+        return None
 
     def save(self):
         """
@@ -273,9 +324,15 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """
-        Ask before closing with unsaved edits.
+        Ask before closing with a run in progress or unsaved edits; stop the solver before exiting.
         """
 
+        if self.runs.is_running():
+            answer = QMessageBox.question(self, "Run in progress", "Stop the running solver and quit?")
+            if answer != QMessageBox.Yes:
+                event.ignore()
+                return
+            self.runs.stop_and_wait()
         if self.confirm_discard():
             self.viewport.close()
             event.accept()
@@ -289,3 +346,73 @@ class MainWindow(QMainWindow):
 
         name = self.path.name if self.path is not None else (self.case_file.name + " (unsaved)" if self.case_file else "")
         self.setWindowTitle(f"Homebrew CFD {__version__} - {name}{' *' if self.dirty else ''}")
+
+    def start_run(self):
+        """
+        Validate, make sure the case is saved, then launch the solver into runs/ beside the case file.
+        """
+
+        if self.case_file is None or self.runs.is_running():
+            return
+        error = self.validation_error()
+        if error is not None:
+            QMessageBox.warning(self, "Cannot run", error)
+            return
+        if (self.dirty or self.path is None) and not self.save():
+            return
+        self.console.clear()
+        self.last_result = None
+        self.run_progress.setValue(0)
+        self.run_progress.setVisible(True)
+        self.run_action.setEnabled(False)
+        self.stop_action.setEnabled(True)
+        self.runs.start(self.path, self.path.parent / "runs")
+        self.statusBar().showMessage("starting solver...")
+
+    def on_run_output(self, line):
+        """
+        Append one solver line to the console.
+        """
+
+        self.console.appendPlainText(line)
+
+    def on_run_progress(self, data):
+        """
+        Progress bar and status line from progress.json.
+        """
+
+        steps = max(1, int(data.get("steps", 0)))
+        self.run_progress.setMaximum(steps)
+        self.run_progress.setValue(int(data.get("step", 0)))
+        message = f"{data.get('status', '')}  step {data.get('step', 0):,} / {steps:,}"
+        if "max_velocity" in data:
+            message += f"  max|u| {data['max_velocity']:.3g}"
+        self.statusBar().showMessage(message)
+
+    def on_run_finished(self, result):
+        """
+        Back to idle; show the outcome in the status bar and the summary.
+        """
+
+        self.run_progress.setVisible(False)
+        self.run_action.setEnabled(True)
+        self.stop_action.setEnabled(False)
+        status = result.get("status", f"solver exited with code {result['exit_code']} (see console)")
+        self.statusBar().showMessage(f"run {status}", 10000)
+        self.last_result = result
+        self.refresh_summary()
+
+    def result_lines(self, result):
+        """
+        Summary lines for a run result: status, then each part's mean force coefficients.
+
+        Returns a list of strings.
+        """
+
+        lines = [f"status: {result.get('status', 'failed')}"]
+        for name, statistics in result.get("parts", {}).items():
+            lines.append(f"{name}: C_x {statistics['x']['mean']:.4f}  C_y {statistics['y']['mean']:.4f} (SE {statistics['y']['se']:.4f})")
+        if result.get("run_folder"):
+            lines.append(f"<small>{result['run_folder']}</small>")
+
+        return lines
