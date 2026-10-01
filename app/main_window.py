@@ -19,6 +19,10 @@ autosave_milliseconds = 60_000
 form_choices = {**setting_choices, **geometry_choices, "start": ("rest_ramp", "uniform")}
 solver_fields = ("name", "collision", "inlet", "start", "allow_below_floor")
 
+# splitter handles: wide enough to see and grab, highlighted on hover (icon violet)
+splitter_style = ("QSplitter::handle { background: #2a3444; } QSplitter::handle:hover { background: #2d4dc8; } "
+                  "QSplitter::handle:horizontal { width: 6px; } QSplitter::handle:vertical { height: 6px; }")
+
 def sentence_case(text):
     """
     Capitalize the first letter only (keeps symbols like tau and C_y as written).
@@ -64,12 +68,23 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.forms)
         splitter.addWidget(right_pane)
         splitter.setSizes([200, 380, 620])
-        self.setCentralWidget(splitter)
 
+        #results page: monitors above the last-run summary, the split is adjustable
         self.monitor = MonitorPlot()
-        monitor_dock = QDockWidget("Monitors", self)
-        monitor_dock.setWidget(self.monitor)
-        self.addDockWidget(Qt.RightDockWidgetArea, monitor_dock)
+        self.results_summary = QLabel("No run yet.")
+        self.results_summary.setAlignment(Qt.AlignTop)
+        self.results_summary.setWordWrap(True)
+        results_page = QSplitter(Qt.Vertical)
+        results_page.addWidget(self.monitor)
+        results_page.addWidget(self.results_summary)
+        results_page.setSizes([600, 160])
+
+        # pages: setup (tree, forms, viewport, and summary) and results, switched by the ribbon
+        self.pages = QStackedWidget()
+        self.pages.addWidget(splitter)
+        self.pages.addWidget(results_page)
+        self.setCentralWidget(self.pages)
+        self.setStyleSheet(splitter_style)
 
         # runs: controller, console dock, status-bar progress
         self.runs = RunController(self)
@@ -170,6 +185,18 @@ class MainWindow(QMainWindow):
         self.stop_action = self.make_action("Stop", icon(QStyle.SP_MediaStop), QKeySequence("Shift+F5"), self.runs.stop)
         self.stop_action.setEnabled(False)
         self.ribbon.add_tab("Run").add_group("Solver", (self.run_action, self.stop_action))
+
+        # results: the monitors page with run control at hand
+        self.results_tab = self.ribbon.add_tab("Results")
+        self.results_tab.add_group("Solver", (self.run_action, self.stop_action))
+        self.ribbon.currentChanged.connect(self.show_page)
+
+    def show_page(self, index):
+        """
+        The Results ribbon tab shows the results page; every other tab shows the setup page.
+        """
+
+        self.pages.setCurrentIndex(1 if self.ribbon.widget(index) is self.results_tab else 0)
 
     def open_dialog(self):
         """
@@ -280,6 +307,13 @@ class MainWindow(QMainWindow):
         if self.last_result is not None:
             lines += ["", "<b>Last run</b>", *self.result_lines(self.last_result)]
 
+        if self.runs.is_running():
+            self.results_summary.setText("Running")
+
+        elif self.last_result is not None:
+            self.results_summary.setText("<br>".join(["<b>Last run</b>", 
+                                                      *self.result_lines(self.last_result)]))
+        
         self.summary.setText("<br>".join(lines))
         self.update_title()
 
@@ -416,6 +450,7 @@ class MainWindow(QMainWindow):
         self.last_result = None
         self.run_progress.setValue(0)
         self.set_running(True)
+        self.ribbon.setCurrentWidget(self.results_tab)
         self.runs.start(self.path, self.path.parent / "runs", self.case_file.name)
         self.statusBar().showMessage("Starting solver...")
         self.refresh_summary()
