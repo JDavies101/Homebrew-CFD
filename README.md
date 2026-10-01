@@ -117,6 +117,9 @@ comparison.
 
 Full detail is in [`docs/DESIGN.md`](docs/DESIGN.md). In summary:
 
+- **v0.1.1 (next release):** UPX off and a VirusTotal re-check, installer built by GitHub Actions
+  with checksums and build-provenance attestation, pinned and audited dependencies, a code-signing
+  decision, and the UI backlog below. Plan in [`docs/DESIGN.md`](docs/DESIGN.md) (Phase 6).
 - **Application polish and release pipeline:** UI backlog (ribbon tabs, results tab, warmup
   marker and running mean on monitors, frozen inputs while running), GitHub Actions builds from
   tagged commits with checksums and build-provenance attestation, and a validation suite that

@@ -593,6 +593,23 @@ and from the installed executable. Wing geometry set-up fell from 42 s to 6 s (p
 one xy-plane for extruded sections). Next: release pipeline, UI backlog, STL import in the UI,
 validation suite, sweeps.
 
+v0.1.1 plan (2026-10-01). v0.1.0 shipped as a pre-release built locally and unsigned; VirusTotal flags it
+on 1 of about 70 engines (Arctic Wolf, generic machine-learning verdict), a known pattern for unsigned
+PyInstaller builds. v0.1.1 is a hygiene and polish release, no solver changes:
+- Build: `upx=False` in the spec (EXE and COLLECT); evaluate a PyInstaller bootloader built from source;
+  re-scan on VirusTotal before publishing; report the v0.1.0 false positive to Arctic Wolf.
+- Release pipeline: GitHub Actions builds the installer on a tag push (windows runner, CPU smoke test of
+  the solver entry point), publishes SHA-256 checksums and build-provenance attestation; local builds are
+  no longer released.
+- Dependencies: pin versions (requirements lock file), pip-audit in CI, Dependabot.
+- Code signing: compare SignPath (open-source programme), Certum open-source certificate and Azure
+  Trusted Signing on current terms and price; adopt one if affordable.
+- UI backlog: summary shows Running during a run; inputs frozen while running (still navigable); Run /
+  Stop on their own ribbon tab; Monitors on a resizable Results tab; warmup / averaging phase in the
+  status line and as a marker on the plot; running-mean line; x-axis in flow-throughs; capitalized
+  status, console and summary messages; "max |u|" spacing; floor / ceiling drawn only for y walls.
+- Gate: the CI-built installer reproduces run 151 (C_y -0.3368, SE 0.0004, C_x 0.1144).
+
 Product vs development (2026-10-01). Shipped: the engine (`src/`), the app, case templates (the current
 examples as drop-in cases), and a per-run record in each run folder (case, versions, backend, device,
 metrics). Development only: `docs/run_log.csv` (aggregated from run records), tests, the validation
