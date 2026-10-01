@@ -3,6 +3,8 @@ name: release
 on:
   push:
     tags: ["v*"]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -36,7 +38,7 @@ jobs:
           $result = Get-ChildItem smoke_runs -Recurse -Filter result.json | Select-Object -First 1 | Get-Content -Raw | ConvertFrom-Json
           if ($result.status -ne "finished") { throw "smoke run status: $($result.status)" }
           $lift = $result.parts.wing.y.mean
-          if ([double]::IsNaN($lift) -or $lift -ge 0) { throw "smoke run C_y not negative and finite: $lift" }
+          if ([double]::IsNaN($lift) -or [math]::Abs($lift - (-0.0335)) -gt 0.001) { throw "smoke run C_y $lift outside -0.0335 +/- 0.001" }
           Write-Host "smoke run finished, C_y $lift"
       - name: Checksums
         run: |
