@@ -13,5 +13,5 @@ analysis = Analysis([str(root / "packaging" / "launch.py")],
                     module_collection_mode={"src": "py", "taichi": "py"},
                     excludes=["pytest"])
 pyz = PYZ(analysis.pure)
-exe = EXE(pyz, analysis.scripts, [], exclude_binaries=True, name="HomebrewCFD", console=False, icon=str(root / "packaging" / "icon.ico"))
-COLLECT(exe, analysis.binaries, analysis.datas, name="HomebrewCFD")
+exe = EXE(pyz, analysis.scripts, [], exclude_binaries=True, name="HomebrewCFD", console=False, upx=False, icon=str(root / "packaging" / "icon.ico"))
+COLLECT(exe, analysis.binaries, analysis.datas, upx=False, name="HomebrewCFD")
