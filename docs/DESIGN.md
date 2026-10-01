@@ -617,6 +617,32 @@ PyInstaller builds. v0.1.1 is a hygiene and polish release, no solver changes:
   status, console and summary messages; "max |u|" spacing; floor / ceiling drawn only for y walls.
 - Gate: the CI-built installer reproduces run 151 (C_y -0.3368, SE 0.0004, C_x 0.1144).
 
+Release roadmap (estimated, 2026-10-01). Each version is a set of short feature branches merged through
+pull requests with CI green; the tag builds a draft release in CI, and I publish it after the installer
+reproduces run 151 on CUDA. Contents and order may move; the gates do not.
+- v0.1.1 (in progress), hygiene and polish. Done: UPX off (run 167 = run 151), release workflow with CPU
+  smoke test (wing_smoke C_y -0.0335), checksums and attestation, pinned dependencies with pip-audit and
+  Dependabot, code signing deferred, branching with a protected main; capitalized messages, Running state
+  and frozen inputs during a run, monitors in flow-throughs with shaded warmup and running means, ribbon
+  (Home / View / Run) replacing menus and toolbar. Remaining: Results tab (full-size monitors, last-run
+  summary), saved window layout, PyInstaller bootloader built from source in CI (Microsoft Defender
+  machine-learning false positive on HomebrewCFD.exe, reported), tag and release.
+- v0.2.0, look and identity. Logo refined from the current icon (navy, silver airfoil, blue -> violet ->
+  orange streamlines), one colour palette applied as a Qt theme and to the plots, a matching icon set for
+  every ribbon button, startup splash screen. Artwork generated and refined under my direction.
+- v0.3.0, geometry and pre-run checks. STL import in the app (units / scale shown as bounding box and
+  cells across the body, watertight check), voxel and boundary-link preview, memory and run-time estimate
+  before launch, templates for the Ahmed body, sphere and wheel; first tutorials (wing in ground effect,
+  STL import).
+- v0.4.0, studies. Run queue, parametric sweeps (ride height, angle) as one study, run comparison,
+  checkpoints to stop and resume.
+- v0.5.0, verification and platforms. Validation suite (case + reference + tolerance) run before every
+  release, optional Verification menu, backend auto-detect (CUDA, Vulkan, CPU), Linux build.
+- v1.0, stable. Case schema with migrations, signed builds, complete user documentation and tutorials,
+  every validation gate green on the release build.
+- After v1.0: D3Q15 / D3Q27 (section 8), 2D engine parity with the 3D physics, full car and 3D front
+  wing cases, thermal and aeroacoustic extensions (scope note below).
+
 Product vs development (2026-10-01). Shipped: the engine (`src/`), the app, case templates (the current
 examples as drop-in cases), and a per-run record in each run folder (case, versions, backend, device,
 metrics). Development only: `docs/run_log.csv` (aggregated from run records), tests, the validation
