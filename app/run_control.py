@@ -1,12 +1,13 @@
 # run control: launch the solver as a separate process, follow its run folder, stop it cleanly
 import json
 import sys
+import numpy as np
 from pathlib import Path
 from PySide6.QtCore import QObject, QProcess, QTimer, Signal
 
 project_root = Path(__file__).resolve().parent.parent
 poll_milliseconds = 500
-run_folder_prefix = "run folder: "
+run_folder_prefix = "Run folder: "
 
 class RunController(QObject):
     """
@@ -16,6 +17,7 @@ class RunController(QObject):
     output = Signal(str) # one solver output line
     progress = Signal(dict) # progress.json contents
     finished = Signal(dict) # result.json contents plus exit_code ({} + exit_code if the solver died first)
+    samples = Signal(object) # (column names, values array (samples, columns)) whenever new samples arrive
 
     def __init__(self, parent=None):
         """
@@ -27,6 +29,7 @@ class RunController(QObject):
         self.run_folder = None
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll)
+        self.sample_count = 0
 
     def is_running(self):
         """
@@ -48,6 +51,7 @@ class RunController(QObject):
         self.process.finished.connect(self.on_finished)
         self.process.start(sys.executable, ["-u", "-m", "src.run", str(case_path), "--runs", str(runs_directory)])
         self.timer.start(poll_milliseconds)
+        self.sample_count = 0
 
     def read_output(self):
         """
@@ -73,6 +77,19 @@ class RunController(QObject):
         except (OSError, ValueError):
             return
         self.progress.emit(data)
+
+        # live coefficient samples: complete rows only (the solver may be mid-append)
+        try:
+            lines = (self.run_folder / "coefficients_live.csv").read_text().splitlines()
+        except OSError:
+            return
+        if len(lines) < 2:
+            return
+        header = lines[0].split(",")
+        rows = [line.split(",") for line in lines[1:] if line.count(",") == len(header) - 1]
+        if len(rows) > self.sample_count:
+            self.sample_count = len(rows)
+            self.samples.emit((header, np.array(rows, dtype=float)))
 
     def stop(self):
         """

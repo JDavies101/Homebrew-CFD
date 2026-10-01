@@ -87,8 +87,9 @@ def run_case(case, backend="cuda", before_loop=None, after_collide=None, after_s
     Validate, build and run the case. Hooks: before_loop(sim) once after initialization;
     after_collide(sim, time_step) between collision and streaming; after_step(sim, time_step) at the end of
     each step, returning True stops the run. record_fields (geometry, walls, boundaries, ...) go to the run
-    log and override the columns derived from the Case. progress_callback(time_step, steps, max_velocity)
-    runs at every health check; returning True stops the run.
+    log and override the columns derived from the Case. progress_callback(time_step, steps, max_velocity,
+    force_coefficients) runs at every health check (force_coefficients: the samples so far); returning
+    True stops the run.
 
     Returns a RunResult.
     """
@@ -253,7 +254,7 @@ def run_case(case, backend="cuda", before_loop=None, after_collide=None, after_s
             sim.macroscopic()
             max_velocity = float(np.nanmax(np.abs(sim.u.to_numpy()[:, fluid])))
             progress.update(time_step, max_velocity)
-            if progress_callback is not None and progress_callback(time_step, steps, max_velocity):
+            if progress_callback is not None and progress_callback(time_step, steps, max_velocity, force_coefficients):
                 stopped_step = time_step
                 break
             progress.update(time_step, float(np.nanmax(np.abs(sim.u.to_numpy()[:, fluid]))))

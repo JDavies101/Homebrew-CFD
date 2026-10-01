@@ -10,6 +10,7 @@ from src.run.case_file import load_case_file, save_case_file, geometry_choices
 from app.property_form import PropertyForm
 from app.viewport import CaseViewport, named_views, corner_views
 from app.run_control import RunController
+from app.monitor_plot import MonitorPlot
 
 template_directory = Path(__file__).resolve().parent.parent / "cases" / "templates"
 autosave_milliseconds = 60_000
@@ -55,11 +56,17 @@ class MainWindow(QMainWindow):
         splitter.setSizes([200, 380, 620])
         self.setCentralWidget(splitter)
 
+        self.monitor = MonitorPlot()
+        monitor_dock = QDockWidget("Monitors", self)
+        monitor_dock.setWidget(self.monitor)
+        self.addDockWidget(Qt.RightDockWidgetArea, monitor_dock)
+
         # runs: controller, console dock, status-bar progress
         self.runs = RunController(self)
         self.runs.output.connect(self.on_run_output)
         self.runs.progress.connect(self.on_run_progress)
         self.runs.finished.connect(self.on_run_finished)
+        self.runs.samples.connect(self.monitor.update_samples)
         self.last_result = None
         self.console = QPlainTextEdit()
         self.console.setReadOnly(True)
@@ -361,6 +368,7 @@ class MainWindow(QMainWindow):
         if (self.dirty or self.path is None) and not self.save():
             return
         self.console.clear()
+        self.monitor.clear()
         self.last_result = None
         self.run_progress.setValue(0)
         self.run_progress.setVisible(True)

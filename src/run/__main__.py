@@ -1,4 +1,6 @@
 # command-line solve: python -m src.run case.json [--runs DIR] [--backend cuda|cpu] [--dev-log]
+import time
+process_start = time.perf_counter() # launch timing: the imports below count toward start-up
 import argparse
 import numpy as np
 from src import __version__
@@ -34,6 +36,7 @@ def main():
     parser.add_argument("--backend", default="cuda", choices=["cuda", "cpu"])
     parser.add_argument("--dev-log", action="store_true")  # append the record to docs/run_log.csv instead of the run folder
     options = parser.parse_args()
+    print(f"Imports {time.perf_counter() - process_start:.1f} s")
 
     # run folder: the case as it will run, then live progress from the start
     case_file = load_case_file(options.case_path)
@@ -43,22 +46,48 @@ def main():
     progress_path = folder / "progress.json"
     stop_path = folder / "STOP"
     write_json_atomic(progress_path, {"status": "building", "step": 0, "steps": 0})
-    print(f"run folder: {folder}")
+    print(f"Run folder: {folder}")
 
-    def report_progress(time_step, steps, max_velocity):
+    live_path = folder / "coefficients_live.csv"
+    live_path.write_text(",".join(f"{spec.name}_{axis}" for spec in case_file.geometry for axis in "xyz") + "\n")
+    samples_written = 0
+
+    def report_progress(time_step, steps, max_velocity, force_coefficients):
         """
-        Publish progress; a STOP file in the run folder ends the run cleanly.
+        Publish progress and any new coefficient samples; time the first step; a STOP file ends the run cleanly.
 
         Returns True to stop.
         """
 
+        nonlocal samples_written
+        if time_step == 0:
+            print(f"\nFirst step (kernel compile) {time.perf_counter() - timing['solver_ready']:.1f} s")
+        if len(force_coefficients) > samples_written:
+            with live_path.open("a") as live_file:
+                for sample in force_coefficients[samples_written:]:
+                    live_file.write(",".join(f"{value:.7g}" for part_row in sample for value in part_row) + "\n")
+            samples_written = len(force_coefficients)
         write_json_atomic(progress_path, {"status": "running", "step": time_step + 1, "steps": steps, "max_velocity": max_velocity})
 
         return stop_path.exists()
 
+    def mark_solver_ready(sim):
+        """
+        Time the solver setup (Taichi init, field allocation, geometry upload).
+        """
+
+        timing["solver_ready"] = time.perf_counter()
+        print(f"Solver setup (Taichi init, fields, upload) {timing['solver_ready'] - solver_start:.1f} s")
+
+    timing = {}
+
+    # geometry, then the solver (setup and first-step timings come from the hooks above)
+    geometry_start = time.perf_counter()
     case = build_case(case_file, options.backend)
+    print(f"Geometry {time.perf_counter() - geometry_start:.1f} s")
+    solver_start = time.perf_counter()
     record_path = None if options.dev_log else str(folder / "record.csv")
-    result = run_case(case, backend=options.backend, progress_callback=report_progress, path=record_path,
+    result = run_case(case, backend=options.backend, before_loop=mark_solver_ready, progress_callback=report_progress, path=record_path,
                       geometry=", ".join(f"{spec.name} ({spec.kind})" for spec in case_file.geometry),
                       walls=", ".join(f"{spec.name} {spec.wall}" for spec in case_file.geometry),
                       boundaries=f"inlet {case.inlet} / x {case.domain.x_boundary} / y {case.domain.y_boundary} / z {case.domain.side_walls}")
@@ -75,9 +104,9 @@ def main():
     if len(coefficients) > 0:
         parts = {spec.name: part_statistics(coefficients[:, index, :]) for index, spec in enumerate(case_file.geometry)}
     write_json_atomic(folder / "result.json", {"status": status, "case_hash": digest, "version": __version__, "backend": options.backend,
-                                               "steps": case.total_steps(), "blow_up_step": result.blow_up_step,
-                                               "stopped_step": result.stopped_step, "parts": parts})
-    write_json_atomic(progress_path, {"status": status, "step": case.total_steps(), "steps": case.total_steps(), "steps_completed": result.steps_completed, "warmup": case.warmup_steps(),})
+                                               "steps": case.total_steps(), "steps_completed": result.steps_completed, "warmup": case.warmup_steps(),
+                                               "blow_up_step": result.blow_up_step, "stopped_step": result.stopped_step, "parts": parts})
+    write_json_atomic(progress_path, {"status": status, "step": result.steps_completed, "steps": case.total_steps()})
 
     # run record: first part's y coefficient as the headline (the wing's -CL is its negative)
     if parts:
@@ -87,7 +116,7 @@ def main():
                           drift_1st=round(first["y"]["drift_first"], 4), drift_2nd=round(first["y"]["drift_second"], 4),
                           other=f"C_x {first['x']['mean']:.4f}; status {status}; case {digest[:12]}; v{__version__}")
     else:
-        reason = f"stopped before averaging began (step {result.steps_completed} of warmup {case.warmup_steps()})" if status != "finished" else "no parts"
+        reason = f"Stopped before averaging began (step {result.steps_completed} of warmup {case.warmup_steps()})" if status != "finished" else "No parts"
         print(reason)
         result.run.finish(metric="status", value=status, other=f"{reason}; case {digest[:12]}; v{__version__}")
 
