@@ -20,6 +20,8 @@ class RunResult:
     forces: np.ndarray # (samples, parts, 3) raw part forces, float32
     force_coefficients: np.ndarray # (samples, parts, 3): F / (1/2 U^2 A) per part, float32
     blow_up_step: int # -1 when the run finished
+    stopped_step: int # -1 unless stopped by progress_callback
+    steps_completed: int # steps actually run (less than planned after a stop or blow-up)
 
 def record_fields_from_case(case, steps, warmup):
     """
@@ -80,12 +82,13 @@ def report_blow_up(sim, time_step):
           f"y[{bad_cells[:, 1].min()}-{bad_cells[:, 1].max()}] "
           f"z[{bad_cells[:, 2].min()}-{bad_cells[:, 2].max()}]")
 
-def run_case(case, before_loop=None, after_collide=None, after_step=None, **record_fields):
+def run_case(case, backend="cuda", before_loop=None, after_collide=None, after_step=None, progress_callback=None, **record_fields):
     """
     Validate, build and run the case. Hooks: before_loop(sim) once after initialization;
     after_collide(sim, time_step) between collision and streaming; after_step(sim, time_step) at the end of
     each step, returning True stops the run. record_fields (geometry, walls, boundaries, ...) go to the run
-    log and override the columns derived from the Case.
+    log and override the columns derived from the Case. progress_callback(time_step, steps, max_velocity)
+    runs at every health check; returning True stops the run.
 
     Returns a RunResult.
     """
@@ -100,7 +103,7 @@ def run_case(case, before_loop=None, after_collide=None, after_step=None, **reco
     free_stream_velocity = flow.free_stream_velocity
     bouzidi = any(part.wall_fractions is not None for part in case.parts)
     staircase = any(part.wall_fractions is None for part in case.parts)
-    sim = Simulation3D(nx, ny, nz, "cuda", interp=bouzidi)
+    sim = Simulation3D(nx, ny, nz, backend, interp=bouzidi)
 
     # parts: part id = index + 1, union mask, floor and ceiling rows
     body = np.zeros((nx, ny, nz), np.int32)
@@ -164,6 +167,7 @@ def run_case(case, before_loop=None, after_collide=None, after_step=None, **reco
     forces = []
     force_coefficients = []
     blow_up_step = -1
+    stopped_step = -1
 
     if before_loop is not None:
         before_loop(sim)
@@ -247,12 +251,22 @@ def run_case(case, before_loop=None, after_collide=None, after_step=None, **reco
                 blow_up_step = time_step
                 break
             sim.macroscopic()
+            max_velocity = float(np.nanmax(np.abs(sim.u.to_numpy()[:, fluid])))
+            progress.update(time_step, max_velocity)
+            if progress_callback is not None and progress_callback(time_step, steps, max_velocity):
+                stopped_step = time_step
+                break
             progress.update(time_step, float(np.nanmax(np.abs(sim.u.to_numpy()[:, fluid]))))
 
-    progress.done()
+    # steps actually run: the record's MLUPS and the progress bar use this, not the plan
+    early_stop_step = max(blow_up_step, stopped_step)
+    steps_completed = early_stop_step + 1 if early_stop_step >= 0 else steps
+    progress.done(steps_completed)
     run.stop()
+    run.steps = steps_completed
+
     if blow_up_step >= 0:
         report_blow_up(sim, blow_up_step)
     sim.macroscopic()
 
-    return RunResult(sim, run, solid, np.asarray(forces), np.asarray(force_coefficients), blow_up_step)
+    return RunResult(sim, run, solid, np.asarray(forces), np.asarray(force_coefficients), blow_up_step, stopped_step, steps_completed)

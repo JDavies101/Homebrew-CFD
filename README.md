@@ -5,7 +5,8 @@ built on the Lattice Boltzmann Method (LBM). It runs on a single workstation
 (RTX 3090, Ryzen 5800X3D) and is validated against established benchmarks before it is applied
 to real geometry. External aerodynamics, and Formula 1 in particular, is the flagship
 application, but the solver is general: external bodies, internal ducts, heat transfer, and
-aeroacoustics are all within reach of the same core.
+aeroacoustics are all within reach of the same core. Anthropic's Claude was used to assist with
+code outline, documentation upkeep, and planning.
 
 ## Goals
 

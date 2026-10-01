@@ -570,8 +570,46 @@ moment a real car domain exceeds the 24 GB cap - it is the memory headroom the b
 
 **Phase 6 - Application (UI).** A standalone setup / run-control / post app: load an STL,
 assign boundary conditions, set domain/Re, launch, monitor live, and A/B compare - wrapping the
-validated engine so a case does not need a hand-edited example script. Framework open (2026-09-30):
-Streamlit or a standalone desktop application, to be decided; ParaView stays for heavy post.
+validated engine so a case does not need a hand-edited example script. Decision (2026-10-01): a full
+desktop application in the style of Fluent / COMSOL, not a lightweight dashboard. PySide6 (Qt) + PyVista
+(VTK) with a setup tree (geometry, domain, models, boundary conditions, solution, monitors, run, results),
+property panels and a 3D viewport. Geometry is imported, not designed: STL first, then OBJ / PLY, later
+STEP / IGES through tessellation. The UI never runs the solver in-process: it writes a versioned case file
+and launches the solver as a separate process that writes to a run folder. Shipped as a Windows .exe with
+versioned releases (UI and engine versions recorded in every run). ParaView stays for heavy post.
+
+Product vs development (2026-10-01). Shipped: the engine (`src/`), the app, case templates (the current
+examples as drop-in cases), and a per-run record in each run folder (case, versions, backend, device,
+metrics). Development only: `docs/run_log.csv` (aggregated from run records), tests, the validation
+gates, this document. The examples become a validation suite (case + reference value + tolerance)
+that runs in development and before every release; a "Verification" menu in the app is optional.
+
+Platforms (2026-10-01): the goal is Windows / macOS / Linux on NVIDIA / AMD / Intel GPUs. Backend becomes
+a setting with auto-detect (CUDA, then Vulkan, then Metal, then CPU); `src/engine/runtime.py` and
+`run_case` currently hard-code CUDA. I can test Windows and Linux on NVIDIA only, so I validate CUDA and
+Vulkan there (Vulkan on NVIDIA exercises the same code path AMD / Intel would use) and CPU in CI. macOS
+(Metal) and AMD / Intel hardware stay unclaimed until someone tests them; Metal has no float64.
+
+App requirements from common CFD-tool experience (2026-10-01):
+- Keep: setup tree with per-node status, templates, live monitors, run queue, run comparison, headless
+  CLI, saved case + versions per run, pre-run checks (voxel / link preview, memory and time estimate).
+- Avoid: opaque solver errors (translate to a cause and a fix), UI freezes (solver in its own process),
+  lost work (autosave), cases that stop opening after an update (schema versions + migrations), hidden
+  defaults (show every value the run uses), modal dialogs during a run.
+- Bugs to design out: STL unit / scale mistakes (show bounding box and cells across the body on import),
+  non-watertight STL (check and report), GPU out-of-memory (estimate before launch), orphaned solver
+  processes (kill on exit, PID file), half-written progress files (write to temp, then rename), stale
+  results after a case edit (case hash stored per run), paths with spaces / non-ASCII, Windows DPI scaling,
+  decimal-comma locales (JSON only, never locale-formatted numbers in files).
+- Later, high value for F1 use: parametric sweeps (ride height, angle) as one queued study; checkpoints
+  to stop and resume.
+
+Release security (2026-10-01): GitHub does not malware-scan release binaries. Releases are built only
+by GitHub Actions from a tagged commit (never from a local machine), with build-provenance attestation and
+SHA-256 checksums published; dependencies pinned and checked (pip-audit, Dependabot); each installer
+scanned on VirusTotal before publishing; Windows code signing when affordable (unsigned builds trigger
+SmartScreen). The app reads case files as data only (JSON, no pickle / eval / embedded scripts) and makes no
+network calls.
 
 **Scope note - one engine, many problems.** The core is a general incompressible / low-Mach
 LBM solver; external aero (F1 the flagship) is the first domain, not the boundary. Same core,

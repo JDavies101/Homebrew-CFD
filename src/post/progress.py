@@ -33,13 +33,16 @@ class Progress:
 
         print(message, end="", flush=True)
 
-    def done(self):
+    def done(self, step=None):
         """
-        Draw the full bar and end the line, keeping the last health reading visible.
+        End the line at the final step (default: the full run), keeping the last health reading visible.
         """
 
+        steps_done = self.total if step is None else step
+        fraction = steps_done / self.total
         elapsed = time.time() - self.start_time
-        message = f"\r[{'#' * 30}] {self.total}/{self.total} 100.0%  {elapsed:5.0f}s  ETA     0s"
+        bar = "#" * int(30 * fraction) + "-" * (30 - int(30 * fraction))
+        message = f"\r[{bar}] {steps_done}/{self.total} {fraction * 100:5.1f}%  {elapsed:5.0f}s  ETA     0s"
 
         if self.last_health is not None:
             message += f"  max|u|={self.last_health:.3g}"
