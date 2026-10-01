@@ -3,7 +3,7 @@ import time
 
 class Progress:
     """
-    Single-line progress bar with elapsed time, ETA and an optional health value (e.g. max|u|).
+    Single-line progress bar with elapsed time, ETA and an optional health value (e.g. max |u|).
     """
 
     def __init__(self, total):
@@ -29,7 +29,7 @@ class Progress:
 
         if health is not None:
             self.last_health = health
-            message += f"  max|u|={health:.3g}"
+            message += f"  max |u|={health:.3g}"
 
         print(message, end="", flush=True)
 
@@ -45,6 +45,6 @@ class Progress:
         message = f"\r[{bar}] {steps_done}/{self.total} {fraction * 100:5.1f}%  {elapsed:5.0f}s  ETA     0s"
 
         if self.last_health is not None:
-            message += f"  max|u|={self.last_health:.3g}"
+            message += f"  max |u|={self.last_health:.3g}"
 
         print(message + " " * 10)  # trailing spaces clear any leftover tail
