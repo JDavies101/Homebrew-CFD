@@ -103,6 +103,7 @@ class MainWindow(QMainWindow):
 
         file_menu = self.menuBar().addMenu("&File")
         template_menu = file_menu.addMenu("New from template")
+        self.case_loading_actions = [template_menu.menuAction()]
         for template_path in sorted(template_directory.glob("*.json")):
             action = template_menu.addAction(template_path.stem)
             action.triggered.connect(lambda checked=False, template_path=template_path: self.open_path(template_path, as_template=True))
@@ -113,6 +114,8 @@ class MainWindow(QMainWindow):
             action.setShortcut(shortcut)
             action.triggered.connect(handler)
             file_menu.addAction(action)
+            if handler == self.open_dialog:
+                self.case_loading_actions.append(action)
 
         # view: fit, projection, named views; the common ones also on a toolbar
         view_menu = self.menuBar().addMenu("&View")
@@ -247,7 +250,14 @@ class MainWindow(QMainWindow):
                     allow_below_floor=case_file.allow_below_floor)
         
         error = self.validation_error()
-        verdict = "<span style='color:#2a2'>Ready to run</span>" if error is None else f"<span style='color:#d33'>{error}</span>"
+        if self.runs.is_running():
+            verdict = "<span style='color:#27c'>Running</span>"
+
+        elif error is None:
+            verdict = "<span style='color:#2a2'>Ready to run</span>"
+
+        else:
+            verdict = f"<span style='color:#d33'>{error}</span>"
 
         cells = case_file.domain.nx * case_file.domain.ny * case_file.domain.nz
         mach_number = case_file.flow.free_stream_velocity * 3 ** 0.5
@@ -363,6 +373,19 @@ class MainWindow(QMainWindow):
         name = self.path.name if self.path is not None else (self.case_file.name + " (unsaved)" if self.case_file else "")
         self.setWindowTitle(f"Homebrew CFD {__version__} - {name}{' *' if self.dirty else ''}")
 
+    def set_running(self, running):
+        """
+        Lock or unlock the window for a live run: inputs and case loading frozen, tree still navigable.
+        """
+
+        self.forms.setEnabled(not running)
+        for action in self.case_loading_actions:
+            action.setEnabled(not running)
+
+        self.run_action.setEnabled(not running)
+        self.stop_action.setEnabled(running)
+        self.run_progress.setVisible(running)
+    
     def start_run(self):
         """
         Validate, make sure the case is saved, then launch the solver into runs/ beside the case file.
@@ -380,11 +403,10 @@ class MainWindow(QMainWindow):
         self.monitor.clear()
         self.last_result = None
         self.run_progress.setValue(0)
-        self.run_progress.setVisible(True)
-        self.run_action.setEnabled(False)
-        self.stop_action.setEnabled(True)
+        self.set_running(True)
         self.runs.start(self.path, self.path.parent / "runs", self.case_file.name)
         self.statusBar().showMessage("Starting solver...")
+        self.refresh_summary()
 
     def on_run_output(self, line):
         """
@@ -411,9 +433,7 @@ class MainWindow(QMainWindow):
         Back to idle; show the outcome in the status bar and the summary.
         """
 
-        self.run_progress.setVisible(False)
-        self.run_action.setEnabled(True)
-        self.stop_action.setEnabled(False)
+        self.set_running(False)
         status = result.get("status", f"solver exited with code {result['exit_code']} (see console)")        
         self.statusBar().showMessage(f"Run {status}", 10000)
         self.last_result = result
