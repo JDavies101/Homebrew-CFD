@@ -358,7 +358,7 @@ class RunRecord:
         vram = f"VRAM {row.get('vram_fields_gb', '?')} GB fields"
         if row.get("vram_gpu_gb", "") != "":
             vram += f", {row['vram_gpu_gb']} GB GPU ({row['vram_gpu_scope']})"
-        print(f"run {run_id} logged: {result} | {wall_time:.0f} s{mlups} | max|u| {row.get('max_u', '?')}, "
+        print(f"Run {run_id} logged: {result} | {wall_time:.0f} s{mlups} | max |u| {row.get('max_u', '?')}, "
               f"rho {row.get('rho_min', '?')}-{row.get('rho_max', '?')}, hot {row.get('hot_cells', '?')} | {vram}")
 
         return run_id

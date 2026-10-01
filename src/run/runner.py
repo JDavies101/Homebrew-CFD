@@ -75,9 +75,9 @@ def report_blow_up(sim, time_step):
     populations = sim.f.to_numpy()
     bad_cells = np.argwhere(~np.isfinite(populations).all(axis=0))
     if len(bad_cells) == 0:
-        print(f"blow-up at step {time_step}: |f| above {blow_up_population:g}, no NaN yet")
+        print(f"Blow-up at step {time_step}: |f| above {blow_up_population:g}, no NaN yet")
         return
-    print(f"blow-up at step {time_step}: {len(bad_cells)} cells  "
+    print(f"Blow-up at step {time_step}: {len(bad_cells)} cells  "
           f"x[{bad_cells[:, 0].min()}-{bad_cells[:, 0].max()}] "
           f"y[{bad_cells[:, 1].min()}-{bad_cells[:, 1].max()}] "
           f"z[{bad_cells[:, 2].min()}-{bad_cells[:, 2].max()}]")

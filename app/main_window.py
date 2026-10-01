@@ -18,6 +18,15 @@ autosave_milliseconds = 60_000
 form_choices = {**setting_choices, **geometry_choices, "start": ("rest_ramp", "uniform")}
 solver_fields = ("name", "collision", "inlet", "start", "allow_below_floor")
 
+def sentence_case(text):
+    """
+    Capitalize the first letter only (keeps symbols like tau and C_y as written).
+
+    Returns the string.
+    """
+
+    return text[:1].upper() + text[1:]
+
 class MainWindow(QMainWindow):
     """
     Setup tree on the left, the selected node's properties in the middle, case summary and validation on the right.
@@ -269,7 +278,7 @@ class MainWindow(QMainWindow):
                 check_choice("geometry kind", spec.kind, geometry_choices["kind"])
                 check_choice("geometry wall", spec.wall, geometry_choices["wall"])
         except (ValueError, ZeroDivisionError) as error:
-            return str(error)
+            return sentence_case(str(error))
 
         return None
 
@@ -375,7 +384,7 @@ class MainWindow(QMainWindow):
         self.run_action.setEnabled(False)
         self.stop_action.setEnabled(True)
         self.runs.start(self.path, self.path.parent / "runs", self.case_file.name)
-        self.statusBar().showMessage("starting solver...")
+        self.statusBar().showMessage("Starting solver...")
 
     def on_run_output(self, line):
         """
@@ -392,9 +401,9 @@ class MainWindow(QMainWindow):
         steps = max(1, int(data.get("steps", 0)))
         self.run_progress.setMaximum(steps)
         self.run_progress.setValue(int(data.get("step", 0)))
-        message = f"{data.get('status', '')}  step {data.get('step', 0):,} / {steps:,}"
+        message = f"{sentence_case(data.get('status', ''))}  step {data.get('step', 0):,} / {steps:,}"
         if "max_velocity" in data:
-            message += f"  max|u| {data['max_velocity']:.3g}"
+            message += f"  max |u| {data['max_velocity']:.3g}"
         self.statusBar().showMessage(message)
 
     def on_run_finished(self, result):
@@ -405,8 +414,8 @@ class MainWindow(QMainWindow):
         self.run_progress.setVisible(False)
         self.run_action.setEnabled(True)
         self.stop_action.setEnabled(False)
-        status = result.get("status", f"solver exited with code {result['exit_code']} (see console)")
-        self.statusBar().showMessage(f"run {status}", 10000)
+        status = result.get("status", f"solver exited with code {result['exit_code']} (see console)")        
+        self.statusBar().showMessage(f"Run {status}", 10000)
         self.last_result = result
         self.refresh_summary()
 
@@ -417,7 +426,7 @@ class MainWindow(QMainWindow):
         Returns a list of strings.
         """
 
-        lines = [f"status: {result.get('status', 'failed')}"]
+        lines = [f"Status: {result.get('status', 'failed')}"]
         for name, statistics in result.get("parts", {}).items():
             lines.append(f"{name}: C_x {statistics['x']['mean']:.4f}  C_y {statistics['y']['mean']:.4f} (SE {statistics['y']['se']:.4f})")
         if result.get("run_folder"):

@@ -44,5 +44,5 @@ def test_progress_output(capsys):
     progress.done()
     output = capsys.readouterr().out
 
-    assert "5/10" in output and "max|u|=0.05" in output
+    assert "5/10" in output and "max |u|=0.05" in output
     assert "10/10 100.0%" in output
