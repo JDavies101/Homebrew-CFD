@@ -7,7 +7,8 @@ from PySide6.QtGui import QIcon
 
 def main():
     """
-    Start the application; with --solve as the first argument, run the solver instead (the packaged app's solver entry).
+    Start the application; with --solve as the first argument, 
+    run the solver instead (the packaged app's solver entry).
     """
 
     if len(sys.argv) > 1 and sys.argv[1] == "--solve":

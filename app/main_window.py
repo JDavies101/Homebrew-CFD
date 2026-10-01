@@ -426,7 +426,12 @@ class MainWindow(QMainWindow):
         message = f"{sentence_case(data.get('status', ''))}  step {data.get('step', 0):,} / {steps:,}"
         if "max_velocity" in data:
             message += f"  max |u| {data['max_velocity']:.3g}"
+        
         self.statusBar().showMessage(message)
+
+        if "flow_through_steps" in data:
+            self.monitor.set_timeline(data["steps"], data["warmup"], 
+                                      data["flow_through_steps"], data["sample_every"])
 
     def on_run_finished(self, result):
         """
