@@ -6,7 +6,7 @@ built on the Lattice Boltzmann Method (LBM). It runs on a single workstation
 to real geometry. External aerodynamics, and Formula 1 in particular, is the flagship
 application, but the solver is general: external bodies, internal ducts, heat transfer, and
 aeroacoustics are all within reach of the same core. Anthropic's Claude was used to assist with
-code outline, documentation upkeep, and planning.
+code outline, documentation upkeep, and planning. SpaceXAI was used to assist with logo designing.
 
 ## Goals
 
@@ -66,16 +66,17 @@ every case.
 - **GPU kernels:** [Taichi](https://www.taichi-lang.org/) with the CUDA backend on the 3090.
   NVIDIA Warp is the fallback if Taichi proves limiting.
 - **Post-processing:** NumPy, with VTK export for [ParaView](https://www.paraview.org/).
-- **Interactivity (planned):** a Taichi GGUI live viewer for in-run visualization, followed
-  by a standalone setup, run-control, and post-processing application as a dedicated phase.
+- **Application:** PySide6 (Qt) with PyVista (VTK) for the 3D viewport and pyqtgraph for live
+  monitors; packaged with PyInstaller and Inno Setup.
 - **Cross-validation (later):** OpenFOAM.
 - **Tests:** pytest for solver mechanics and physics validation cases.
 
 ## Status
 
-Phases 0 through 3 are complete; Phase 4 (automotive and general geometry) is next. The result
-is a validated 2D and 3D GPU solver with turbulence, sub-cell walls, and a wall-modeled
-high-Reynolds-number stack, developed and verified one operator at a time.
+Phases 0 through 3 are complete, Phase 4 is largely complete, the operating envelope is mapped, and a
+first working desktop application (Phase 6 MVP) builds into a Windows installer. The result is a
+validated 2D and 3D GPU solver with turbulence, sub-cell walls, moving ground and rotating wheels,
+STL import, per-part forces, and an application that sets up, runs and monitors cases.
 
 - **Phase 1 - 2D core (NumPy):** D2Q9 BGK covering moments, equilibrium, collision, streaming,
   bounce-back, moving wall, and Guo body force. Validated against Poiseuille flow (exact
@@ -83,35 +84,51 @@ high-Reynolds-number stack, developed and verified one operator at a time.
   128^2).
 - **Phase 2 - 3D on the GPU (Taichi):** the D3Q19 engine (`Simulation3D`) with Guo forcing,
   velocity inlet and outlet, free-slip walls, voxelized obstacles, momentum-exchange drag, VTK
-  export, and a live progress and divergence monitor. Validated against cylinder flow (correct
-  Reynolds number and vortex-shedding Strouhal near 0.165, with no shedding below the critical
-  Reynolds number) and sphere drag. The same code runs on CPU or CUDA via a single flag.
+  export, and a live progress and divergence monitor. Validated against cylinder flow and sphere
+  drag. The same code runs on CPU or CUDA via a single flag.
 - **Phase 3 - turbulence and walls:** TRT collision, Bouzidi interpolated bounce-back on
-  curved walls (cylinder Cd 1.576, sphere on sub-cell walls), LES Smagorinsky, regularized
-  collision, and a generalized log-law wall function, composed into one stable
-  high-Reynolds-number stack. Validated across a backward-facing step (reattachment
-  x_r/S = 2.47), the Re_tau = 180 turbulent channel (law of the wall, U+ = 18.5), and the
-  Ahmed body, stable to Re_H = 30000. The relative aerodynamic gate passed: a square-versus-
-  round nose comparison yields a correct 48% drag increase with the expected separation
-  mechanism.
+  curved walls, LES (Smagorinsky, later WALE), regularized collision, and a log-law wall function,
+  composed into one stable high-Reynolds-number stack. Validated across a backward-facing step,
+  the Re_tau = 180 turbulent channel (law of the wall, U+ = 18.5), and the Ahmed body, stable to
+  Re_H = 30000. The relative aerodynamic gate passed: a square-versus-round nose comparison
+  yields a correct 48% drag increase with the expected separation mechanism.
+- **Phase 4 - automotive and general geometry:** WALE subgrid model, relaxation layers, signed
+  distance field geometry, STL import validated against the analytic sphere (Cd within 0.1%),
+  moving ground, rotating wheels (Taylor-Couette and Magnus checks), per-part force breakdown,
+  and an inverted NACA 4412 wing in ground effect whose downforce-versus-ride-height trend
+  reproduces the experimental enhancement-then-loss shape. A full 3D front wing or car remains.
+- **Operating envelope:** relaxation-time floor (0.501 regularized), resolution, blockage, Mach
+  number (U <= 0.05 incompressible; Strouhal 0.171 with no Mach trend), Ahmed resolution, wing
+  Reynolds number (the ground-effect peak moves toward the ground as Re rises), and relative
+  accuracy under refinement (curve shape preserved, absolute level within 4-5%).
+- **Generic runner:** every 3D example runs through one `Case` description and one time loop
+  (`run_case`), and each port reproduces its logged reference run exactly.
+- **Phase 6 MVP - desktop application:** versioned JSON case files, a command-line solve into
+  self-contained run folders (progress, results, live force samples, clean stop), and a PySide6
+  application with a setup tree, property forms with live validation, a 3D viewport with named
+  views, run control with a console and live force monitors, and autosave. Packaged with
+  PyInstaller and Inno Setup into a Windows installer that reproduces the reference wing run.
 
-Known limits are documented in [`docs/DESIGN.md`](docs/DESIGN.md): absolute Ahmed Cd is beyond
-reach on 24 GB and would require a cluster, and several research-grade components (a
-wall-aware subgrid model, free-slip corner treatment, and an SDF wall-distance field) are
-carried into Phase 4, where real geometry requires them.
+Known limits are documented in [`docs/DESIGN.md`](docs/DESIGN.md): absolute Ahmed Cd is not
+grid-converged on 24 GB, and the quasi-2D laminar wing is a qualitative, not experimental-regime,
+comparison.
 
 ## Roadmap
 
 Full detail is in [`docs/DESIGN.md`](docs/DESIGN.md). In summary:
 
-- **Phase 4 - Automotive and general geometry:** SDF wall-distance and wall-aware subgrid
-  foundations, STL import and voxelization (validated by reducing an STL sphere to the analytic
-  result), moving ground and rotating wheels, per-part force breakdown, and a front-wing or
-  full-car run.
-- **Phase 5 - Interactivity and sweeps:** a Taichi GGUI live viewer, parameter sweeps, A/B
-  comparison tables, and mixed precision for larger domains.
-- **Phase 6 - Application (UI):** a standalone setup, run-control, and post-processing
-  application.
+- **Application polish and release pipeline:** UI backlog (ribbon tabs, results tab, warmup
+  marker and running mean on monitors, frozen inputs while running), GitHub Actions builds from
+  tagged commits with checksums and build-provenance attestation, and a validation suite that
+  runs before every release.
+- **Application features:** STL import in the UI with pre-run voxel and link preview, memory and
+  time estimates, run comparison, parametric sweeps (ride height, incidence) as one queued study,
+  checkpoints, and more templates (Ahmed body, sphere, wheel).
+- **Phase 4 completion:** a 3D front wing or full car run.
+- **Platforms:** backend auto-detect (CUDA, Vulkan, CPU; Metal later), Linux build, then D3Q15 /
+  D3Q27 stencils and a 2D engine with the same physics as the 3D one.
+- **Phase 5 - interactivity and sweeps:** live in-run visualization and mixed precision for
+  larger domains.
 - **Future branch - multiphase and free-surface**, as specific cases require.
 
 ### Running it
@@ -120,9 +137,12 @@ Full detail is in [`docs/DESIGN.md`](docs/DESIGN.md). In summary:
 py -3.12 -m venv .venv && .venv\Scripts\activate      # Taichi requires Python 3.12 or earlier
 pip install -r requirements.txt
 python -m src.config.environment          # verify CUDA on the GPU
-python -m src.examples.cylinder           # 3D cylinder: prints Cd and Strouhal
+python -m app                             # desktop application (File > New from template)
+python -m src.run cases/templates/wing_ground.json   # headless solve into runs/<date>_<name>/
+python -m src.examples.cylinder           # validation example: prints Cd and Strouhal
 pytest -m "not slow"                      # fast unit tests
 pytest                                    # plus physics validation (Poiseuille, cavity, and others)
+powershell -ExecutionPolicy Bypass -File packaging/build.ps1   # Windows app folder + installer
 ```
 
 See [`docs/DESIGN.md`](docs/DESIGN.md) for the architecture, numerics, and full roadmap.

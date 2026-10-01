@@ -1,8 +1,9 @@
 # SDF geometry: q and normals reduce to the analytic sphere results
 import numpy as np
-from src.geometry.sdf import sdf_sphere, solid_from_sdf, q_from_sdf, normals_from_sdf
+from src.geometry.sdf import sdf_sphere, solid_from_sdf, q_from_sdf, normals_from_sdf, node_values
 from src.geometry.wall_fraction import wall_fraction_sphere
 from src.engine.simulation3d import Simulation3D
+from src.geometry.airfoil import naca_four_digit, place_section, extruded_section_sdf
 
 grid_size = 24
 center = (11.3, 12.1, 11.7)  # off-lattice center so q takes many different values
@@ -58,3 +59,34 @@ def test_wall_list_from_sdf_sphere():
     assert np.allclose(wall_distance, node_radius - radius, atol=1e-5)  # exact distance to the sphere
     assert wall_distance.min() > 0.0 and wall_distance.max() <= np.sqrt(3.0) + 1e-6  # first fluid layer only
     assert np.allclose(np.abs((wall_normals * offset / node_radius[:, None]).sum(axis=1)), 1.0, atol=1e-4)  # radial (either sign)
+
+# test 5: extruded node values equal the full-grid evaluation exactly
+def test_extruded_node_values_exact():
+
+    polygon_x, polygon_y = naca_four_digit("4412")
+    placed_x, placed_y = place_section(polygon_x, polygon_y, 30.0, 4.0, 20.0, 8.5)
+    phi = extruded_section_sdf(placed_x, placed_y)
+    plane_values = node_values(phi, 70, 30, 5, extruded=True)
+    full_values = node_values(phi, 70, 30, 5)
+
+    assert plane_values.shape == (70, 30, 5)
+    assert np.array_equal(plane_values, full_values)
+
+# test 6: precomputed node values give the identical solid mask and q
+def test_node_phi_reuse_identical():
+
+    polygon_x, polygon_y = naca_four_digit("4412")
+    placed_x, placed_y = place_section(polygon_x, polygon_y, 30.0, 4.0, 20.0, 8.5)
+    phi = extruded_section_sdf(placed_x, placed_y)
+    node_phi = node_values(phi, 70, 30, 5, extruded=True)
+
+    assert np.array_equal(solid_from_sdf(phi, 70, 30, 5, node_phi), solid_from_sdf(phi, 70, 30, 5))
+    assert np.array_equal(q_from_sdf(phi, 70, 30, 5, node_phi=node_phi), q_from_sdf(phi, 70, 30, 5))
+
+# test 7: the shared path also holds for a full 3D SDF (sphere)
+def test_node_phi_reuse_sphere():
+
+    phi = sdf_sphere(*center, radius)
+    node_phi = node_values(phi, grid_size, grid_size, grid_size)
+
+    assert np.array_equal(q_from_sdf(phi, grid_size, grid_size, grid_size, node_phi=node_phi), q_from_sdf(phi, grid_size, grid_size, grid_size))

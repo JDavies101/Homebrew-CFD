@@ -18,15 +18,25 @@ def case_hash(case_file):
 
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
-def create_run_folder(runs_directory, name):
+def new_run_folder_path(runs_directory, name):
     """
-    Make runs_directory/<date-time>_<name>; never reuses an existing folder.
+    The path a new run folder for this case would get now: runs_directory/<date-time>_<name>.
+
+    Returns the Path (not created).
+    """
+
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+
+    return Path(runs_directory) / f"{stamp}_{name}"
+
+def create_run_folder(runs_directory, name, folder=None):
+    """
+    Make the run folder (a given path, or a new dated one); never reuses an existing folder.
 
     Returns the folder Path.
     """
 
-    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    folder = Path(runs_directory) / f"{stamp}_{name}"
+    folder = Path(folder) if folder is not None else new_run_folder_path(runs_directory, name)
     folder.mkdir(parents=True, exist_ok=False)
 
     return folder

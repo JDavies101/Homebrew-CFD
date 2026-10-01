@@ -3,7 +3,7 @@
 import argparse
 import numpy as np
 from src.geometry.airfoil import naca_four_digit, place_section, extruded_section_sdf
-from src.geometry.sdf import solid_from_sdf, q_from_sdf
+from src.geometry.sdf import solid_from_sdf, q_from_sdf, node_values
 from src.post.plotting import plot_velocity_slice
 from src.post.statistics import block_statistics
 from src.run.case import Flow, Domain, Turbulence, Timing, Part, Case
@@ -40,7 +40,9 @@ def main():
     polygon_x, polygon_y = naca_four_digit(section)
     placed_x, placed_y = place_section(polygon_x, polygon_y, chord, angle_degrees, leading_edge_x, ground_plane_y + ride_height)
     phi = extruded_section_sdf(placed_x, placed_y)
-    wing = Part(name="wing", solid=solid_from_sdf(phi, nx, ny, nz), reference_area=reference_area, wall_fractions=q_from_sdf(phi, nx, ny, nz))
+    node_phi = node_values(phi, nx, ny, nz, extruded=True)
+    wing = Part(name="wing", solid=solid_from_sdf(phi, nx, ny, nz, node_phi), reference_area=reference_area,
+                wall_fractions=q_from_sdf(phi, nx, ny, nz, node_phi=node_phi))
 
     case = Case(name="wing_ground", tag=tag,
                 flow=Flow(free_stream_velocity=0.05, reynolds_number=options.reynolds, reference_length=chord),

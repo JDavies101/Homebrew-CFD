@@ -374,7 +374,7 @@ class MainWindow(QMainWindow):
         self.run_progress.setVisible(True)
         self.run_action.setEnabled(False)
         self.stop_action.setEnabled(True)
-        self.runs.start(self.path, self.path.parent / "runs")
+        self.runs.start(self.path, self.path.parent / "runs", self.case_file.name)
         self.statusBar().showMessage("starting solver...")
 
     def on_run_output(self, line):

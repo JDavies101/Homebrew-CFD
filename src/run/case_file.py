@@ -6,7 +6,7 @@ import numpy as np
 from src.geometry.airfoil import naca_four_digit, place_section, extruded_section_sdf
 from src.geometry.mesh import read_stl
 from src.geometry.mesh_distance import sdf_from_mesh, q_from_mesh
-from src.geometry.sdf import solid_from_sdf, q_from_sdf
+from src.geometry.sdf import solid_from_sdf, q_from_sdf, node_values
 from src.run.case import Flow, Domain, Turbulence, Timing, Part, Case, check_choice
 
 schema_version = 1 # bump when a field is renamed or removed; old files then need a migration
@@ -99,8 +99,9 @@ def build_part(spec, domain, backend):
         polygon_x, polygon_y = naca_four_digit(spec.section)
         placed_x, placed_y = place_section(polygon_x, polygon_y, spec.chord, spec.angle_degrees, spec.leading_edge[0], spec.leading_edge[1])
         phi = extruded_section_sdf(placed_x, placed_y)
-        solid = solid_from_sdf(phi, nx, ny, nz)
-        wall_fractions = q_from_sdf(phi, nx, ny, nz) if spec.wall == "bouzidi" else None
+        node_phi = node_values(phi, nx, ny, nz, extruded=True)
+        solid = solid_from_sdf(phi, nx, ny, nz, node_phi)
+        wall_fractions = q_from_sdf(phi, nx, ny, nz, node_phi=node_phi) if spec.wall == "bouzidi" else None
 
     return Part(name=spec.name, solid=solid, reference_area=spec.reference_area, wall_fractions=wall_fractions)
 

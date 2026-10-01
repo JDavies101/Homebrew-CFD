@@ -2,6 +2,7 @@
 import time
 process_start = time.perf_counter() # launch timing: the imports below count toward start-up
 import argparse
+import sys
 import numpy as np
 from src import __version__
 from src.post.statistics import block_statistics
@@ -25,6 +26,35 @@ def part_statistics(series):
 
     return statistics
 
+class Tee:
+    """
+    Write to several text streams at once (console, if any, and the run's solver.log), flushing every write.
+    """
+
+    def __init__(self, *streams):
+        """
+        Keep the streams that exist (a windowed .exe has no console: sys.stdout is None).
+        """
+
+        self.streams = [stream for stream in streams if stream is not None]
+
+    def write(self, text):
+        """
+        Write to every stream.
+        """
+
+        for stream in self.streams:
+            stream.write(text)
+            stream.flush()
+
+    def flush(self):
+        """
+        Flush every stream.
+        """
+
+        for stream in self.streams:
+            stream.flush()
+
 def main():
     """
     Load a case file, run it into a new run folder, write progress, results and the run record.
@@ -35,18 +65,25 @@ def main():
     parser.add_argument("--runs", default="runs")  # parent directory of run folders
     parser.add_argument("--backend", default="cuda", choices=["cuda", "cpu"])
     parser.add_argument("--dev-log", action="store_true")  # append the record to docs/run_log.csv instead of the run folder
+    parser.add_argument("--run-folder", default=None)  # exact folder to create (the app chooses it); default: a new dated folder under --runs
     options = parser.parse_args()
-    print(f"Imports {time.perf_counter() - process_start:.1f} s")
 
     # run folder: the case as it will run, then live progress from the start
     case_file = load_case_file(options.case_path)
-    folder = create_run_folder(options.runs, case_file.name)
+    folder = create_run_folder(options.runs, case_file.name, options.run_folder)
+
+    # everything printed from here on (and any traceback) also goes to the run's solver.log
+    log_file = open(folder / "solver.log", "w", encoding="utf-8", buffering=1)
+    sys.stdout = Tee(sys.stdout, log_file)
+    sys.stderr = Tee(sys.stderr, log_file)
+    print(f"Imports {time.perf_counter() - process_start:.1f} s")
+
     save_case_file(case_file, folder / "case.json")
     digest = case_hash(case_file)
     progress_path = folder / "progress.json"
     stop_path = folder / "STOP"
     write_json_atomic(progress_path, {"status": "building", "step": 0, "steps": 0})
-    print(f"Run folder: {folder}")
+    print(f"Run folder: {folder.resolve()}")
 
     live_path = folder / "coefficients_live.csv"
     live_path.write_text(",".join(f"{spec.name}_{axis}" for spec in case_file.geometry for axis in "xyz") + "\n")

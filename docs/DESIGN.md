@@ -105,13 +105,16 @@ homebrew-cfd/
 |   +-- lbm/            # 2D NumPy solver: lattice, moments, equilibrium, collision,
 |   |                   #   streaming, boundary conditions, advance (Phase 1 reference)
 |   +-- engine/         # 3D Taichi solver: lattice_d2q9, lattice_d3q19, Simulation3D (GPU/CPU) (Phase 2)
-|   +-- examples/       # runnable cases: cavity, cylinder, sphere
+|   +-- examples/       # validation cases: cavity, channel, cylinder, sphere, step, Ahmed, wing
+|   +-- run/            # Case description, generic runner, case files, run folders, CLI solve
 |   +-- post/           # plotting, VTK export, progress/health monitor
 |   +-- config/         # run configuration, environment check
 |   +-- geometry/       # solid masks (cylinder, sphere) and wall fractions;
-|   |                   #   STL import + voxelization later (Phase 4)
+|   |                   #   SDFs, NACA sections, STL import + mesh distance
 |   +-- turbulence/     # LES subgrid model, wall functions (Phase 3)
-+-- cases/              # validation + demo case definitions
++-- app/                # desktop application (PySide6 + PyVista)
++-- packaging/          # PyInstaller spec, Inno Setup installer, build script, icon
++-- cases/templates/    # drop-in case files shipped with the application
 +-- tests/              # pytest: Tier A unit + Tier B validation (marked slow)
 +-- requirements.txt
 ```
@@ -413,7 +416,7 @@ facing step, Re_tau=180 channel (U+ 18.5), Ahmed stability + nose gate.
 - Forced + regularized Guo correction to Pi - deferred (nothing regularized is forced yet).
 - Second-order channel turbulence (`u'_rms`) - minimal-box high; needs a full-size box.
 
-**Phase 4 - Automotive features. NEXT.** Turn the validated solver into a car-aero tool. Real
+**Phase 4 - Automotive features. LARGELY DONE (4.0-4.3 complete; 4.4 reached with the quasi-2D wing in ground effect; a 3D front wing or full car remains).** Turn the validated solver into a car-aero tool. Real
 geometry, real road boundary conditions, part-resolved forces. Same charter as Phase 3:
 relative comparisons and credible trends, not certification-grade absolute Cd. Staged:
 
@@ -577,6 +580,18 @@ property panels and a 3D viewport. Geometry is imported, not designed: STL first
 STEP / IGES through tessellation. The UI never runs the solver in-process: it writes a versioned case file
 and launches the solver as a separate process that writes to a run folder. Shipped as a Windows .exe with
 versioned releases (UI and engine versions recorded in every run). ParaView stays for heavy post.
+
+Progress (2026-10-01). MVP complete: M1 versioned JSON case files (`src/run/case_file.py`, geometry
+by reference: STL or NACA); M2 `python -m src.run` into run folders (atomic progress.json, STOP file,
+case hash, result.json, live coefficient samples, solver.log); M3 application window (setup tree,
+dataclass-driven property forms with live `Case.validate`, open / save / autosave, PyVista viewport
+with named and corner views, fit, orthographic); M4 run control (solver as a separate process, console,
+progress, live force monitors, clean stop and exit); M5 Windows build (PyInstaller onedir with the
+engine and Taichi as source, one executable with `--solve`, Inno Setup installer, icon). Gates: the
+wing template reproduces run 151 exactly from the command line (runs 165-166), from the application,
+and from the installed executable. Wing geometry set-up fell from 42 s to 6 s (phi evaluated once, on
+one xy-plane for extruded sections). Next: release pipeline, UI backlog, STL import in the UI,
+validation suite, sweeps.
 
 Product vs development (2026-10-01). Shipped: the engine (`src/`), the app, case templates (the current
 examples as drop-in cases), and a per-run record in each run folder (case, versions, backend, device,

@@ -10,3 +10,10 @@ pytest>=7.4          # tests
 #   py -3.12 -m venv .venv  &&  .venv\Scripts\activate  &&  pip install -r requirements.txt
 taichi>=1.7.0        # LBM kernels, CUDA backend on the RTX 3090
 
+
+# --- Phase 6 (desktop application and packaging) ---
+PySide6              # Qt user interface
+pyvista              # 3D viewport (VTK)
+pyvistaqt            # PyVista inside Qt
+pyqtgraph            # live force monitors
+pyinstaller          # Windows build (packaging/build.ps1); Inno Setup 7 installed separately

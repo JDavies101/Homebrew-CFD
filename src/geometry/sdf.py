@@ -31,27 +31,46 @@ def node_grid(nx, ny, nz):
                        np.arange(nz, dtype=np.float64),
                        indexing="ij")
 
-def solid_from_sdf(phi, nx, ny, nz):
+def node_values(phi, nx, ny, nz, extruded=False):
     """
-    Solid mask from the sign of phi at the nodes.
+    phi at every lattice node, evaluated once and shared by solid_from_sdf and q_from_sdf.
+    extruded=True for an SDF that ignores z: one xy-plane is evaluated and repeated along z (nz times cheaper).
+
+    Returns float64 (nx, ny, nz); a read-only broadcast view when extruded.
+    """
+
+    if extruded:
+        plane_x, plane_y = np.meshgrid(np.arange(nx, dtype=np.float64), np.arange(ny, dtype=np.float64), indexing="ij")
+        plane = phi(plane_x, plane_y, 0.0)
+
+        return np.broadcast_to(plane[:, :, None], (nx, ny, nz))
+
+    X, Y, Z = node_grid(nx, ny, nz)
+
+    return phi(X, Y, Z)
+
+def solid_from_sdf(phi, nx, ny, nz, node_phi=None):
+    """
+    Solid mask from the sign of phi at the nodes; node_phi (from node_values) skips re-evaluating phi.
 
     Returns an int32 mask (nx, ny, nz), 1 = solid.
     """
 
-    X, Y, Z = node_grid(nx, ny, nz)
+    if node_phi is None:
+        node_phi = node_values(phi, nx, ny, nz)
 
-    return (phi(X, Y, Z) < 0.0).astype(np.int32)
+    return (node_phi < 0.0).astype(np.int32)
 
-def q_from_sdf(phi, nx, ny, nz, iterations=40):
+def q_from_sdf(phi, nx, ny, nz, iterations=40, node_phi=None):
     """
     Bouzidi wall fraction q on every fluid-to-solid link, by bisection of phi along the link.
 
     Returns float32 q (19, nx, ny, nz), 0 on non-boundary links.
     """
 
-    X, Y, Z = node_grid(nx, ny, nz)
-    solid = phi(X, Y, Z) < 0.0
-    del X, Y, Z  # free the float64 coordinate grids before the direction loop
+    if node_phi is None:
+        node_phi = node_values(phi, nx, ny, nz)
+    solid = node_phi < 0.0
     q = np.zeros((d3q19.direction_count, nx, ny, nz), np.float32)
 
     for d in range(d3q19.direction_count):
