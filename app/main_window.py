@@ -401,7 +401,7 @@ class MainWindow(QMainWindow):
         steps = max(1, int(data.get("steps", 0)))
         self.run_progress.setMaximum(steps)
         self.run_progress.setValue(int(data.get("step", 0)))
-        message = f"{sentence_case(data.get('Status', ''))}  step {data.get('Step', 0):,} / {steps:,}"
+        message = f"{sentence_case(data.get('status', ''))}  step {data.get('step', 0):,} / {steps:,}"
         if "max_velocity" in data:
             message += f"  max |u| {data['max_velocity']:.3g}"
         self.statusBar().showMessage(message)
@@ -414,8 +414,7 @@ class MainWindow(QMainWindow):
         self.run_progress.setVisible(False)
         self.run_action.setEnabled(True)
         self.stop_action.setEnabled(False)
-        status = result.get("status", f"Solver exited with code {result['exit_code']} (see console)")
-        self.statusBar().showMessage(f"Run {status}", 10000)
+        status = result.get("status", f"solver exited with code {result['exit_code']} (see console)")        self.statusBar().showMessage(f"Run {status}", 10000)
         self.last_result = result
         self.refresh_summary()
 
