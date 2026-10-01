@@ -3,7 +3,7 @@ from pathlib import Path
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QFileDialog, QLabel, QMainWindow, QMessageBox, QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem,
-                               QVBoxLayout, QWidget, QToolBar, QDockWidget, QPlainTextEdit, QProgressBar)
+                               QVBoxLayout, QWidget, QDockWidget, QPlainTextEdit, QProgressBar, QMenu, QStyle)
 from src import __version__
 from src.run.case import Case, setting_choices, check_choice
 from src.run.case_file import load_case_file, save_case_file, geometry_choices
@@ -11,6 +11,7 @@ from app.property_form import PropertyForm
 from app.viewport import CaseViewport, named_views, corner_views
 from app.run_control import RunController
 from app.monitor_plot import MonitorPlot
+from app.ribbon import Ribbon
 
 template_directory = Path(__file__).resolve().parent.parent / "cases" / "templates"
 autosave_milliseconds = 60_000
@@ -87,7 +88,7 @@ class MainWindow(QMainWindow):
         self.run_progress.setVisible(False)
         self.statusBar().addPermanentWidget(self.run_progress)
 
-        self.build_menus()
+        self.build_ribbon()
 
         # autosave beside the case file, never over it
         self.autosave_timer = QTimer(self)
@@ -96,68 +97,79 @@ class MainWindow(QMainWindow):
         self.resize(1200, 760)
         self.update_title()
 
-    def build_menus(self):
+    def make_action(self, text, icon, shortcut, handler):
         """
-        File menu: new from each template, open, save, save as, quit.
+        A window-level action: its shortcut works whichever ribbon tab is showing.
+
+        Returns the action.
         """
 
-        file_menu = self.menuBar().addMenu("&File")
-        template_menu = file_menu.addMenu("New from template")
-        self.case_loading_actions = [template_menu.menuAction()]
+        action = QAction(text, self)
+        if icon is not None:
+            action.setIcon(icon)
+        if shortcut is not None:
+            action.setShortcut(shortcut)
+        if handler is not None:
+            action.triggered.connect(handler)
+        self.addAction(action)
+
+        return action
+
+    def build_ribbon(self):
+        """
+        Ribbon tabs Home (case files), View (camera) and Run (solver).
+        """
+
+        icon = self.style().standardIcon
+        self.ribbon = Ribbon()
+        self.setMenuWidget(self.ribbon)
+
+        # home: new from a template, open, save
+        template_menu = QMenu(self)
+        
         for template_path in sorted(template_directory.glob("*.json")):
             action = template_menu.addAction(template_path.stem)
             action.triggered.connect(lambda checked=False, template_path=template_path: self.open_path(template_path, as_template=True))
         
-        for label, shortcut, handler in (("&Open...", QKeySequence.Open, self.open_dialog), ("&Save", QKeySequence.Save, self.save),
-                                         ("Save &as...", QKeySequence.SaveAs, self.save_as), ("&Quit", QKeySequence.Quit, self.close)):
-            action = QAction(label, self)
-            action.setShortcut(shortcut)
-            action.triggered.connect(handler)
-            file_menu.addAction(action)
-            if handler == self.open_dialog:
-                self.case_loading_actions.append(action)
+        new_action = self.make_action("New", icon(QStyle.SP_FileIcon), None, None)
+        new_action.setMenu(template_menu)
+        open_action = self.make_action("Open", icon(QStyle.SP_DialogOpenButton), QKeySequence.Open, self.open_dialog)
+        save_action = self.make_action("Save", icon(QStyle.SP_DialogSaveButton), QKeySequence.Save, self.save)
+        save_as_action = self.make_action("Save as", icon(QStyle.SP_DialogSaveAllButton), QKeySequence.SaveAs, self.save_as)
+        self.make_action("Quit", None, QKeySequence.Quit, self.close)
+        self.case_loading_actions = [new_action, open_action]
+        self.ribbon.add_tab("Home").add_group("Case", (new_action, open_action, save_action, save_as_action))
 
-        # view: fit, projection, named views; the common ones also on a toolbar
-        view_menu = self.menuBar().addMenu("&View")
-        toolbar = QToolBar("View")
-        self.addToolBar(toolbar)
-        fit_action = QAction("Fit", self)
-        fit_action.setShortcut(QKeySequence("Home"))
-        fit_action.triggered.connect(self.viewport.fit)
-        orthographic_action = QAction("Orthographic", self)
+        # view: fit, projection, the common views as buttons, every view and corner in a menu
+        fit_action = self.make_action("Fit", icon(QStyle.SP_BrowserReload), QKeySequence("Home"), self.viewport.fit)
+        orthographic_action = self.make_action("Orthographic", icon(QStyle.SP_FileDialogContentsView), None, None)
         orthographic_action.setCheckable(True)
         orthographic_action.toggled.connect(self.viewport.set_orthographic)
-        for action in (fit_action, orthographic_action):
-            view_menu.addAction(action)
-            toolbar.addAction(action)
-        view_menu.addSeparator()
-        toolbar.addSeparator()
+        view_menu = QMenu(self)
+        common_views = []
         
         for name in named_views:
             action = view_menu.addAction(name)
             action.triggered.connect(lambda checked=False, name=name: self.viewport.set_view(name))
-            
             if name in ("Side (+z)", "Top (+y)", "Front (-x, from inlet)", "Isometric"):
-                toolbar.addAction(action)
+                common_views.append(action)
         
         corner_menu = view_menu.addMenu("Corners")
         
         for name in corner_views:
             corner_menu.addAction(name).triggered.connect(lambda checked=False, name=name: self.viewport.set_view(name))
+        
+        all_views_action = self.make_action("All views", icon(QStyle.SP_DesktopIcon), None, None)
+        all_views_action.setMenu(view_menu)
+        view_tab = self.ribbon.add_tab("View")
+        view_tab.add_group("Camera", (fit_action, orthographic_action))
+        view_tab.add_group("Views", (*common_views, all_views_action))
 
-        # run: start / stop, also on the toolbar
-        run_menu = self.menuBar().addMenu("&Run")
-        self.run_action = QAction("Run", self)
-        self.run_action.setShortcut(QKeySequence("F5"))
-        self.run_action.triggered.connect(self.start_run)
-        self.stop_action = QAction("Stop", self)
-        self.stop_action.setShortcut(QKeySequence("Shift+F5"))
+        # run: start / stop
+        self.run_action = self.make_action("Run", icon(QStyle.SP_MediaPlay), QKeySequence("F5"), self.start_run)
+        self.stop_action = self.make_action("Stop", icon(QStyle.SP_MediaStop), QKeySequence("Shift+F5"), self.runs.stop)
         self.stop_action.setEnabled(False)
-        self.stop_action.triggered.connect(self.runs.stop)
-        toolbar.addSeparator()
-        for action in (self.run_action, self.stop_action):
-            run_menu.addAction(action)
-            toolbar.addAction(action)
+        self.ribbon.add_tab("Run").add_group("Solver", (self.run_action, self.stop_action))
 
     def open_dialog(self):
         """

@@ -103,7 +103,6 @@ class CaseViewport:
 
         # domain box
         plotter.add_mesh(pyvista.Box(bounds=(0, nx, 0, ny, 0, nz)).outline(), color="white", line_width=1)
-        pyvista.Box(bounds=(-0.5, nx - 0.5, -0.5, ny - 0.5, -0.5, nz - 0.5)).outline()
 
         # relaxation layers, translucent
         layers = []
