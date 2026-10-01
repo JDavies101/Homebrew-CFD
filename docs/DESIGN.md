@@ -605,8 +605,12 @@ PyInstaller builds. v0.1.1 is a hygiene and polish release, no solver changes:
   the solver entry point), publishes SHA-256 checksums and build-provenance attestation; local builds are
   no longer released.
 - Dependencies: pin versions (requirements lock file), pip-audit in CI, Dependabot.
-- Code signing: compare SignPath (open-source programme), Certum open-source certificate and Azure
-  Trusted Signing on current terms and price; adopt one if affordable.
+- Code signing: deferred (decision 2026-10-01). Compared SignPath Foundation (free for OSI-licensed
+  projects, publisher shown as "SignPath Foundation", signs in GitHub Actions), Certum open-source
+  (about EUR 49 a year, my name, manual cloud signing) and Azure Artifact Signing ($9.99 a month,
+  individuals in the USA / Canada only). Checksums and build-provenance attestation cover integrity for
+  now; the release notes explain the SmartScreen prompt. Revisit (SignPath first) if non-technical users
+  arrive, false positives become a nuisance, or before v1.0.
 - UI backlog: summary shows Running during a run; inputs frozen while running (still navigable); Run /
   Stop on their own ribbon tab; Monitors on a resizable Results tab; warmup / averaging phase in the
   status line and as a marker on the plot; running-mean line; x-axis in flow-throughs; capitalized
