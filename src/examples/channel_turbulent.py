@@ -2,19 +2,16 @@
 # milestone: trip and *sustain* turbulence (U_c bounded near ~17.7 u_tau, RMS steady)
 # at fixed forcing, relaminarizing means running away to the laminar state -> diverges
 import numpy as np
-from src.engine.simulation3d import Simulation3D
-from src.geometry.step_body import step
 from src.post.plotting import plot_law_of_wall
-from src.post.progress import Progress
-from src.post.run_log import RunRecord
+from src.run.case import Flow, Domain, Turbulence, Timing, Case
+from src.run.runner import run_case
 from src.turbulence.wall_function import friction_velocity
 
 # flow in wall units
 friction_reynolds_number = 180  # Re_tau
 u_tau = 0.0045  # small -> U_c ~ 17.7 u_tau stays low Mach
 half_height = 64  # delta, cells; first node sits 0.5 off the wall -> y+ ~1.4
-viscosity = u_tau * half_height / friction_reynolds_number  # nu = 0.0016
-relaxation_time = 3 * viscosity + 0.5  # ~0.505, near 0.5 -> TRT mandatory, BGK would blow up
+viscosity = u_tau * half_height / friction_reynolds_number  # nu = 0.0016, tau ~0.505: near 0.5 -> TRT mandatory, BGK would blow up
 body_force_x = u_tau ** 2 / half_height  # tau_w = rho g delta -> u_tau = sqrt(g delta)
 centerline_velocity = 17.7 * u_tau  # U_c, turbulent centerline from the log law (~0.08)
 
@@ -32,7 +29,6 @@ noise_amplitude = 0.05 * centerline_velocity  # broadband
 rng = np.random.default_rng(0)  # reproducible initial condition across trip attempts
 
 # collision and turbulence model
-trt = 1
 collision_operator = "full"  # "reg" (collide_reg, needed near tau = 0.5) or "full" (collide_full, the Re_tau = 180 DNS)
 sgs = "wale"  # "wale" or "smag"
 smagorinsky_constant = 0.084 if sgs == "smag" else 0.0  # 0.084 = the old cs = 0.1 that over-damped this case
@@ -95,34 +91,28 @@ def main():
     Trip and sustain channel turbulence, average profiles, compare with the log law and MKM.
     """
 
-    sim = Simulation3D(nx, ny, nz, backend="cuda")
-    sim.solid.from_numpy(step(nx, ny, nz, 0, 0))  # step height 0 -> the two wall rows only
-
     velocity_x, velocity_y, velocity_z = initial_velocity()
-    sim.init_equilibrium(velocity_x, velocity_y, velocity_z)
+    case = Case(name="channel_turbulent", tag=f"{friction_reynolds_number}_{sgs}",
+                flow=Flow(free_stream_velocity=u_tau, reynolds_number=friction_reynolds_number, reference_length=half_height, body_force_x=body_force_x),
+                domain=Domain(nx=nx, ny=ny, nz=nz, x_boundary="periodic", relax_width_x=0, layer_kind="fused" if collision_operator == "reg" else "separate"),
+                turbulence=Turbulence(sgs="wale" if sgs == "wale" else "smagorinsky", wale_constant=wale_constant, smagorinsky_constant=smagorinsky_constant),
+                timing=Timing(steps_override=steps, warmup_override=warmup, sample_window="none", check_every=check_every),
+                collision="regularized" if collision_operator == "reg" else "trt", inlet="none", start="custom",
+                initial_velocity=np.stack([velocity_x, velocity_y, velocity_z]))
 
+    # plane-averaged mean and mean-square profiles
     mean_x_samples = []
     square_x_samples = []
     square_y_samples = []
     square_z_samples = []
-    run = RunRecord("channel_turbulent", sim, steps=steps, u_ref=centerline_velocity, nu=viscosity, tau=round(relaxation_time, 6), Re=friction_reynolds_number,
-                    geometry=f"delta={half_height} (Re_tau {friction_reynolds_number})", warmup=warmup, reference=18.3 if friction_reynolds_number == 180 else 20.8,
-                    collision="regularized" if collision_operator == "reg" else "TRT (collide_full)",
-                    sgs=f"smag cs={smagorinsky_constant}" if sgs == "smag" else f"wale cw={wale_constant}", wall_model="off",
-                    walls="halfway BB", boundaries="periodic x,z / no-slip y walls", forcing="body force gx")
-    progress = Progress(steps)
-    for time_step in range(steps):
-        sim.macroscopic()
-        if sgs == "wale":
-            sim.les_wale(wale_constant)
-        if collision_operator == "reg":
-            sim.collide_reg(relaxation_time, smagorinsky_constant, body_force_x)
-        else:
-            sim.collide_full(relaxation_time, smagorinsky_constant, body_force_x, trt)
-        sim.stream()
-        sim.bounce_back()
 
-        # plane-averaged mean and mean-square profiles
+    def sample_profiles(sim, time_step):
+        """
+        Append plane-averaged profiles every sample_every steps after warmup.
+
+        Returns False (never stops the run).
+        """
+
         if time_step >= warmup and time_step % sample_every == 0:
             sim.macroscopic()
             velocity = sim.u.to_numpy()
@@ -131,12 +121,13 @@ def main():
             square_y_samples.append((velocity[1] ** 2).mean(axis=(0, 2)))
             square_z_samples.append((velocity[2] ** 2).mean(axis=(0, 2)))
 
-        if time_step % check_every == 0:
-            sim.macroscopic()
-            progress.update(time_step, float(np.nanmax(np.abs(sim.u.to_numpy()))))
+        return False
 
-    progress.done()
-    run.stop()
+    result = run_case(case, after_step=sample_profiles, u_ref=centerline_velocity, reference=18.3 if friction_reynolds_number == 180 else 20.8,
+                      geometry=f"delta={half_height} (Re_tau {friction_reynolds_number})", walls="halfway BB",
+                      boundaries="periodic x,z / no-slip y walls")
+    sim = result.sim
+    run = result.run
 
     # refresh WALE on the final field
     sim.les_wale(wale_constant)

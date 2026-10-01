@@ -2,14 +2,12 @@
 # usage: python -m src.examples.cylinder [spin_ratio] [--velocity U] [--diameter D] [--reynolds Re]
 import argparse
 import numpy as np
-from src.engine.simulation3d import Simulation3D
 from src.geometry.cylinder_body import cylinder
-from src.geometry.sponge import relax_profile
 from src.geometry.wall_fraction import wall_fraction_cylinder
-from src.post.progress import Progress
-from src.post.run_log import RunRecord
 from src.post.vtk import write_field
 from src.post.statistics import dominant_frequency
+from src.run.case import Flow, Domain, Turbulence, Timing, Part, Case
+from src.run.runner import run_case
 
 # command-line options (defaults reproduce the reference case, run 71 at spin 1)
 parser = argparse.ArgumentParser()
@@ -47,17 +45,8 @@ def main():
     Run the cylinder, time-average Cd and Cl, get the Strouhal number from the lift spectrum.
     """
 
-    sim = Simulation3D(nx, ny, nz, backend="cuda", interp=True)
-    sim.solid.from_numpy(cylinder(nx, ny, nz, center_x, center_y, diameter / 2))
-    sim.set_wall_fractions(wall_fraction_cylinder(nx, ny, nz, center_x, center_y, diameter / 2))
-    fluid = sim.solid.to_numpy() == 0
-
-    # start in uniform flow
-    zero = np.zeros((nx, ny, nz), np.float32)
-    sim.init_equilibrium(np.full((nx, ny, nz), free_stream_velocity, np.float32), zero, zero)
-    sim.sigma.from_numpy(relax_profile(nx, nz, 24, 0, 0.1))  # x absorbing layers
-
     # rigid rotation on a band covering both sides of the surface
+    wall_velocity = None
     if spin_ratio != 0.0:
         X, Y = np.meshgrid(np.arange(nx, dtype=np.float64), np.arange(ny, dtype=np.float64), indexing="ij")
         offset_x = X - center_x
@@ -66,39 +55,22 @@ def main():
         wall_velocity = np.zeros((3, nx, ny, nz), np.float32)
         wall_velocity[0][band] = (-angular_velocity * offset_y[band])[:, None]
         wall_velocity[1][band] = (angular_velocity * offset_x[band])[:, None]
-        sim.uw.from_numpy(wall_velocity)
 
-    drag_coefficients = []
-    lift_force_history = []
-    run = RunRecord("cylinder", sim, steps=steps, u_ref=free_stream_velocity, nu=viscosity, tau=round(relaxation_time, 6), Re=reynolds_number,
-                    geometry=f"D={diameter}, alpha={spin_ratio}, U={free_stream_velocity:g}",
-                    boundaries="NEEM inlet / pressure outlet / free-slip y / periodic z", forcing="none",
-                    sponge="relax x 24, sigma 0.1")
-    progress = Progress(steps)
-    for time_step in range(steps):
-        sim.collide(relaxation_time)
-        sim.sponge_relax(free_stream_velocity)
-        sim.fc.copy_from(sim.f)  # snapshot post-collision before streaming
-        sim.stream()
-        sim.inlet_neem(free_stream_velocity)  # Guo non-equilibrium extrapolation
-        sim.outlet_pressure(1.0)
-        sim.free_slip_y()  # top/bottom free-slip
-        sim.bounce_back_interp()  # Bouzidi on the cylinder
+    body = Part(name="cylinder", solid=cylinder(nx, ny, nz, center_x, center_y, diameter / 2), reference_area=frontal_area,
+                wall_fractions=wall_fraction_cylinder(nx, ny, nz, center_x, center_y, diameter / 2), wall_velocity=wall_velocity)
+    case = Case(name="cylinder", tag=f"a{spin_ratio:g}_U{free_stream_velocity:g}",
+                flow=Flow(free_stream_velocity=free_stream_velocity, reynolds_number=reynolds_number, reference_length=diameter),
+                domain=Domain(nx=nx, ny=ny, nz=nz, y_boundary="free_slip", relax_width_x=24, relax_sigma=0.1, layer_kind="separate"),
+                turbulence=Turbulence(sgs="none", smagorinsky_constant=0.0),
+                timing=Timing(steps_override=steps, warmup_override=warmup, sample_every=sample_every, check_every=check_every),
+                parts=[body], collision="bgk", inlet="neem", start="uniform")
+    result = run_case(case, geometry=f"D={diameter}, alpha={spin_ratio}, U={free_stream_velocity:g}",
+                      walls="Bouzidi cylinder", boundaries="NEEM inlet / pressure outlet / free-slip y / periodic z")
+    sim = result.sim
+    run = result.run
+    drag_coefficients = result.force_coefficients[:, 0, 0]
+    lift_force_history = result.forces[:, 0, 1]
 
-        # drag only on sample steps
-        if time_step >= warmup and time_step % sample_every == 0:
-            sim.drag_interp()
-            force = sim.force.to_numpy()
-            drag_coefficients.append(force[0] / (0.5 * 1.0 * free_stream_velocity * free_stream_velocity * frontal_area))
-            lift_force_history.append(force[1])
-
-        if time_step % check_every == 0:
-            sim.macroscopic()
-            progress.update(time_step, float(np.nanmax(np.abs(sim.u.to_numpy()[:, fluid]))))  # fluid cells only
-
-    progress.done()  # finish the bar (newline) before any other output
-    run.stop()
-    sim.macroscopic()
     write_field(f"results/cylinder_a{spin_ratio:g}", sim.rho.to_numpy(), sim.u.to_numpy())
     velocity = sim.u.to_numpy()
     effective_velocity = float(velocity[0, center_x, 20, nz // 2])  # same x as the cylinder, near the wall, out of the wake

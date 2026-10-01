@@ -2,15 +2,13 @@
 # usage: python -m src.examples.sphere [analytic|stl] [--diameter D] [--width W] [--velocity U] [--reynolds Re]
 import argparse
 import numpy as np
-from src.engine.simulation3d import Simulation3D
 from src.geometry.mesh import icosphere, write_stl, read_stl
 from src.geometry.mesh_distance import sdf_from_mesh, q_from_mesh
 from src.geometry.sphere_body import sphere
-from src.geometry.sponge import relax_profile
 from src.geometry.wall_fraction import wall_fraction_sphere
-from src.post.progress import Progress
-from src.post.run_log import RunRecord
 from src.post.vtk import write_field
+from src.run.case import Flow, Domain, Turbulence, Timing, Part, Case
+from src.run.runner import run_case
 
 # command-line options (defaults reproduce the reference case, run 66)
 parser = argparse.ArgumentParser()
@@ -34,9 +32,7 @@ frontal_area = np.pi * (diameter / 2) ** 2
 
 # flow
 free_stream_velocity = options.velocity
-reynolds_number = options.reynolds
-viscosity = free_stream_velocity * diameter / reynolds_number
-relaxation_time = 3 * viscosity + 0.5
+reynolds_number = options.reynolds  # nu = U D / Re and tau follow in Flow
 
 # timing: 100 convective times D / U (20000 steps at the defaults), drift over the last quarter
 steps = round(100 * diameter / free_stream_velocity)
@@ -47,8 +43,6 @@ def main():
     """
     Run the sphere to steady state and log Cd against Schiller-Naumann.
     """
-
-    sim = Simulation3D(nx, ny, nz, backend="cuda", interp=True)
 
     # geometry: solid mask + Bouzidi wall fractions
     analytic_solid = sphere(nx, ny, nz, center_x, center_y, center_z, diameter / 2)
@@ -62,54 +56,43 @@ def main():
     else:
         solid = analytic_solid
         wall_fractions = wall_fraction_sphere(nx, ny, nz, center_x, center_y, center_z, diameter / 2)
-    sim.solid.from_numpy(solid)
-    sim.set_wall_fractions(wall_fractions)
 
-    # start in uniform flow at U
-    zero = np.zeros((nx, ny, nz), np.float32)
-    sim.init_equilibrium(np.full((nx, ny, nz), free_stream_velocity, np.float32), zero, zero)
-    sim.sigma.from_numpy(relax_profile(nx, nz, 24, 0, 0.1))  # x absorbing layers only
+    # start in uniform flow at U, x absorbing layers only
+    case = Case(name="sphere", tag=geometry_source,
+                flow=Flow(free_stream_velocity=free_stream_velocity, reynolds_number=reynolds_number, reference_length=diameter),
+                domain=Domain(nx=nx, ny=ny, nz=nz, y_boundary="free_slip", side_walls="free_slip", relax_width_x=24, relax_sigma=0.1,
+                              layer_kind="separate"),
+                turbulence=Turbulence(sgs="none", smagorinsky_constant=0.0),
+                timing=Timing(steps_override=steps, warmup_override=0, sample_window="none", check_every=check_every),
+                parts=[Part(name="sphere", solid=solid, reference_area=frontal_area, wall_fractions=wall_fractions)],
+                collision="trt", inlet="neem_open", start="uniform")
 
-    run = RunRecord("sphere", sim, steps=steps, u_ref=free_stream_velocity, nu=viscosity, tau=round(relaxation_time, 6), Re=reynolds_number,
-                    geometry=f"D={diameter}, W={options.width:g}D, {geometry_source}",
-                    boundaries="regularized NEEM inlet / pressure outlet / free-slip y,z", forcing="none")
-    progress = Progress(steps)
-    for time_step in range(steps):
-        sim.collide_trt(relaxation_time)
-        sim.sponge_relax(free_stream_velocity)  # absorb acoustic waves at inlet/outlet (free-stream target)
-        sim.fc.copy_from(sim.f)  # snapshot post-collision
-        sim.stream()
-        sim.inlet_neem_open(free_stream_velocity)  # velocity inlet: u = U imposed, rho from the interior, regularized f_neq
-        sim.outlet_pressure(1.0)  # pins the mean density; the zero-gradient outlet let it drift to 1.08
-        sim.free_slip_y()
-        sim.free_slip_z()
-        sim.bounce_back_interp()
+    # drag at the start of the drift window
+    force_x_before = 0.0
 
-        # drag only when it is read
+    def read_force_before(sim, time_step):
+        """
+        Read the drag once, drift_window steps before the end.
+
+        Returns False (never stops the run).
+        """
+
+        nonlocal force_x_before
         if time_step == steps - drift_window:
             sim.drag_interp()
             force_x_before = float(sim.force.to_numpy()[0])
 
-        if time_step % check_every == 0:
-            max_population = sim.f_absmax()  # cheap GPU reduction, no full copy
-            # NaN / inf: pull f once to localize
-            if not np.isfinite(max_population) or max_population > 1e29:
-                progress.done()
-                populations = sim.f.to_numpy()
-                bad_cells = np.argwhere(~np.isfinite(populations).all(axis=0))
-                print(f"blow-up at step {time_step}: {len(bad_cells)} cells  "
-                      f"x[{bad_cells[:, 0].min()}-{bad_cells[:, 0].max()}] "
-                      f"y[{bad_cells[:, 1].min()}-{bad_cells[:, 1].max()}] "
-                      f"z[{bad_cells[:, 2].min()}-{bad_cells[:, 2].max()}]")
-                run.finish(metric="blow-up step", value=time_step, status="bad", reason="NaN/inf in f")
-                return
-            progress.update(time_step, float(max_population))
+        return False
 
-    progress.done()
-    run.stop()
+    result = run_case(case, after_step=read_force_before, geometry=f"D={diameter}, W={options.width:g}D, {geometry_source}",
+                      walls="Bouzidi sphere", boundaries="regularized NEEM inlet / pressure outlet / free-slip y,z")
+    sim = result.sim
+    run = result.run
+    if result.blow_up_step >= 0:
+        run.finish(metric="blow-up step", value=result.blow_up_step, status="bad", reason="NaN/inf in f")
+        return
 
     # steady flow -> single force reading
-    sim.macroscopic()
     write_field(f"results/sphere_{geometry_source}", sim.rho.to_numpy(), sim.u.to_numpy())
 
     velocity = sim.u.to_numpy()

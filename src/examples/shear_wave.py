@@ -2,8 +2,8 @@
 # usage: python -m src.examples.shear_wave [bgk|trt|reg] [relaxation_time] [ny] [noise_level]
 import sys
 import numpy as np
-from src.engine.simulation3d import Simulation3D
-from src.post.run_log import RunRecord
+from src.run.case import Flow, Domain, Turbulence, Timing, Case
+from src.run.runner import run_case
 
 # command-line options
 collision_model = sys.argv[1] if len(sys.argv) > 1 else "bgk"  # "bgk", "trt" or "reg"
@@ -42,13 +42,6 @@ def main():
     Decay the shear wave, fit the viscosity, report accuracy and stability, log the run.
     """
 
-    sim = Simulation3D(nx, ny, nz, backend="cuda")
-    collide = {
-        "bgk": lambda: sim.collide(relaxation_time),
-        "trt": lambda: sim.collide_trt(relaxation_time),
-        "reg": lambda: sim.collide_reg(relaxation_time, 0.0, 0.0),
-    }[collision_model]
-
     # initial field: the wave plus a small broadband seed for the unstable (ghost) modes
     rng = np.random.default_rng(0)
     y = np.arange(ny)
@@ -57,33 +50,62 @@ def main():
     velocity_x = (wave_amplitude * sine[None, :, None] + seed * rng.standard_normal((nx, ny, nz))).astype(np.float32)
     velocity_y = (seed * rng.standard_normal((nx, ny, nz))).astype(np.float32)
     velocity_z = (seed * rng.standard_normal((nx, ny, nz))).astype(np.float32)
-    sim.init_equilibrium(velocity_x, velocity_y, velocity_z)
-    sim.macroscopic()
-    start_amplitude, start_residual = mode_and_residual(sim.u.to_numpy(), sine)
 
-    run = RunRecord("shear_wave", sim, steps=steps, u_ref=wave_amplitude, nu=viscosity, tau=relaxation_time,
-                    geometry=f"{nx}x{ny}x{nz} periodic, k=2pi/{ny}, noise {noise_level:g}", collision=collision_model,
-                    sgs="none", walls="none", boundaries="fully periodic", forcing="none")
+    collision = {"bgk": "bgk", "trt": "trt", "reg": "regularized"}[collision_model]
+    case = Case(name="shear_wave", tag=f"{collision_model}_{relaxation_time:g}",
+                flow=Flow(free_stream_velocity=wave_amplitude, relaxation_time_override=relaxation_time),
+                domain=Domain(nx=nx, ny=ny, nz=nz, x_boundary="periodic", y_boundary="periodic", relax_width_x=0,
+                              layer_kind="fused" if collision == "regularized" else "separate"),
+                turbulence=Turbulence(sgs="none", smagorinsky_constant=0.0),
+                timing=Timing(steps_override=steps, warmup_override=0, sample_window="none"),
+                collision=collision, inlet="none", start="custom", initial_velocity=np.stack([velocity_x, velocity_y, velocity_z]),
+                allow_below_floor=True)  # the stability map probes tau down to 0.5 on purpose
 
+    # decay samples; step n = time_step + 1 is the state after n collide + stream steps
     sample_times = [0]
-    amplitudes = [start_amplitude]
-    residual = start_residual
+    amplitudes = []
+    start_residual = 0.0
+    residual = 0.0
     blow_up_step = -1
-    for time_step in range(1, steps + 1):
-        collide()
-        sim.stream()
 
-        if time_step % sample_every == 0:
-            max_population = sim.f_absmax()
-            if not np.isfinite(max_population) or max_population > 10.0:
-                blow_up_step = time_step
-                break
-            sim.macroscopic()
-            amplitude, residual = mode_and_residual(sim.u.to_numpy(), sine)
-            sample_times.append(time_step)
-            amplitudes.append(amplitude)
+    def sample_start(sim):
+        """
+        Mode amplitude and residual of the initial field.
+        """
 
-    run.stop()
+        nonlocal start_residual, residual
+        sim.macroscopic()
+        start_amplitude, start_residual = mode_and_residual(sim.u.to_numpy(), sine)
+        amplitudes.append(start_amplitude)
+        residual = start_residual
+
+    def sample_decay(sim, time_step):
+        """
+        Every sample_every steps: stop on blow-up (|f| > 10), else record the mode amplitude.
+
+        Returns True to stop the run.
+        """
+
+        nonlocal residual, blow_up_step
+        step_count = time_step + 1
+        if step_count % sample_every != 0:
+            return False
+        max_population = sim.f_absmax()
+        if not np.isfinite(max_population) or max_population > 10.0:
+            blow_up_step = step_count
+            return True
+        sim.macroscopic()
+        amplitude, residual = mode_and_residual(sim.u.to_numpy(), sine)
+        sample_times.append(step_count)
+        amplitudes.append(amplitude)
+
+        return False
+
+    result = run_case(case, before_loop=sample_start, after_step=sample_decay, tau=relaxation_time, collision=collision_model,
+                      geometry=f"{nx}x{ny}x{nz} periodic, k=2pi/{ny}, noise {noise_level:g}", walls="none", boundaries="fully periodic")
+    run = result.run
+    if result.blow_up_step >= 0:
+        blow_up_step = result.blow_up_step + 1
 
     if blow_up_step > 0:
         print(f"{collision_model} tau={relaxation_time}: blow-up at step {blow_up_step}")
@@ -96,7 +118,7 @@ def main():
     measured_viscosity = -slope / (wavenumber * wavenumber)
     viscosity_error = 100.0 * (measured_viscosity / viscosity - 1.0)
     stable = residual <= start_residual  # non-wave content decayed, not grew
-    decay_fraction = amplitudes[-1] / start_amplitude
+    decay_fraction = amplitudes[-1] / amplitudes[0]
 
     print(f"{collision_model} tau={relaxation_time}: nu {measured_viscosity:.4e} vs {viscosity:.4e} ({viscosity_error:+.2f}%), "
           f"A/A0 {decay_fraction:.3f}, residual {start_residual:.2e} -> {residual:.2e} ({'stable' if stable else 'GROWING'})")

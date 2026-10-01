@@ -1,12 +1,9 @@
 # forced plane-channel golden oracle: laminar Poiseuille, peak = g delta^2 / (2 nu)
 import numpy as np
-from src.engine.simulation3d import Simulation3D
-from src.engine import lattice_d3q19 as d3q19
-from src.geometry.step_body import step
-from src.post.progress import Progress
-from src.post.run_log import RunRecord
+from src.run.case import Flow, Domain, Turbulence, Timing, Case
+from src.run.runner import run_case
 
-# geometry: step with height 0 gives the two no-slip wall rows only
+# geometry: the two no-slip wall rows (y = 0, ny - 1), periodic x and z
 nx = 8
 ny = 66
 nz = 8
@@ -47,26 +44,17 @@ def main():
     Run the forced channel and compare the peak with the analytic Poiseuille value.
     """
 
-    sim = Simulation3D(nx, ny, nz, backend="cuda")
-    sim.solid.from_numpy(step(nx, ny, nz, 0, 0))
-    sim.f.from_numpy(np.tile(d3q19.lattice_weights[:, None, None, None], (1, nx, ny, nz)).astype(np.float32))
+    # at rest (f = w), driven by the body force
+    case = Case(name="channel_laminar", tag="",
+                flow=Flow(free_stream_velocity=centerline_velocity, relaxation_time_override=relaxation_time, body_force_x=body_force_x),
+                domain=Domain(nx=nx, ny=ny, nz=nz, x_boundary="periodic", relax_width_x=0, layer_kind="separate"),
+                turbulence=Turbulence(sgs="none", smagorinsky_constant=0.0),
+                timing=Timing(steps_override=steps, warmup_override=0, sample_window="none", check_every=check_every),
+                collision="trt" if trt else "bgk", inlet="none", start="rest_ramp")
+    result = run_case(case, geometry=f"delta={half_height}", walls="halfway BB", boundaries="periodic x,z / no-slip y walls")
+    sim = result.sim
+    run = result.run
 
-    run = RunRecord("channel_laminar", sim, steps=steps, tau=round(relaxation_time, 6),
-                    geometry=f"delta={half_height}", collision="TRT" if trt else "BGK", sgs="none",
-                    walls="halfway BB", boundaries="periodic x,z / no-slip y walls", forcing="body force gx")
-    progress = Progress(steps)
-    for time_step in range(steps):
-        sim.collide_full(relaxation_time, 0.0, body_force_x, trt)
-        sim.stream()
-        sim.bounce_back()  # the two wall rows, no-slip
-
-        if time_step % check_every == 0:
-            sim.macroscopic()
-            progress.update(time_step, float(np.nanmax(np.abs(sim.u.to_numpy()))))
-
-    progress.done()
-    run.stop()
-    sim.macroscopic()
     profile = sim.u.to_numpy()[0].mean(axis=(0, 2))  # u_x averaged over x, z -> (ny,)
     r_squared, fitted_half_height, peak = fit_parabola(profile)
     analytic_peak = body_force_x * half_height ** 2 / (2 * viscosity)

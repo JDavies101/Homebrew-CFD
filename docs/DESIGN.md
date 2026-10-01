@@ -762,7 +762,7 @@ descriptor tests (weights sum to 1, opposites reverse, isotropy moments).
 - Real F1 geometry source and its licensing (needed by Phase 4).
 - Cylinder Cd calibration: blockage, resolution, tau, MEM factor (Phase 2, in progress).
 
-- Generic runner (2026-09-30): every example is ported to one `Case` + `run_case` so runs compare
+- Generic runner (done 2026-10-01, runs 151-164): every example is ported to one `Case` + `run_case` so runs compare
   like for like; each port must reproduce its logged reference run exactly. `Case` carries `lattice`
   and `dimensions` from the start so the case format survives new stencils. Order: runner and ports,
   then the Phase 6 app, then D3Q15/D3Q27 and the 2D engine.

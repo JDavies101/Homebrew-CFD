@@ -1,9 +1,8 @@
 # backward-facing step (Armaly): reattachment length x_r/S at Re=100 (reference ~3)
 import numpy as np
-from src.engine.simulation3d import Simulation3D
 from src.geometry.step_body import step
-from src.post.progress import Progress
-from src.post.run_log import RunRecord
+from src.run.case import Flow, Domain, Turbulence, Timing, Part, Case
+from src.run.runner import run_case
 
 # geometry
 step_height = 30  # S
@@ -17,7 +16,6 @@ inlet_height = (ny - 2) - step_height  # h, inlet channel height
 inlet_velocity = 0.1  # U
 reynolds_number = 100
 viscosity = inlet_velocity * (2 * inlet_height) / reynolds_number  # Armaly: Re on hydraulic diameter 2h
-relaxation_time = 3 * viscosity + 0.5
 
 # timing
 steps = 60000
@@ -53,32 +51,18 @@ def main():
     Run the step to steady state and log x_r/S.
     """
 
-    sim = Simulation3D(nx, ny, nz, backend="cuda")
-    solid = step(nx, ny, nz, x_step, step_height)
-    sim.solid.from_numpy(solid)
-    fluid = solid == 0
-    zero = np.zeros((nx, ny, nz), np.float32)
-    sim.init_equilibrium(zero, zero, zero)  # at rest; the inlet ramps up
-
-    run = RunRecord("step", sim, steps=steps, u_ref=inlet_velocity, nu=viscosity, tau=round(relaxation_time, 6), Re=reynolds_number,
-                    geometry=f"S={step_height} ER~1.94", collision="TRT", sgs="none", walls="staircase BB",
-                    boundaries="NEEM-open inlet (ramped) / pressure outlet / no-slip walls / periodic z", forcing="none")
-    progress = Progress(steps)
-    for time_step in range(steps):
-        sim.collide_trt(relaxation_time)
-        sim.stream()
-        ramp_fraction = min(time_step / ramp, 1.0)
-        sim.inlet_neem_open(inlet_velocity * 0.5 * (1.0 - np.cos(np.pi * ramp_fraction)))
-        sim.outlet_pressure(1.0)  # pins the mean density (zero-gradient outlet let it drift)
-        sim.bounce_back()  # walls + step, all no-slip
-
-        if time_step % check_every == 0:
-            sim.macroscopic()
-            progress.update(time_step, float(np.nanmax(np.abs(sim.u.to_numpy()[:, fluid]))))  # fluid cells only
-
-    progress.done()
-    run.stop()
-    sim.macroscopic()
+    # step block and wall rows as one staircase part, at rest; the inlet ramps up
+    case = Case(name="step", tag="",
+                flow=Flow(free_stream_velocity=inlet_velocity, reynolds_number=reynolds_number, reference_length=2 * inlet_height),
+                domain=Domain(nx=nx, ny=ny, nz=nz, relax_width_x=0, layer_kind="separate"),
+                turbulence=Turbulence(sgs="none", smagorinsky_constant=0.0),
+                timing=Timing(steps_override=steps, warmup_override=0, ramp_override=ramp, sample_window="none", check_every=check_every),
+                parts=[Part(name="step", solid=step(nx, ny, nz, x_step, step_height), reference_area=1.0)],
+                collision="trt", inlet="neem_open", start="rest_ramp")
+    result = run_case(case, geometry=f"S={step_height} ER~1.94", walls="staircase BB",
+                      boundaries="NEEM-open inlet (ramped) / pressure outlet / no-slip walls / periodic z")
+    sim = result.sim
+    run = result.run
 
     # reattachment on the first fluid row downstream of the step
     floor_velocity = sim.u.to_numpy()[0, x_step:, 1, nz // 2]

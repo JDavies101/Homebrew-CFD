@@ -136,3 +136,18 @@ def test_validate_wall_fraction_shape():
 
     with pytest.raises(ValueError, match="wall fractions"):
         case.validate()
+# test 14: a ramp given in steps overrides the flow-through ramp
+def test_ramp_override():
+
+    case = small_case(timing=Timing(ramp_override=8000))
+
+    assert case.ramp_steps() == 8000
+    assert small_case().ramp_steps() == round(8 / 0.05)
+
+# test 15: z layers without the fused regularized collision are rejected
+def test_validate_z_layers_need_fused():
+
+    case = small_case(collision="trt", domain=Domain(nx=8, ny=4, nz=2, relax_width_z=2, layer_kind="separate"))
+
+    with pytest.raises(ValueError, match="z layers exist only fused"):
+        case.validate()

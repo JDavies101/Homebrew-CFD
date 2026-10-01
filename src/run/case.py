@@ -94,9 +94,10 @@ class Timing:
     total_flow_throughs: float = 10.0
     steps_override: int | None = None
     warmup_override: int | None = None
+    ramp_override: int | None = None
     sample_every: int = 25
     check_every: int | None = None # progress readout interval, None -> steps // 300
-    sample_window: str = "series" # "series" (every sample_every after warmup) or "end" (last step only)
+    sample_window: str = "series" # "series" (part forces every sample_every after warmup) or "none" (the example samples)
 
 @dataclass
 class Part:
@@ -166,6 +167,9 @@ class Case:
         Returns the cosine inlet ramp length in steps.
         """
 
+        if self.timing.ramp_override is not None:
+            return self.timing.ramp_override
+
         return round(self.flow_through_steps() * self.timing.ramp_flow_throughs)
 
     def validate(self):
@@ -185,7 +189,7 @@ class Case:
         check_choice("side_walls", self.domain.side_walls, ("periodic", "free_slip"))
         check_choice("layer_kind", self.domain.layer_kind, ("fused", "separate"))
         check_choice("sgs", self.turbulence.sgs, ("none", "wale", "smagorinsky"))
-        check_choice("sample_window", self.timing.sample_window, ("series", "end"))
+        check_choice("sample_window", self.timing.sample_window, ("series", "none"))
 
         # physics limits
         if self.flow.relaxation_time < minimum_relaxation_time and not self.allow_below_floor:
@@ -198,6 +202,8 @@ class Case:
             raise ValueError("start = 'custom' needs initial_velocity, and initial_velocity needs start = 'custom'")
         if self.domain.layer_kind == "fused" and self.collision != "regularized":
             raise ValueError("fused layers live in collide_reg: use layer_kind = 'separate' for bgk / trt")
+        if self.domain.relax_width_z > 0 and self.domain.layer_kind != "fused":
+            raise ValueError("z layers exist only fused in collide_reg")
         if self.domain.lid_velocity != 0.0:
             raise ValueError("lid_velocity is reserved for the 2D engine port")
 
