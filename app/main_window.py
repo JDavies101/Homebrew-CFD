@@ -414,7 +414,8 @@ class MainWindow(QMainWindow):
         self.run_progress.setVisible(False)
         self.run_action.setEnabled(True)
         self.stop_action.setEnabled(False)
-        status = result.get("status", f"solver exited with code {result['exit_code']} (see console)")        self.statusBar().showMessage(f"Run {status}", 10000)
+        status = result.get("status", f"solver exited with code {result['exit_code']} (see console)")        
+        self.statusBar().showMessage(f"Run {status}", 10000)
         self.last_result = result
         self.refresh_summary()
 
