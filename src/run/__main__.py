@@ -104,7 +104,11 @@ def main():
                 for sample in force_coefficients[samples_written:]:
                     live_file.write(",".join(f"{value:.7g}" for part_row in sample for value in part_row) + "\n")
             samples_written = len(force_coefficients)
-        write_json_atomic(progress_path, {"status": "running", "step": time_step + 1, "steps": steps, "max_velocity": max_velocity})
+
+        phase = "warmup" if time_step < case.warmup_steps() else "averaging"
+        write_json_atomic(progress_path, {"status": phase, "step": time_step + 1, "steps": steps, "max_velocity": max_velocity,
+                                          "warmup": case.warmup_steps(), "flow_through_steps": case.flow_through_steps(),
+                                          "sample_every": case.timing.sample_every})
 
         return stop_path.exists()
 
