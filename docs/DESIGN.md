@@ -598,6 +598,9 @@ on 1 of about 70 engines (Arctic Wolf, generic machine-learning verdict), a know
 PyInstaller builds. v0.1.1 is a hygiene and polish release, no solver changes:
 - Build: `upx=False` in the spec (EXE and COLLECT); evaluate a PyInstaller bootloader built from source;
   re-scan on VirusTotal before publishing; report the v0.1.0 false positive to Arctic Wolf.
+- Desktop icon wrong in v0.1.0: check the icon embedded in HomebrewCFD.exe (file Properties) versus the
+  shortcut; ship icon.ico in the install folder and point the Inno Setup shortcuts at it (IconFilename);
+  rule out the Windows icon cache before changing the build.
 - Release pipeline: GitHub Actions builds the installer on a tag push (windows runner, CPU smoke test of
   the solver entry point), publishes SHA-256 checksums and build-provenance attestation; local builds are
   no longer released.
