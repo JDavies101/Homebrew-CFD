@@ -2,7 +2,7 @@
 numpy>=1.24
 matplotlib>=3.7      # 2D field/profile visualization
 pyevtk>=1.6.0        # VTK export for ParaView
-pyyaml>=6.0          # run configuration files
+pyyaml>=6.0.3          # run configuration files
 pytest>=7.4          # tests
 
 # --- Phase 2+ (3D, GPU) ---
