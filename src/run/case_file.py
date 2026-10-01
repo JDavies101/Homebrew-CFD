@@ -11,6 +11,8 @@ from src.run.case import Flow, Domain, Turbulence, Timing, Part, Case, check_cho
 
 schema_version = 1 # bump when a field is renamed or removed; old files then need a migration
 
+geometry_choices = {"kind": ("stl", "naca"), "wall": ("bouzidi", "staircase")}
+
 @dataclass
 class GeometrySpec:
     """
@@ -82,8 +84,8 @@ def build_part(spec, domain, backend):
     Returns a Part.
     """
 
-    check_choice("geometry kind", spec.kind, ("stl", "naca"))
-    check_choice("geometry wall", spec.wall, ("bouzidi", "staircase"))
+    check_choice("geometry kind", spec.kind, geometry_choices["kind"])
+    check_choice("geometry wall", spec.wall, geometry_choices["wall"])
     nx = domain.nx
     ny = domain.ny
     nz = domain.nz

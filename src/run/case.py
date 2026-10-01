@@ -4,6 +4,21 @@ import numpy as np
 
 minimum_relaxation_time = 0.501 # regularized floor without LES (DESIGN 7a, E2)
 
+# allowed values of every string setting: Case.validate checks them and the app builds its drop-downs from them
+setting_choices = {
+    "collision": ("bgk", "trt", "regularized"),
+    "inlet": ("neem_open", "neem", "none"),
+    "start": ("rest_ramp", "uniform", "custom"),
+    "x_boundary": ("inflow", "periodic"),
+    "y_boundary": ("walls", "free_slip", "periodic"),
+    "floor": ("static", "moving"),
+    "ceiling": ("static", "moving"),
+    "side_walls": ("periodic", "free_slip"),
+    "layer_kind": ("fused", "separate"),
+    "sgs": ("none", "wale", "smagorinsky"),
+    "sample_window": ("series", "none"),
+}
+
 def check_choice(name, value, choices):
     """
     Raise if a string setting is not one of its allowed values.
@@ -179,17 +194,17 @@ class Case:
 
         check_choice("lattice", self.lattice, ("D3Q19",))
         check_choice("dimensions", self.dimensions, (3,))
-        check_choice("collision", self.collision, ("bgk", "trt", "regularized"))
-        check_choice("inlet", self.inlet, ("neem_open", "neem", "none"))
-        check_choice("start", self.start, ("rest_ramp", "uniform", "custom"))
-        check_choice("x_boundary", self.domain.x_boundary, ("inflow", "periodic"))
-        check_choice("y_boundary", self.domain.y_boundary, ("walls", "free_slip", "periodic"))
-        check_choice("floor", self.domain.floor, ("static", "moving"))
-        check_choice("ceiling", self.domain.ceiling, ("static", "moving"))
-        check_choice("side_walls", self.domain.side_walls, ("periodic", "free_slip"))
-        check_choice("layer_kind", self.domain.layer_kind, ("fused", "separate"))
-        check_choice("sgs", self.turbulence.sgs, ("none", "wale", "smagorinsky"))
-        check_choice("sample_window", self.timing.sample_window, ("series", "none"))
+        check_choice("collision", self.collision, setting_choices["collision"])
+        check_choice("inlet", self.inlet, setting_choices["inlet"])
+        check_choice("start", self.start, setting_choices["start"])
+        check_choice("x_boundary", self.domain.x_boundary, setting_choices["x_boundary"])
+        check_choice("y_boundary", self.domain.y_boundary, setting_choices["y_boundary"])
+        check_choice("floor", self.domain.floor, setting_choices["floor"])
+        check_choice("ceiling", self.domain.ceiling, setting_choices["ceiling"])
+        check_choice("side_walls", self.domain.side_walls, setting_choices["side_walls"])
+        check_choice("layer_kind", self.domain.layer_kind, setting_choices["layer_kind"])
+        check_choice("sgs", self.turbulence.sgs, setting_choices["sgs"])
+        check_choice("sample_window", self.timing.sample_window, setting_choices["sample_window"])
 
         # physics limits
         if self.flow.relaxation_time < minimum_relaxation_time and not self.allow_below_floor:
