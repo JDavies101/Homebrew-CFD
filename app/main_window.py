@@ -3,11 +3,12 @@ from pathlib import Path
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QFileDialog, QLabel, QMainWindow, QMessageBox, QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem,
-                               QVBoxLayout, QWidget)
+                               QVBoxLayout, QWidget, QToolBar)
 from src import __version__
 from src.run.case import Case, setting_choices, check_choice
 from src.run.case_file import load_case_file, save_case_file, geometry_choices
 from app.property_form import PropertyForm
+from app.viewport import CaseViewport, named_views, corner_views
 
 template_directory = Path(__file__).resolve().parent.parent / "cases" / "templates"
 autosave_milliseconds = 60_000
@@ -41,10 +42,16 @@ class MainWindow(QMainWindow):
         summary_pane = QWidget()
         QVBoxLayout(summary_pane).addWidget(self.summary)
         splitter = QSplitter()
+        self.viewport = CaseViewport(self)
+        self.part_reports = []
+        right_pane = QSplitter(Qt.Vertical)
+        right_pane.addWidget(self.viewport.plotter)
+        right_pane.addWidget(summary_pane)
+        right_pane.setSizes([560, 200])
         splitter.addWidget(self.tree)
         splitter.addWidget(self.forms)
-        splitter.addWidget(summary_pane)
-        splitter.setSizes([220, 520, 300])
+        splitter.addWidget(right_pane)
+        splitter.setSizes([200, 380, 620])
         self.setCentralWidget(splitter)
         self.build_menus()
 
@@ -65,6 +72,7 @@ class MainWindow(QMainWindow):
         for template_path in sorted(template_directory.glob("*.json")):
             action = template_menu.addAction(template_path.stem)
             action.triggered.connect(lambda checked=False, template_path=template_path: self.open_path(template_path, as_template=True))
+        
         for label, shortcut, handler in (("&Open...", QKeySequence.Open, self.open_dialog), ("&Save", QKeySequence.Save, self.save),
                                          ("Save &as...", QKeySequence.SaveAs, self.save_as), ("&Quit", QKeySequence.Quit, self.close)):
             action = QAction(label, self)
@@ -72,12 +80,41 @@ class MainWindow(QMainWindow):
             action.triggered.connect(handler)
             file_menu.addAction(action)
 
+        # view: fit, projection, named views; the common ones also on a toolbar
+        view_menu = self.menuBar().addMenu("&View")
+        toolbar = QToolBar("View")
+        self.addToolBar(toolbar)
+        fit_action = QAction("Fit", self)
+        fit_action.setShortcut(QKeySequence("Home"))
+        fit_action.triggered.connect(self.viewport.fit)
+        orthographic_action = QAction("Orthographic", self)
+        orthographic_action.setCheckable(True)
+        orthographic_action.toggled.connect(self.viewport.set_orthographic)
+        for action in (fit_action, orthographic_action):
+            view_menu.addAction(action)
+            toolbar.addAction(action)
+        view_menu.addSeparator()
+        toolbar.addSeparator()
+        
+        for name in named_views:
+            action = view_menu.addAction(name)
+            action.triggered.connect(lambda checked=False, name=name: self.viewport.set_view(name))
+            
+            if name in ("Side (+z)", "Top (+y)", "Front (-x, from inlet)", "Isometric"):
+                toolbar.addAction(action)
+        
+        corner_menu = view_menu.addMenu("Corners")
+        
+        for name in corner_views:
+            corner_menu.addAction(name).triggered.connect(lambda checked=False, name=name: self.viewport.set_view(name))
+
     def open_dialog(self):
         """
         Ask for a case file and open it.
         """
 
         path, _ = QFileDialog.getOpenFileName(self, "Open case", "", "Case files (*.json)")
+
         if path:
             self.open_path(path)
 
@@ -93,9 +130,11 @@ class MainWindow(QMainWindow):
         except (OSError, ValueError, TypeError, KeyError) as error:
             QMessageBox.critical(self, "Cannot open case", f"{path}\n\n{error}")
             return
+        
         self.path = None if as_template else Path(path)
         self.dirty = as_template
         self.build_tree()
+        self.part_reports = self.viewport.draw(self.case_file, reset_camera=True)
         self.refresh_summary()
 
     def build_tree(self):
@@ -106,14 +145,17 @@ class MainWindow(QMainWindow):
         self.tree.clear()
         while self.forms.count():
             self.forms.removeWidget(self.forms.widget(0))
+        
         case_file = self.case_file
         nodes = (("Solver", case_file, solver_fields), ("Flow", case_file.flow, None), ("Domain", case_file.domain, None),
                  ("Models", case_file.turbulence, None), ("Timing", case_file.timing, None))
         for label, target, field_names in nodes:
             self.add_node(self.tree, label, target, field_names)
+        
         geometry_node = QTreeWidgetItem(self.tree, ["Geometry"])
         for spec in case_file.geometry:
             self.add_node(geometry_node, spec.name, spec, None)
+        
         self.tree.expandAll()
         self.tree.setCurrentItem(self.tree.topLevelItem(0))
 
@@ -133,6 +175,7 @@ class MainWindow(QMainWindow):
         """
 
         index = item.data(0, Qt.UserRole) if item is not None else None
+        
         if index is not None:
             self.forms.setCurrentIndex(index)
 
@@ -142,6 +185,7 @@ class MainWindow(QMainWindow):
         """
 
         self.dirty = True
+        self.part_reports = self.viewport.draw(self.case_file)
         self.refresh_summary()
 
     def refresh_summary(self):
@@ -167,7 +211,7 @@ class MainWindow(QMainWindow):
         lines = [f"<b>{case_file.name}</b>", verdict, "",
                  f"tau = {case_file.flow.relaxation_time:.5f}", f"Mach = {mach_number:.3f}",
                  f"cells = {cells:,}", f"steps = {case.total_steps():,} (warmup {case.warmup_steps():,})",
-                 f"parts = {len(case_file.geometry)}"]
+                "", "<b>Parts</b>", *self.part_reports]
         self.summary.setText("<br>".join(lines))
         self.update_title()
 
@@ -180,6 +224,7 @@ class MainWindow(QMainWindow):
 
         if self.path is None:
             return self.save_as()
+        
         save_case_file(self.case_file, self.path)
         self.dirty = False
         self.update_title()
@@ -196,6 +241,7 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getSaveFileName(self, "Save case", f"{self.case_file.name}.json", "Case files (*.json)")
         if not path:
             return False
+        
         self.path = Path(path)
 
         return self.save()
@@ -217,6 +263,7 @@ class MainWindow(QMainWindow):
 
         if self.case_file is None or not self.dirty:
             return True
+        
         answer = QMessageBox.question(self, "Unsaved changes", "Save changes to the current case?",
                                       QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
         if answer == QMessageBox.Save:
@@ -230,6 +277,7 @@ class MainWindow(QMainWindow):
         """
 
         if self.confirm_discard():
+            self.viewport.close()
             event.accept()
         else:
             event.ignore()
