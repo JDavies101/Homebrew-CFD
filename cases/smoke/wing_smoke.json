@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "name": "wing_smoke",
+  "flow": {"free_stream_velocity": 0.05, "reynolds_number": 500.0, "reference_length": 16.0},
+  "domain": {"nx": 160, "ny": 80, "nz": 4, "floor": "moving", "ceiling": "moving", "relax_width_x": 8, "relax_sigma": 0.1},
+  "turbulence": {"sgs": "wale", "wale_constant": 0.5, "smagorinsky_constant": 0.04},
+  "timing": {"ramp_flow_throughs": 0.5, "warmup_flow_throughs": 1.0, "total_flow_throughs": 2.0, "sample_every": 25},
+  "geometry": [
+    {"name": "wing", "kind": "naca", "reference_area": 64.0, "section": "4412", "chord": 16.0, "angle_degrees": 4.0, "leading_edge": [48.0, 4.9]}
+  ]
+}

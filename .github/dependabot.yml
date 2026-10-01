@@ -1,0 +1,11 @@
+# dependabot: weekly update pull requests for pinned Python packages and workflow actions
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly

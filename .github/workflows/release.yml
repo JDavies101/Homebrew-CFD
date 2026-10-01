@@ -1,0 +1,54 @@
+# release: build the installer on a version tag, smoke-test the packaged solver on CPU, publish checksums and provenance
+name: release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned dependencies
+        run: pip install -r requirements-lock.txt
+      - name: Audit dependencies
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements-lock.txt
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+      - name: Build app and installer
+        env:
+          INNO_COMPILER: C:\Program Files (x86)\Inno Setup 6\ISCC.exe
+        run: ./packaging/build.ps1
+      - name: Smoke test packaged solver (CPU)
+        run: |
+          $process = Start-Process dist\HomebrewCFD\HomebrewCFD.exe -ArgumentList "--solve", "cases/smoke/wing_smoke.json", "--backend", "cpu", "--runs", "smoke_runs" -Wait -PassThru
+          $result = Get-ChildItem smoke_runs -Recurse -Filter result.json | Select-Object -First 1 | Get-Content -Raw | ConvertFrom-Json
+          if ($result.status -ne "finished") { throw "smoke run status: $($result.status)" }
+          $lift = $result.parts.wing.y.mean
+          if ([double]::IsNaN($lift) -or $lift -ge 0) { throw "smoke run C_y not negative and finite: $lift" }
+          Write-Host "smoke run finished, C_y $lift"
+      - name: Checksums
+        run: |
+          Get-ChildItem dist\installer\*.exe | ForEach-Object { "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } | Set-Content dist\installer\SHA256SUMS.txt
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/installer/*.exe
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          draft: true
+          prerelease: true
+          files: |
+            dist/installer/*.exe
+            dist/installer/SHA256SUMS.txt
