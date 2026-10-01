@@ -843,6 +843,18 @@ descriptor tests (weights sum to 1, opposites reverse, isotropy moments).
   `allow_below_floor`; the flag is logged. The floor is measured without LES (E2); the limit with WALE
   is unmapped.
 
+- Compressible flow (long-term option, 2026-10-01). The current solver is isothermal and its D3Q19
+  equilibrium is second order in velocity, so compressibility errors grow like Ma^3 (E3: +0.7% at
+  lattice Ma 0.17, +5.4% at 0.35) and there is no energy equation or shock handling. F1 aero does not need
+  it (about Ma 0.28 at 340 km/h, normally treated as incompressible; the lattice Mach number is a
+  numerical choice). Known routes: higher-order lattices (D3Q39 / D2Q37, costly, narrow stability),
+  double-distribution models with an energy population plus correction terms, and hybrid LBM (lattice
+  Boltzmann for mass and momentum, finite-difference / finite-volume energy equation, pressure corrections
+  and shock sensors). If pursued, I would stage it: thermal LBM (already planned for heat transfer), then a
+  weakly compressible variable-density model validated on natural convection, then a hybrid compressible
+  branch validated on the Sod shock tube, the isentropic vortex and transonic NACA 0012 data. Shocks with
+  chemistry (detonation) remain out of scope: a reactive finite-volume problem, not this solver class.
+
 ## 10. Code-health backlog
 
 From the full code review. Done so far: wall nodes no longer collided (this was the
