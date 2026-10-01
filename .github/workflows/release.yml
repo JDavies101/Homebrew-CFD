@@ -41,7 +41,7 @@ jobs:
       - name: Checksums
         run: |
           Get-ChildItem dist\installer\*.exe | ForEach-Object { "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } | Set-Content dist\installer\SHA256SUMS.txt
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/installer/*.exe
       - uses: softprops/action-gh-release@v2
