@@ -610,7 +610,10 @@ PyInstaller builds. v0.1.1 is a hygiene and polish release, no solver changes:
   (about EUR 49 a year, my name, manual cloud signing) and Azure Artifact Signing ($9.99 a month,
   individuals in the USA / Canada only). Checksums and build-provenance attestation cover integrity for
   now; the release notes explain the SmartScreen prompt. Revisit (SignPath first) if non-technical users
-  arrive, false positives become a nuisance, or before v1.0.
+  arrive, false positives become a nuisance, or before v1.0. Update 2026-10-01: Microsoft Defender flags
+  the CI-built HomebrewCFD.exe (`Trojan:Win32/Wacatac.C!ml`, 3 of 70 engines on VirusTotal) with the stock
+  and with a source-built PyInstaller bootloader alike, so the verdict follows the PyInstaller layout, not
+  the launcher. Reported to Microsoft as an incorrect detection; signing (SignPath first) moves to v0.2.0.
 - UI backlog: summary shows Running during a run; inputs frozen while running (still navigable); Run /
   Stop on their own ribbon tab; Monitors on a resizable Results tab; warmup / averaging phase in the
   status line and as a marker on the plot; running-mean line; x-axis in flow-throughs; capitalized
@@ -624,12 +627,14 @@ reproduces run 151 on CUDA. Contents and order may move; the gates do not.
   smoke test (wing_smoke C_y -0.0335), checksums and attestation, pinned dependencies with pip-audit and
   Dependabot, code signing deferred, branching with a protected main; capitalized messages, Running state
   and frozen inputs during a run, monitors in flow-throughs with shaded warmup and running means, ribbon
-  (Home / View / Run) replacing menus and toolbar. Remaining: Results tab (full-size monitors, last-run
-  summary), saved window layout, PyInstaller bootloader built from source in CI (Microsoft Defender
-  machine-learning false positive on HomebrewCFD.exe, reported), tag and release.
+  (Home / View / Run / Results) replacing menus and toolbar, Results tab with full-size monitors, saved
+  window layout with Reset, visible splitters, PyInstaller bootloader compiled from source in CI, run
+  artifacts, SECURITY.md, repository settings (squash merges, tag ruleset, CodeQL, secret scanning).
+  Remaining: tag and release.
 - v0.2.0, look and identity. Logo refined from the current icon (navy, silver airfoil, blue -> violet ->
   orange streamlines), one colour palette applied as a Qt theme and to the plots, a matching icon set for
-  every ribbon button, startup splash screen. Artwork generated and refined under my direction.
+  every ribbon button, startup splash screen. Artwork generated and refined under my direction. Code
+  signing (SignPath Foundation first) for the Microsoft Defender false positive.
 - v0.3.0, geometry and pre-run checks. STL import in the app (units / scale shown as bounding box and
   cells across the body, watertight check), voxel and boundary-link preview, memory and run-time estimate
   before launch, templates for the Ahmed body, sphere and wheel; first tutorials (wing in ground effect,
