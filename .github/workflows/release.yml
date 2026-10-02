@@ -23,11 +23,13 @@ jobs:
       - name: Install pinned dependencies
         run: pip install -r requirements-lock.txt
       - name: Rebuild PyInstaller bootloader from source
-        env:
-          PYINSTALLER_COMPILE_BOOTLOADER: "1"
         run: |
-          $pinned = (Select-String requirements-lock.txt -Pattern '^pyinstaller==').Line
-          pip install --force-reinstall --no-deps --no-binary pyinstaller $pinned
+          $version = ((Select-String requirements-lock.txt -Pattern '^pyinstaller==').Line -split '==')[1]
+          git clone --depth 1 --branch "v$version" https://github.com/pyinstaller/pyinstaller.git "$env:RUNNER_TEMP\pyinstaller"
+          Push-Location "$env:RUNNER_TEMP\pyinstaller\bootloader"
+          python ./waf all --target-arch=64bit
+          Pop-Location
+          pip install --force-reinstall --no-deps "$env:RUNNER_TEMP\pyinstaller"
       - name: Audit dependencies
         run: |
           pip install pip-audit
