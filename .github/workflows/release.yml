@@ -49,6 +49,14 @@ jobs:
       - name: Checksums
         run: |
           Get-ChildItem dist\installer\*.exe | ForEach-Object { "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } | Set-Content dist\installer\SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HomebrewCFD-build
+          path: |
+            dist/HomebrewCFD/HomebrewCFD.exe
+            dist/installer/*.exe
+            dist/installer/SHA256SUMS.txt
+          retention-days: 14
       - uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/installer/*.exe
