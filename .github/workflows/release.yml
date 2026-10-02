@@ -22,6 +22,12 @@ jobs:
           python-version: "3.12"
       - name: Install pinned dependencies
         run: pip install -r requirements-lock.txt
+      - name: Rebuild PyInstaller bootloader from source
+        env:
+          PYINSTALLER_COMPILE_BOOTLOADER: "1"
+        run: |
+          $pinned = (Select-String requirements-lock.txt -Pattern '^pyinstaller==').Line
+          pip install --force-reinstall --no-deps --no-binary pyinstaller $pinned
       - name: Audit dependencies
         run: |
           pip install pip-audit
