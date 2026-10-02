@@ -631,10 +631,19 @@ reproduces run 151 on CUDA. Contents and order may move; the gates do not.
   window layout with Reset, visible splitters, PyInstaller bootloader compiled from source in CI, run
   artifacts, SECURITY.md, repository settings (squash merges, tag ruleset, CodeQL, secret scanning).
   Remaining: tag and release.
-- v0.2.0, look and identity. Logo refined from the current icon (navy, silver airfoil, blue -> violet ->
+- v0.2.0 (in progress), look and identity. Done: code signing with Azure Artifact Signing as an individual
+  (publisher "Jake Davies", Public Trust profile homebrew-cfd, account homebrewcfd, East US; SignPath
+  rejected because the publisher would read "SignPath Foundation"). CI: tag-only `sign` job in the
+  `release` GitHub environment (v* tags only), OIDC login (federated subject uses the ID form
+  repo:JDavies101@9875812/Homebrew-CFD@1359396543:environment:release), signs HomebrewCFD.exe, rebuilds the
+  installer around it (build.ps1 -stage), signs the installer, verifies both, then checksums, attestation
+  and the draft release; PR builds stay unsigned. Test tag v0.2.0-sign1: both files signed, VirusTotal 0/66
+  (unsigned builds 3/70, Wacatac.C!ml); SmartScreen still warns until the certificate earns reputation
+  (submitted to Microsoft 2026-10-02). If I move to the UK, individuals are not eligible: switch to Certum
+  open source. Remaining: logo refined from the current icon (navy, silver airfoil, blue -> violet ->
   orange streamlines), one colour palette applied as a Qt theme and to the plots, a matching icon set for
-  every ribbon button, startup splash screen. Artwork generated and refined under my direction. Code
-  signing (SignPath Foundation first) for the Microsoft Defender false positive.
+  every ribbon button, startup splash screen, installer icon; artwork generated and refined under my
+  direction. Default case / run folder in Documents\Homebrew CFD.
 - v0.3.0, geometry and pre-run checks. STL import in the app (units / scale shown as bounding box and
   cells across the body, watertight check), voxel and boundary-link preview, memory and run-time estimate
   before launch, templates for the Ahmed body, sphere and wheel; first tutorials (wing in ground effect,
@@ -677,9 +686,9 @@ App requirements from common CFD-tool experience (2026-10-01):
 Release security (2026-10-01): GitHub does not malware-scan release binaries. Releases are built only
 by GitHub Actions from a tagged commit (never from a local machine), with build-provenance attestation and
 SHA-256 checksums published; dependencies pinned and checked (pip-audit, Dependabot); each installer
-scanned on VirusTotal before publishing; Windows code signing when affordable (unsigned builds trigger
-SmartScreen). The app reads case files as data only (JSON, no pickle / eval / embedded scripts) and makes no
-network calls.
+scanned on VirusTotal before publishing; release binaries signed with Azure Artifact Signing from v0.2.0
+(tag-only CI job, OIDC, no stored secrets). The app reads case files as data only (JSON, no pickle / eval /
+embedded scripts) and makes no network calls.
 
 **Scope note - one engine, many problems.** The core is a general incompressible / low-Mach
 LBM solver; external aero (F1 the flagship) is the first domain, not the boundary. Same core,
