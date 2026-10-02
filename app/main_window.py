@@ -1,6 +1,6 @@
 # main window: setup tree, property forms, case summary with live validation, file handling and autosave
 from pathlib import Path
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QTimer, Qt, QSettings
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QFileDialog, QLabel, QMainWindow, QMessageBox, QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem,
                                QVBoxLayout, QWidget, QDockWidget, QPlainTextEdit, QProgressBar, QMenu, QStyle)
@@ -85,6 +85,7 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(results_page)
         self.setCentralWidget(self.pages)
         self.setStyleSheet(splitter_style)
+        self.splitters = {"setup": splitter, "setup_right": right_pane, "results": results_page}
 
         # runs: controller, console dock, status-bar progress
         self.runs = RunController(self)
@@ -97,6 +98,7 @@ class MainWindow(QMainWindow):
         self.console.setReadOnly(True)
         self.console.setMaximumBlockCount(5000)
         console_dock = QDockWidget("Console", self)
+        console_dock.setObjectName("console")
         console_dock.setWidget(self.console)
         self.addDockWidget(Qt.BottomDockWidgetArea, console_dock)
         self.run_progress = QProgressBar()
@@ -111,6 +113,10 @@ class MainWindow(QMainWindow):
         self.autosave_timer.start(autosave_milliseconds)
         self.resize(1200, 760)
         self.update_title()
+
+        # layout: remember the as built default (for reset layout) then restore the user's last layout
+        self.default_layout = self.layout_state()
+        self.restore_layout(self.saved_layout())
 
     def make_action(self, text, icon, shortcut, handler):
         """
@@ -179,6 +185,9 @@ class MainWindow(QMainWindow):
         view_tab = self.ribbon.add_tab("View")
         view_tab.add_group("Camera", (fit_action, orthographic_action))
         view_tab.add_group("Views", (*common_views, all_views_action))
+        reset_layout_action = self.make_action("Reset layout", icon(QStyle.SP_DialogResetButton), 
+                                               None, self.reset_layout)
+        view_tab.add_group("Window", (reset_layout_action,))
 
         # run: start / stop
         self.run_action = self.make_action("Run", icon(QStyle.SP_MediaPlay), QKeySequence("F5"), self.start_run)
@@ -405,7 +414,9 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
             self.runs.stop_and_wait()
+
         if self.confirm_discard():
+            self.save_layout()
             self.viewport.close()
             event.accept()
         else:
@@ -419,6 +430,62 @@ class MainWindow(QMainWindow):
         name = self.path.name if self.path is not None else (self.case_file.name + " (unsaved)" if self.case_file else "")
         self.setWindowTitle(f"Homebrew CFD {__version__} - {name}{' *' if self.dirty else ''}")
 
+    def layout_state(self):
+        """
+        Current window geometry, dock state and splitter positions.
+
+        Returns a dict of QByteArray values.
+        """
+
+        state = {"window/geometry": self.saveGeometry(), "window/state": self.saveState()}
+        for name, splitter in self.splitters.items():
+            state[f"splitters/{name}"] = splitter.saveState()
+
+        return state
+    
+    def saved_layout(self):
+        """
+        The layout stored when the window last closed (empty on first start).
+
+        Returns a dict of QByteArray values.
+        """
+
+        settings = QSettings("Homebrew CFD", "Homebrew CFD")
+
+        return {key: settings.value(key) for key in settings.allKeys() if
+                key.startswith(("window/", "splitters/"))}
+    
+    def restore_layout(self, state):
+        """
+        Apply a layout; missing entries keep the current one.
+        """
+
+        if state.get("window/geometry") is not None:
+            self.restoreGeometry(state["window/geometry"])
+
+        if state.get("window/state") is not None:
+            self.restoreState(state["window/state"])
+
+        for name, splitter in self.splitters.items():
+            if state.get(f"splitters/{name}") is not None:
+                splitter.restoreState(state[f"splitters/{name}"])
+
+    def save_layout(self):
+        """
+        Store the current layout for the next start.
+        """
+
+        settings = QSettings("Homebrew CFD", "Homebrew CFD")
+        for key, value in self.layout_state().items():
+            settings.setValue(key, value)
+
+    def reset_layout(self):
+        """
+        Back to the as-built layout.
+        """
+
+        self.restore_layout(self.default_layout)
+    
     def set_running(self, running):
         """
         Lock or unlock the window for a live run: inputs and case loading frozen, tree still navigable.
