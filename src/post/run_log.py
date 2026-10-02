@@ -22,6 +22,8 @@ import time
 import numpy as np
 
 LOG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "docs", "run_log.csv"))
+# child processes (git, nvidia-smi) start without a console window: the packaged app has none to share
+hidden_window = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 
 # csv column names (the file schema: renaming one needs a migration of docs/run_log.csv)
 FIELDS = [
@@ -46,9 +48,9 @@ def _git_commit():
 
     try:
         commit_hash = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
-                                     capture_output=True, text=True, check=True, timeout=10).stdout.strip()
+                                     capture_output=True, text=True, check=True, timeout=10, **hidden_window).stdout.strip()
         changes = subprocess.run(["git", "--no-optional-locks", "status", "--porcelain", "--untracked-files=no"],
-                                 capture_output=True, text=True, timeout=10).stdout.strip()
+                                 capture_output=True, text=True, timeout=10, **hidden_window).stdout.strip()
 
         return commit_hash + ("+dirty" if changes else "")
     except Exception:
@@ -122,7 +124,7 @@ def gpu_used_gb():
     try:
         output = subprocess.run(["nvidia-smi", "--query-compute-apps=pid,used_memory",
                                  "--format=csv,noheader,nounits"],
-                                capture_output=True, text=True, timeout=10).stdout
+                                capture_output=True, text=True, timeout=10, **hidden_window).stdout
         for line in output.strip().splitlines():
             process_id, memory_mb = [part.strip() for part in line.split(",")[:2]]
             if process_id == str(os.getpid()) and memory_mb.replace(".", "").isdigit():
@@ -130,7 +132,7 @@ def gpu_used_gb():
 
         output = subprocess.run(["nvidia-smi", "--query-gpu=memory.used",
                                  "--format=csv,noheader,nounits"],
-                                capture_output=True, text=True, timeout=10).stdout
+                                capture_output=True, text=True, timeout=10, **hidden_window).stdout
 
         return float(output.strip().splitlines()[0]) / 1024.0, "device"
     except Exception:
