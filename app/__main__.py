@@ -5,6 +5,7 @@ from PySide6.QtGui import QPixmap, QColor, QIcon
 from PySide6.QtCore import Qt
 from pathlib import Path
 from src import __version__
+from app.theme import apply_theme
 
 SPLASH_WIDTH = 720
 
@@ -46,6 +47,7 @@ def main():
 
     application = QApplication(sys.argv)
     application.setApplicationName("Homebrew CFD")
+    apply_theme(application)
     application.setWindowIcon(QIcon(str(Path(__file__).resolve().parent / "icon.png")))
     splash = show_splash(application)
 
