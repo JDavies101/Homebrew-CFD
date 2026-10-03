@@ -6,7 +6,7 @@ built on the Lattice Boltzmann Method (LBM). It runs on a single workstation
 to real geometry. External aerodynamics, and Formula 1 in particular, is the flagship
 application, but the solver is general: external bodies, internal ducts, heat transfer, and
 aeroacoustics are all within reach of the same core. Anthropic's Claude was used to assist with
-code outline, documentation upkeep, and planning. SpaceXAI was used to assist with logo designing.
+code outline, documentation upkeep, and planning. Early icon concepts were drafted with Google Gemini; the final icon, splash screen and ribbon icons are generated in code (the streamlines are a computed potential flow around the wing), and the wordmark uses Saira under the SIL Open Font License.
 
 ## Goals
 

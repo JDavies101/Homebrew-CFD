@@ -1,6 +1,6 @@
 # main window: setup tree, property forms, case summary with live validation, file handling and autosave
 from pathlib import Path
-from PySide6.QtCore import QTimer, Qt, QSettings
+from PySide6.QtCore import QTimer, Qt, QSettings, QStandardPaths
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QFileDialog, QLabel, QMainWindow, QMessageBox, QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem,
                                QVBoxLayout, QWidget, QDockWidget, QPlainTextEdit, QProgressBar, QMenu)
@@ -19,6 +19,20 @@ autosave_milliseconds = 60_000
 # the UI offers every choice the engine accepts, except a custom start (a case file cannot hold an initial field)
 form_choices = {**setting_choices, **geometry_choices, "start": ("rest_ramp", "uniform")}
 solver_fields = ("name", "collision", "inlet", "start", "allow_below_floor")
+
+def workspace_directory():
+    """
+    Documents\\Homebrew CFD Projects, with its Runs folder, created if missing: the home for cases and runs
+    (never the install folder, which an uninstall or upgrade can delete, and never the source folder).
+
+    Returns the Path.
+    """
+
+    documents = Path(QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation))
+    workspace = documents / "Homebrew CFD Projects"
+    (workspace / "Runs").mkdir(parents=True, exist_ok=True)
+
+    return workspace
 
 def sentence_case(text):
     """
@@ -205,13 +219,24 @@ class MainWindow(QMainWindow):
 
         self.pages.setCurrentIndex(1 if self.ribbon.widget(index) is self.results_tab else 0)
 
+    def dialog_directory(self):
+        """
+        Where file dialogs start: the current case's folder, else the workspace.
+
+        Returns the Path.
+        """
+
+        if self.path is not None:
+            return self.path.parent
+        
+        return workspace_directory()
+
     def open_dialog(self):
         """
         Ask for a case file and open it.
         """
 
-        path, _ = QFileDialog.getOpenFileName(self, "Open case", "", "Case files (*.json)")
-
+        path, _ = QFileDialog.getOpenFileName(self, "Open case", str(self.dialog_directory()), "Case files (*.json)")
         if path:
             self.open_path(path)
 
@@ -368,7 +393,8 @@ class MainWindow(QMainWindow):
         Returns True when saved.
         """
 
-        path, _ = QFileDialog.getSaveFileName(self, "Save case", f"{self.case_file.name}.json", "Case files (*.json)")
+        suggested = self.dialog_directory() / f"{self.case_file.name}.json"
+        path, _ = QFileDialog.getSaveFileName(self, "Save case", str(suggested), "Case files (*.json)")
         if not path:
             return False
         
@@ -499,7 +525,7 @@ class MainWindow(QMainWindow):
     
     def start_run(self):
         """
-        Validate, make sure the case is saved, then launch the solver into runs/ beside the case file.
+        Validate, make sure the case is saved, then launch the solver into the workspace Runs folder.
         """
 
         if self.case_file is None or self.runs.is_running():
@@ -516,7 +542,7 @@ class MainWindow(QMainWindow):
         self.run_progress.setValue(0)
         self.set_running(True)
         self.ribbon.setCurrentWidget(self.results_tab)
-        self.runs.start(self.path, self.path.parent / "runs", self.case_file.name)
+        self.runs.start(self.path, workspace_directory() / "Runs", self.case_file.name)
         self.statusBar().showMessage("Starting solver...")
         self.refresh_summary()
 
