@@ -1,6 +1,6 @@
 # mesh I/O and narrow-band distance: reduce to exact answers
 import numpy as np
-from src.geometry.mesh import read_stl, write_stl, icosphere, box_mesh
+from src.geometry.mesh import read_stl, write_stl, inspect_mesh, icosphere, box_mesh
 from src.geometry.mesh_distance import band_distance, sdf_from_mesh, q_from_mesh
 from src.geometry.sdf import sdf_sphere, q_from_sdf
 from src.geometry.wall_fraction import wall_fraction_sphere
@@ -173,3 +173,59 @@ def test_ascii_stl_read(tmp_path):
 
     assert read_back.shape == triangles.shape
     assert np.allclose(read_back, triangles, atol=1e-12)
+
+# test 9: closed icosphere is watertight and its cells across match the diameter within the facet sag
+def test_inspect_mesh_icosphere():
+    
+    cells_per_unit = 4.0
+    triangles = icosphere(center, radius, subdivisions=3)
+    report = inspect_mesh(triangles, cells_per_unit)
+    sag = _sphere_sag(triangles)
+    diameter_cells = 2 * radius * cells_per_unit
+
+    assert report["watertight"]
+    assert report["open_edges"] == 0
+    assert report["nonmanifold_edges"] == 0
+    assert report["flipped_edges"] == 0
+    assert report["degenerate_triangles"] == 0
+    assert report["triangle_count"] == 20 * 4 ** 3
+    assert np.all(report["cells_across"] <= diameter_cells + 1e-9)
+    assert np.all(report["cells_across"] >= diameter_cells - 2 * sag * cells_per_unit)
+
+# test 10: box with one triangle removed has exactly its 3 edges open
+def test_inspect_mesh_open_box():
+
+    triangles = box_mesh((0.0, 0.0, 0.0), (2.0, 3.0, 4.0))
+    closed_report = inspect_mesh(triangles, 1.0)
+    open_report = inspect_mesh(triangles[1:], 1.0)
+
+    assert closed_report["watertight"]
+    assert np.allclose(closed_report["size"], [2.0, 3.0, 4.0])
+    assert open_report["open_edges"] == 3
+    assert open_report["nonmanifold_edges"] == 0
+    assert open_report["flipped_edges"] == 0
+    assert not open_report["watertight"]
+
+# test 11: one reversed triangle flips exactly its 3 edges
+def test_inspect_mesh_flipped_triangle():
+
+    triangles = box_mesh((0.0, 0.0, 0.0), (2.0, 3.0, 4.0)).copy()
+    triangles[0] = triangles[0, ::-1]
+    report = inspect_mesh(triangles, 1.0)
+
+    assert report["flipped_edges"] == 3
+    assert report["open_edges"] == 0
+    assert not report["watertight"]
+
+# test 12: a far-off mesh still welds (tolerance scales with the body) and a collapsed corner is degenerate
+def test_inspect_mesh_far_offset_and_degenerate():
+
+    triangles = icosphere(center, radius, subdivisions=2) + 1.0e6
+    far_report = inspect_mesh(triangles, 1.0)
+    collapsed = triangles.copy()
+    collapsed[0, 1] = collapsed[0, 0]
+    collapsed_report = inspect_mesh(collapsed, 1.0)
+
+    assert far_report["watertight"]
+    assert collapsed_report["degenerate_triangles"] == 1
+    assert not collapsed_report["watertight"]
