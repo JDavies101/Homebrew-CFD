@@ -656,6 +656,15 @@ reproduces run 151 on CUDA. Contents and order may move; the gates do not.
   every validation gate green on the release build.
 - After v1.0: D3Q15 / D3Q27 (section 8), 2D engine parity with the 3D physics, full car and 3D front
   wing cases, thermal and aeroacoustic extensions (scope note below).
+- After v1.0, Apple version (decided 2026-10-03): a separate repository (not a fork; no shared code),
+  native SwiftUI + Metal, one codebase for iPad, iPhone and macOS, built on my Mac. Scope: 2D D2Q9 first
+  (TRT, bounce-back, velocity inlet, pressure outlet, float32; Metal has no float64), interactive: draw
+  obstacles by touch or Apple Pencil and watch the flow live, colour maps in the icon palette. Validated
+  against JSON fixtures exported from the NumPy D2Q9 reference here (Poiseuille, cavity, cylinder
+  Strouhal number), with a validation screen in the app. 3D only for small cases, if ever (thermal
+  throttling, battery, touch set-up). The Python / Taichi / PySide6 stack does not run on iOS, so this is
+  a rewrite of the core, not a port. Free provisioning for my own devices; the Apple Developer Program
+  ($99 a year) only for TestFlight / App Store. Brand assets (icon, palette, Saira) copied over.
 
 Backlog (2026-10-02), not yet assigned to a release:
 - Before the v0.2.0 release: README credit for the image / icon work and the fonts (Saira, SIL OFL),
@@ -671,10 +680,6 @@ Backlog (2026-10-02), not yet assigned to a release:
 - Tutorials and manuals (in-app tutorials, user manual).
 - Rotors driven by the flow: a free-spinning rotating part whose angular velocity follows from the
   aerodynamic torque and its inertia (and optional load), instead of only a prescribed rpm.
-- iOS / iPadOS feasibility study: what it would take (no CUDA; Metal through Taichi, Apple GPU memory
-  limits, no float64 on Metal, App Store rules on code execution, a native UI instead of PySide6 /
-  PyVista), what case sizes would fit, and whether a viewer / remote-run client is the better scope.
-
 Product vs development (2026-10-01). Shipped: the engine (`src/`), the app, case templates (the current
 examples as drop-in cases), and a per-run record in each run folder (case, versions, backend, device,
 metrics). Development only: `docs/run_log.csv` (aggregated from run records), tests, the validation
