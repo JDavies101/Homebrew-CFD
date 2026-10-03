@@ -108,6 +108,7 @@ class MainWindow(QMainWindow):
         self.console.setReadOnly(True)
         self.console.setMaximumBlockCount(5000)
         console_dock = QDockWidget("Console", self)
+        self.console_dock = console_dock
         console_dock.setObjectName("console")
         console_dock.setWidget(self.console)
         self.addDockWidget(Qt.BottomDockWidgetArea, console_dock)
@@ -199,7 +200,9 @@ class MainWindow(QMainWindow):
         view_tab.add_group("Views", (*common_views, all_views_action))
         reset_layout_action = self.make_action("Reset layout", theme.icon("reset_layout"), 
                                                None, self.reset_layout)
-        view_tab.add_group("Window", (reset_layout_action,))
+        console_action = self.console_dock.toggleViewAction()
+        console_action.setIcon(theme.icon("console"))
+        view_tab.add_group("Window", (console_action, reset_layout_action))
 
         # run: start / stop
         self.run_action = self.make_action("Run", theme.icon("run"), QKeySequence("F5"), self.start_run)
