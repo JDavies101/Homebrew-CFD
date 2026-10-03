@@ -1,5 +1,6 @@
 # desktop app entry: python -m app [case.json]
 import sys
+import PySide6.QtSvg # loads Qt6Svg before the QApplication, so the SVG icon plugin can load
 from PySide6.QtWidgets import QApplication, QSplashScreen
 from PySide6.QtGui import QPixmap, QColor, QIcon
 from PySide6.QtCore import Qt

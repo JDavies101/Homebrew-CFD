@@ -3,7 +3,7 @@ from pathlib import Path
 from PySide6.QtCore import QTimer, Qt, QSettings
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QFileDialog, QLabel, QMainWindow, QMessageBox, QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem,
-                               QVBoxLayout, QWidget, QDockWidget, QPlainTextEdit, QProgressBar, QMenu, QStyle)
+                               QVBoxLayout, QWidget, QDockWidget, QPlainTextEdit, QProgressBar, QMenu)
 from src import __version__
 from src.run.case import Case, setting_choices, check_choice
 from src.run.case_file import load_case_file, save_case_file, geometry_choices
@@ -137,7 +137,6 @@ class MainWindow(QMainWindow):
         Ribbon tabs Home (case files), View (camera) and Run (solver).
         """
 
-        icon = self.style().standardIcon
         self.ribbon = Ribbon()
         self.setMenuWidget(self.ribbon)
 
@@ -148,27 +147,30 @@ class MainWindow(QMainWindow):
             action = template_menu.addAction(template_path.stem)
             action.triggered.connect(lambda checked=False, template_path=template_path: self.open_path(template_path, as_template=True))
         
-        new_action = self.make_action("New", icon(QStyle.SP_FileIcon), None, None)
+        new_action = self.make_action("New", theme.icon("new"), None, None)
         new_action.setMenu(template_menu)
-        open_action = self.make_action("Open", icon(QStyle.SP_DialogOpenButton), QKeySequence.Open, self.open_dialog)
-        save_action = self.make_action("Save", icon(QStyle.SP_DialogSaveButton), QKeySequence.Save, self.save)
-        save_as_action = self.make_action("Save as", icon(QStyle.SP_DialogSaveAllButton), QKeySequence.SaveAs, self.save_as)
+        open_action = self.make_action("Open", theme.icon("open"), QKeySequence.Open, self.open_dialog)
+        save_action = self.make_action("Save", theme.icon("save"), QKeySequence.Save, self.save)
+        save_as_action = self.make_action("Save as", theme.icon("save_as"), QKeySequence.SaveAs, self.save_as)
         self.make_action("Quit", None, QKeySequence.Quit, self.close)
         self.case_loading_actions = [new_action, open_action]
         self.ribbon.add_tab("Home").add_group("Case", (new_action, open_action, save_action, save_as_action))
 
         # view: fit, projection, the common views as buttons, every view and corner in a menu
-        fit_action = self.make_action("Fit", icon(QStyle.SP_BrowserReload), QKeySequence("Home"), self.viewport.fit)
-        orthographic_action = self.make_action("Orthographic", icon(QStyle.SP_FileDialogContentsView), None, None)
+        fit_action = self.make_action("Fit", theme.icon("fit"), QKeySequence("Home"), self.viewport.fit)
+        orthographic_action = self.make_action("Orthographic", theme.icon("orthographic"), None, None)
         orthographic_action.setCheckable(True)
         orthographic_action.toggled.connect(self.viewport.set_orthographic)
         view_menu = QMenu(self)
+        view_icons = {"Side (+z)": "view_side", "Top (+y)": "view_top", "Front (-x, from inlet)": "view_front",
+                      "Isometric": "view_isometric"}
         common_views = []
-        
+
         for name in named_views:
             action = view_menu.addAction(name)
             action.triggered.connect(lambda checked=False, name=name: self.viewport.set_view(name))
-            if name in ("Side (+z)", "Top (+y)", "Front (-x, from inlet)", "Isometric"):
+            if name in view_icons:
+                action.setIcon(theme.icon(view_icons[name]))
                 common_views.append(action)
         
         corner_menu = view_menu.addMenu("Corners")
@@ -176,18 +178,18 @@ class MainWindow(QMainWindow):
         for name in corner_views:
             corner_menu.addAction(name).triggered.connect(lambda checked=False, name=name: self.viewport.set_view(name))
         
-        all_views_action = self.make_action("All views", icon(QStyle.SP_DesktopIcon), None, None)
+        all_views_action = self.make_action("All views", theme.icon("all_views"), None, None)
         all_views_action.setMenu(view_menu)
         view_tab = self.ribbon.add_tab("View")
         view_tab.add_group("Camera", (fit_action, orthographic_action))
         view_tab.add_group("Views", (*common_views, all_views_action))
-        reset_layout_action = self.make_action("Reset layout", icon(QStyle.SP_DialogResetButton), 
+        reset_layout_action = self.make_action("Reset layout", theme.icon("reset_layout"), 
                                                None, self.reset_layout)
         view_tab.add_group("Window", (reset_layout_action,))
 
         # run: start / stop
-        self.run_action = self.make_action("Run", icon(QStyle.SP_MediaPlay), QKeySequence("F5"), self.start_run)
-        self.stop_action = self.make_action("Stop", icon(QStyle.SP_MediaStop), QKeySequence("Shift+F5"), self.runs.stop)
+        self.run_action = self.make_action("Run", theme.icon("run"), QKeySequence("F5"), self.start_run)
+        self.stop_action = self.make_action("Stop", theme.icon("stop"), QKeySequence("Shift+F5"), self.runs.stop)
         self.stop_action.setEnabled(False)
         self.ribbon.add_tab("Run").add_group("Solver", (self.run_action, self.stop_action))
 

@@ -1,7 +1,7 @@
 # theme: dark navy palette from the icon, Fusion style, Saira headings; 
 # every UI colour comes from here
 from pathlib import Path
-from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette, QIcon
 
 # palette, sampled from the icon
 navy = "#0f1c2c" # window background (icon background)
@@ -27,6 +27,7 @@ viewport_part = "#7d8696" # darker steel so parts read on white
 curve_colors = (accent, amber, violet, orange_red, silver, "#7fb6ff")
 
 fonts_directory = Path(__file__).resolve().parent.parent / "packaging" / "fonts"
+icons_directory = Path(__file__).resolve().parent / "icons"
 
 stylesheet = f"""
 QSplitter::handle {{ background: {grid}; }}
@@ -56,6 +57,15 @@ def heading_font(point_size):
     font.setVariableAxis(QFont.Tag("wdth"), 112.5)
 
     return font
+
+def icon(name):
+    """
+    A ribbon icon from app/icons.
+
+    Returns the QIcon.
+    """
+
+    return QIcon(str(icons_directory / f"{name}.svg"))
 
 def apply_theme(application):
     """
