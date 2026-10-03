@@ -22,6 +22,8 @@ env/
 *.vtu
 results/
 outputs/
+runs/
+Runs/
 
 # Geometry assets (add explicitly if a case needs one)
 *.stl
@@ -35,4 +37,3 @@ CLAUDE.md
 .vscode/
 .idea/
 .DS_Store
-runs/
