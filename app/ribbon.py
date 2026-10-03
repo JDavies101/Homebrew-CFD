@@ -2,6 +2,7 @@
 # titled groups of large buttons bound to actions
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QTabWidget, QToolButton, QVBoxLayout, QWidget
+from app import theme
 
 class RibbonTab(QWidget):
     """
@@ -71,6 +72,7 @@ class Ribbon(QTabWidget):
         super().__init__()
         self.setDocumentMode(True)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        self.tabBar().setFont(theme.heading_font(10))
 
     def add_tab(self, name):
         """

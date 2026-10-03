@@ -2,6 +2,7 @@
 import pyqtgraph
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 import numpy as np
+from app import theme
 
 class MonitorPlot(QWidget):
     """
@@ -15,7 +16,10 @@ class MonitorPlot(QWidget):
         """
 
         super().__init__(parent)
-        self.plot = pyqtgraph.PlotWidget()
+        self.plot = pyqtgraph.PlotWidget(background=theme.panel)
+        for side in ("left", "bottom"):
+            self.plot.getAxis(side).setPen(theme.grid)
+            self.plot.getAxis(side).setTextPen(theme.muted)
         self.plot.showGrid(x=True, y=True, alpha=0.3)
         self.plot.setLabel("bottom", "Flow-throughs")
         self.plot.setLabel("left", "Force coefficient")
@@ -49,7 +53,7 @@ class MonitorPlot(QWidget):
         self.timeline = (warmup, flow_through_steps, sample_every)
         self.plot.setXRange(0, steps / flow_through_steps, padding=0)
         self.warmup_region = pyqtgraph.LinearRegionItem((0, warmup / flow_through_steps), 
-                                                        movable=False, brush=(128, 128, 128, 40))
+                                                        movable=False, brush=(150, 160, 178, 30))
         self.plot.addItem(self.warmup_region)        
 
     def update_samples(self, samples):
@@ -70,7 +74,7 @@ class MonitorPlot(QWidget):
                 continue
             if name not in self.curves:
                 part_name, axis = name.rsplit("_", 1)
-                color = pyqtgraph.intColor(len(self.curves), hues=6)
+                color = pyqtgraph.mkColor(theme.curve_colors[len(self.curves) % len(theme.curve_colors)])
                 faint = pyqtgraph.mkColor(color)
                 faint.setAlpha(70)
                 self.curves[name] = self.plot.plot(pen=pyqtgraph.mkPen(faint, width=1))

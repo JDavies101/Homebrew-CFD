@@ -12,16 +12,13 @@ from app.viewport import CaseViewport, named_views, corner_views
 from app.run_control import RunController
 from app.monitor_plot import MonitorPlot
 from app.ribbon import Ribbon
+from app import theme
 
 template_directory = Path(__file__).resolve().parent.parent / "cases" / "templates"
 autosave_milliseconds = 60_000
 # the UI offers every choice the engine accepts, except a custom start (a case file cannot hold an initial field)
 form_choices = {**setting_choices, **geometry_choices, "start": ("rest_ramp", "uniform")}
 solver_fields = ("name", "collision", "inlet", "start", "allow_below_floor")
-
-# splitter handles: wide enough to see and grab, highlighted on hover (icon violet)
-splitter_style = ("QSplitter::handle { background: #2a3444; } QSplitter::handle:hover { background: #2d4dc8; } "
-                  "QSplitter::handle:horizontal { width: 6px; } QSplitter::handle:vertical { height: 6px; }")
 
 def sentence_case(text):
     """
@@ -84,7 +81,6 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(splitter)
         self.pages.addWidget(results_page)
         self.setCentralWidget(self.pages)
-        self.setStyleSheet(splitter_style)
         self.splitters = {"setup": splitter, "setup_right": right_pane, "results": results_page}
 
         # runs: controller, console dock, status-bar progress
@@ -299,13 +295,13 @@ class MainWindow(QMainWindow):
         
         error = self.validation_error()
         if self.runs.is_running():
-            verdict = "<span style='color:#27c'>Running</span>"
+            verdict = f"<span style='color:{theme.accent}'>Running</span>"
 
         elif error is None:
-            verdict = "<span style='color:#2a2'>Ready to run</span>"
+            verdict = f"<span style='color:{theme.ok}'>Ready to run</span>"
 
         else:
-            verdict = f"<span style='color:#d33'>{error}</span>"
+            verdict = f"<span style='color:{theme.error}'>{error}</span>"
 
         cells = case_file.domain.nx * case_file.domain.ny * case_file.domain.nz
         mach_number = case_file.flow.free_stream_velocity * 3 ** 0.5

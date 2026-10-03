@@ -4,10 +4,11 @@ import pyvista
 from pyvistaqt import QtInteractor
 from src.geometry.airfoil import naca_four_digit, place_section
 from src.geometry.mesh import read_stl
+from app import theme
 
 minimum_cells_across = 10 # fewer cells than this across a part's smallest in-plane size resolves it poorly
-wall_colors = {"static": "#8a8a8a", "moving": "#3d7fd1"}
-layer_color = "#e0a030"
+wall_colors = {"static": theme.disabled, "moving": theme.accent}
+layer_color = theme.amber
 
 # camera views: (direction from the domain center to the camera, view-up); x streamwise, y up, z span
 named_views = {
@@ -69,7 +70,7 @@ def part_report(name, surface, domain):
     if x_min < 0 or y_min < 0 or z_min < 0 or x_max > domain.nx or y_max > domain.ny or z_max > domain.nz:
         warnings.append("extends outside the domain")
     if warnings:
-        line += " <span style='color:#d33'>" + "; ".join(warnings) + "</span>"
+        line += f" <span style='color:{theme.error}'>" + "; ".join(warnings) + "</span>"
 
     return line
 
@@ -84,7 +85,7 @@ class CaseViewport:
         """
 
         self.plotter = QtInteractor(parent)
-        self.plotter.set_background("#2b2f36", top="#4a5562")
+        self.plotter.set_background(theme.viewport_background)
         self.stl_cache = {}
 
     def draw(self, case_file, reset_camera=False):
@@ -102,7 +103,7 @@ class CaseViewport:
         plotter.clear()
 
         # domain box
-        plotter.add_mesh(pyvista.Box(bounds=(0, nx, 0, ny, 0, nz)).outline(), color="white", line_width=1)
+        plotter.add_mesh(pyvista.Box(bounds=(0, nx, 0, ny, 0, nz)).outline(), color=theme.viewport_outline, line_width=1)
 
         # relaxation layers, translucent
         layers = []
@@ -125,9 +126,9 @@ class CaseViewport:
             try:
                 surface = part_surface(spec, domain, self.stl_cache)
             except (OSError, ValueError) as error:
-                reports.append(f"{spec.name}: <span style='color:#d33'>cannot read geometry ({error})</span>")
+                reports.append(f"{spec.name}: <span style='color:{theme.error}'>cannot read geometry ({error})</span>")
                 continue
-            plotter.add_mesh(surface, color="#d8d8d8", smooth_shading=True)
+            plotter.add_mesh(surface, color=theme.viewport_part, smooth_shading=True)
             reports.append(part_report(spec.name, surface, domain))
 
         plotter.add_axes()

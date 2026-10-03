@@ -2,8 +2,9 @@
 import dataclasses
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QCheckBox, QComboBox, QFormLayout, QLineEdit, QWidget
+from app import theme
 
-invalid_style = "border: 1px solid #d33"
+invalid_style = f"border: 1px solid {theme.error}"
 
 def format_value(value):
     """
