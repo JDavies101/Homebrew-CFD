@@ -657,6 +657,24 @@ reproduces run 151 on CUDA. Contents and order may move; the gates do not.
 - After v1.0: D3Q15 / D3Q27 (section 8), 2D engine parity with the 3D physics, full car and 3D front
   wing cases, thermal and aeroacoustic extensions (scope note below).
 
+Backlog (2026-10-02), not yet assigned to a release:
+- Before the v0.2.0 release: README credit for the image / icon work and the fonts (Saira, SIL OFL),
+  plus a short "about the icon" note (the streamlines are a real potential-flow solution: Hess-Smith
+  panels with the Kutta condition around an inverted NACA 8415-style section at 14 degrees, generated
+  by packaging/artwork/make_icon.py).
+- Watermark version of the artwork (for screenshots, docs and social previews).
+- State plainly in the README and app that Homebrew CFD is an offline solver (no network calls, no
+  accounts, data stays on the machine).
+- Experimental data as input: load measured values (pressure taps, force balance, PIV) to overlay on
+  results and to use as comparison bounds.
+- Probes: point / line samples of velocity and pressure recorded over time, shown on the monitors.
+- Tutorials and manuals (in-app tutorials, user manual).
+- Rotors driven by the flow: a free-spinning rotating part whose angular velocity follows from the
+  aerodynamic torque and its inertia (and optional load), instead of only a prescribed rpm.
+- iOS / iPadOS feasibility study: what it would take (no CUDA; Metal through Taichi, Apple GPU memory
+  limits, no float64 on Metal, App Store rules on code execution, a native UI instead of PySide6 /
+  PyVista), what case sizes would fit, and whether a viewer / remote-run client is the better scope.
+
 Product vs development (2026-10-01). Shipped: the engine (`src/`), the app, case templates (the current
 examples as drop-in cases), and a per-run record in each run folder (case, versions, backend, device,
 metrics). Development only: `docs/run_log.csv` (aggregated from run records), tests, the validation
