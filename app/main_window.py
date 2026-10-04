@@ -7,15 +7,16 @@ from PySide6.QtWidgets import (QFileDialog, QLabel, QMainWindow, QMessageBox, QS
 from src import __version__
 from src.run.case import setting_choices, check_choice
 from src.run.case_file import load_case_file, save_case_file, geometry_choices, stl_spec, part_free_case
+from src.run.estimate import default_throughput
+from src.post.run_log import gpu_total_gb
+from src.geometry.preview import load_preview
 from app.property_form import PropertyForm
-from app.viewport import CaseViewport, named_views, corner_views, read_part_mesh, estimate_lines
-from app.run_control import RunController
+from app.viewport import CaseViewport, named_views, corner_views, read_part_mesh, estimate_lines, preview_report
+from app.run_control import RunController, PreviewController
 from app.monitor_plot import MonitorPlot
 from app.ribbon import Ribbon
 from app import theme
 from app.new_study import StudyPage
-from src.run.estimate import default_throughput
-from src.post.run_log import gpu_total_gb
 
 template_directory = Path(__file__).resolve().parent.parent / "cases" / "templates"
 autosave_milliseconds = 60_000
@@ -115,6 +116,12 @@ class MainWindow(QMainWindow):
         self.runs.finished.connect(self.on_run_finished)
         self.runs.samples.connect(self.monitor.update_samples)
         self.last_result = None
+
+        # geometry preview: built by the solver in its own process, drawn over the case
+        self.previews = PreviewController(self)
+        self.previews.finished.connect(self.on_preview_finished)
+        self.preview_lines = []
+
         self.console = QPlainTextEdit()
         self.console.setReadOnly(True)
         self.console.setMaximumBlockCount(5000)
@@ -217,6 +224,11 @@ class MainWindow(QMainWindow):
         view_tab = self.ribbon.add_tab("View")
         view_tab.add_group("Camera", (fit_action, orthographic_action))
         view_tab.add_group("Views", (*common_views, all_views_action))
+        self.preview_action = self.make_action("Voxels", theme.icon("voxels"), None, None)
+        self.preview_action.setCheckable(True)
+        self.preview_action.toggled.connect(self.toggle_preview)
+        self.case_loading_actions.append(self.preview_action)
+        view_tab.add_group("Geometry", (self.preview_action,))
         reset_layout_action = self.make_action("Reset layout", theme.icon("reset_layout"), 
                                                None, self.reset_layout)
         console_action = self.console_dock.toggleViewAction()
@@ -293,6 +305,7 @@ class MainWindow(QMainWindow):
         self.case_file = case_file
         self.path = path
         self.dirty = path is None
+        self.preview_action.setChecked(False)
         self.build_tree()
         self.part_reports = self.viewport.draw(case_file, reset_camera=True)
         self.refresh_summary()
@@ -485,8 +498,55 @@ class MainWindow(QMainWindow):
         Any accepted edit: mark unsaved and re-check the case.
         """
 
+        self.preview_action.setChecked(False)
         self.dirty = True
         self.part_reports = self.viewport.draw(self.case_file)
+        self.refresh_summary()
+
+    def toggle_preview(self, checked):
+        """
+        Checked: build the current case's geometry in the background; unchecked: back to the plain view.
+        """
+
+        if not checked:
+            self.preview_lines = []
+            if self.case_file is not None:
+                self.part_reports = self.viewport.draw(self.case_file)
+                self.refresh_summary()
+            return
+
+        if self.case_file is None or not self.case_file.geometry or self.previews.is_running():
+            self.preview_action.setChecked(False)
+            return
+
+        # the case as edited, saved beside the preview so unsaved changes are included
+        preview_directory = workspace_directory() / ".preview"
+        preview_directory.mkdir(exist_ok=True)
+        save_case_file(self.case_file, preview_directory / "case.json")
+        self.previews.start(preview_directory / "case.json", preview_directory / "preview.npz")
+        self.preview_action.setEnabled(False)
+        self.statusBar().showMessage("Building geometry preview...")
+
+    def on_preview_finished(self, path, error):
+        """
+        Draw the preview over the case, or say why it failed.
+        """
+
+        self.preview_action.setEnabled(not self.runs.is_running())
+        if not path:
+            self.preview_action.setChecked(False)
+            self.statusBar().showMessage(f"Geometry preview failed: {error}", 10000)
+            return
+
+        # an edit while building made this preview stale
+        if not self.preview_action.isChecked():
+            return
+
+        preview = load_preview(path)
+        self.part_reports = self.viewport.draw(self.case_file, part_opacity=0.25)
+        self.viewport.show_preview(preview)
+        self.preview_lines = preview_report(preview)
+        self.statusBar().showMessage("Geometry preview ready", 5000)
         self.refresh_summary()
 
     def refresh_summary(self):
@@ -515,6 +575,8 @@ class MainWindow(QMainWindow):
         if error is None:
             lines += estimate_lines(case_file, *self.estimate_inputs())
         lines += ["", "<b>Parts</b>", *self.part_reports]
+        if self.preview_lines:
+            lines += ["", "<b>Voxels</b>", *self.preview_lines]
         if self.last_result is not None:
             lines += ["", "<b>Last run</b>", *self.result_lines(self.last_result)]
 

@@ -4,6 +4,7 @@ import pyvista
 from pyvistaqt import QtInteractor
 from src.geometry.airfoil import naca_four_digit, place_section
 from src.geometry.mesh import read_stl, inspect_mesh
+from src.geometry.preview import wall_points
 from src.run.estimate import case_device_bytes, run_seconds, format_duration
 from app import theme
 
@@ -31,6 +32,41 @@ def estimate_lines(case_file, throughput_mlups, measured, device_total_gb):
     time_line = f"run time ≈ {format_duration(run_seconds(case_file, throughput_mlups))} at {throughput_mlups:,.0f} MLUPS ({source})"
 
     return [memory_line, time_line]
+
+def preview_report(preview):
+    """
+    Per part: solid cells, boundary links and q range, in red when a part has no solid cells, a Bouzidi part
+    has no links (its wall would be silently off), or a q falls outside (0, 1].
+
+    Returns a list of lines.
+    """
+
+    lines = []
+    for index, name in enumerate(preview["names"]):
+        part_number = index + 1
+        solid_cells = int(np.count_nonzero(preview["part_id"] == part_number))
+        part_fractions = preview["fractions"][preview["link_part"] == part_number]
+        problems = []
+        if solid_cells == 0:
+            problems.append("no solid cells (below the resolution or outside the domain)")
+
+        if not preview["bouzidi"][index]:
+            line = f"{name}: {solid_cells:,} solid cells, staircase walls (q = 1/2)"
+        elif len(part_fractions) == 0:
+            line = f"{name}: {solid_cells:,} solid cells"
+            problems.append("no boundary links: its Bouzidi wall would be off")
+        else:
+            line = (f"{name}: {solid_cells:,} solid cells, {len(part_fractions):,} boundary links, "
+                    f"q {part_fractions.min():.3f} to {part_fractions.max():.3f}")
+            outside = int(np.count_nonzero((part_fractions <= 0.0) | (part_fractions > 1.0)))
+            if outside:
+                problems.append(f"{outside:,} links with q outside (0, 1]")
+
+        if problems:
+            line += f" <span style='color:{theme.error}'>" + "; ".join(problems) + "</span>"
+        lines.append(line)
+
+    return lines
 
 # camera views: (direction from the domain center to the camera, view-up); x streamwise, y up, z span
 named_views = {
@@ -131,9 +167,10 @@ class CaseViewport:
         self.plotter.set_background(theme.viewport_background)
         self.stl_cache = {}
 
-    def draw(self, case_file, reset_camera=False):
+    def draw(self, case_file, reset_camera=False, part_opacity=1.0):
         """
-        Redraw domain, layers, walls and parts; keeps the camera unless reset_camera.
+        Redraw domain, layers, walls and parts; keeps the camera unless reset_camera; part_opacity below 1 lets a
+        voxel preview show through the true surfaces.
 
         Returns one report line per part.
         """
@@ -172,7 +209,7 @@ class CaseViewport:
             except (OSError, ValueError) as error:
                 reports.append(f"{spec.name}: <span style='color:{theme.error}'>cannot read geometry ({error})</span>")
                 continue
-            plotter.add_mesh(surface, color=theme.viewport_part, smooth_shading=True)
+            plotter.add_mesh(surface, color=theme.viewport_part, smooth_shading=True, opacity=part_opacity)
             reports.append(part_report(spec.name, surface, domain, inspection, spec.cells_per_unit))
 
         plotter.add_axes()
@@ -180,6 +217,27 @@ class CaseViewport:
             self.set_view(default_view)
 
         return reports
+
+    def show_preview(self, preview):
+        """
+        Overlay the voxelized parts (solid cells as cubes) and the Bouzidi wall points coloured by q.
+        """
+
+        part_id = preview["part_id"]
+
+        # cell (i, j, k) spans node +- 1/2, like the wall rows in draw
+        grid = pyvista.ImageData(dimensions=np.array(part_id.shape) + 1, origin=(-0.5, -0.5, -0.5))
+        grid.cell_data["part"] = part_id.ravel(order="F")
+        solid = grid.threshold(0.5, scalars="part")
+        if solid.n_cells > 0:
+            self.plotter.add_mesh(solid.extract_surface(), color=theme.viewport_part, show_edges=True, name="preview_solid")
+
+        # wall points x + q c_q, coloured by q
+        if len(preview["fractions"]) > 0:
+            points = pyvista.PolyData(wall_points(preview["nodes"], preview["directions"], preview["fractions"]))
+            points.point_data["q"] = preview["fractions"]
+            self.plotter.add_mesh(points, scalars="q", clim=(0.0, 1.0), cmap="viridis", point_size=4,
+                                  render_points_as_spheres=True, name="preview_links")
 
     def close(self):
         """

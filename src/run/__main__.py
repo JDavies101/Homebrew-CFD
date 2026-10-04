@@ -1,4 +1,4 @@
-# command-line solve: python -m src.run case.json [--runs DIR] [--backend cuda|cpu] [--dev-log]
+# command-line solve: python -m src.run case.json [--runs DIR] [--backend cuda|cpu] [--dev-log] [--preview OUT.npz]
 import time
 process_start = time.perf_counter() # launch timing: the imports below count toward start-up
 import argparse
@@ -9,6 +9,7 @@ from src.post.statistics import block_statistics
 from src.run.case_file import load_case_file, save_case_file, build_case
 from src.run.run_folder import case_hash, create_run_folder, write_json_atomic
 from src.run.runner import run_case
+from src.geometry.preview import save_preview
 
 def part_statistics(series):
     """
@@ -66,10 +67,19 @@ def main():
     parser.add_argument("--backend", default="cuda", choices=["cuda", "cpu"])
     parser.add_argument("--dev-log", action="store_true")  # append the record to docs/run_log.csv instead of the run folder
     parser.add_argument("--run-folder", default=None)  # exact folder to create (the app chooses it); default: a new dated folder under --runs
+    parser.add_argument("--preview", default=None)  # build the geometry only and save it to this .npz (no run folder, no solver)
     options = parser.parse_args()
 
-    # run folder: the case as it will run, then live progress from the start
     case_file = load_case_file(options.case_path)
+
+    # geometry preview only: the parts exactly as the solver would get them, then stop
+    if options.preview is not None:
+        case = build_case(case_file, options.backend)
+        save_preview(options.preview, case.parts, (case_file.domain.nx, case_file.domain.ny, case_file.domain.nz))
+        print(f"Preview written: {options.preview}")
+        return
+
+    # run folder: the case as it will run, then live progress from the start
     folder = create_run_folder(options.runs, case_file.name, options.run_folder)
 
     # everything printed from here on (and any traceback) also goes to the run's solver.log
