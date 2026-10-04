@@ -3,7 +3,7 @@ import numpy as np
 import pyvista
 from pyvistaqt import QtInteractor
 from src.geometry.airfoil import naca_four_digit, place_section
-from src.geometry.mesh import read_stl
+from src.geometry.mesh import read_stl, inspect_mesh
 from app import theme
 
 minimum_cells_across = 10 # fewer cells than this across a part's smallest in-plane size resolves it poorly
@@ -26,6 +26,23 @@ corner_views = {f"Corner ({'+' if x > 0 else '-'}x {'+' if y > 0 else '-'}y {'+'
                 for x in (1, -1) for y in (1, -1) for z in (1, -1)}
 default_view = "Side (+z)"
 
+def read_part_mesh(path, stl_cache=None):
+    """
+    Read an STL and inspect it in its own units, once per path when a cache is given.
+
+    Returns (triangles, inspection).
+    """
+
+    if stl_cache is not None and path in stl_cache:
+        return stl_cache[path]
+    
+    triangles = read_stl(path)
+    entry = (triangles, inspect_mesh(triangles, 1.0))
+    if stl_cache is not None:
+        stl_cache[path] = entry
+
+    return entry
+
 def part_surface(spec, domain, stl_cache=None):
     """
     Display surface of one geometry spec in grid cells, without voxelizing.
@@ -42,21 +59,17 @@ def part_surface(spec, domain, stl_cache=None):
         return outline.triangulate().extrude((0.0, 0.0, float(domain.nz)), capping=True)
 
     # stl: read once per path, then scale and offset like build_part does
-    if stl_cache is not None and spec.path in stl_cache:
-        triangles = stl_cache[spec.path]
-    else:
-        triangles = read_stl(spec.path)
-        if stl_cache is not None:
-            stl_cache[spec.path] = triangles
+    triangles, _ = read_part_mesh(spec.path, stl_cache)
     placed = triangles * spec.cells_per_unit + np.asarray(spec.offset, np.float64)
     vertices = placed.reshape(-1, 3)
     faces = np.column_stack([np.full(len(placed), 3), np.arange(len(vertices)).reshape(-1, 3)]).ravel()
 
     return pyvista.PolyData(vertices, faces)
 
-def part_report(name, surface, domain):
+def part_report(name, surface, domain, inspection=None, cells_per_unit=1.0):
     """
-    Size of a part in cells, with warnings for coarse resolution or geometry outside the domain.
+    Size of a part in cells, with warnings for coarse resolution or geometry outside the domain
+    or a STL that is not watertight.
 
     Returns one line of text.
     """
@@ -65,10 +78,18 @@ def part_report(name, surface, domain):
     extent = (x_max - x_min, y_max - y_min, z_max - z_min)
     line = f"{name}: {extent[0]:.1f} x {extent[1]:.1f} x {extent[2]:.1f} cells"
     warnings = []
+    if inspection is not None:
+        size = inspection["size"]
+        line += f" ({size[0]:.4g} x {size[1]:.4g} x {size[2]:.4g} units at {cells_per_unit:.4g} cells/unit)"
+        if not inspection["watertight"]:
+            warnings.append(f"not watertight ({inspection['open_edges']} open, {inspection['flipped_edges']} flipped, "
+                            f"{inspection['nonmanifold_edges']} non-manifold edges)")
     if min(extent[0], extent[1]) < minimum_cells_across:
         warnings.append(f"under {minimum_cells_across} cells across (check STL units / scale)")
+    
     if x_min < 0 or y_min < 0 or z_min < 0 or x_max > domain.nx or y_max > domain.ny or z_max > domain.nz:
         warnings.append("extends outside the domain")
+    
     if warnings:
         line += f" <span style='color:{theme.error}'>" + "; ".join(warnings) + "</span>"
 
@@ -125,11 +146,12 @@ class CaseViewport:
         for spec in case_file.geometry:
             try:
                 surface = part_surface(spec, domain, self.stl_cache)
+                inspection = read_part_mesh(spec.path, self.stl_cache)[1] if spec.kind == "stl" else None
             except (OSError, ValueError) as error:
                 reports.append(f"{spec.name}: <span style='color:{theme.error}'>cannot read geometry ({error})</span>")
                 continue
             plotter.add_mesh(surface, color=theme.viewport_part, smooth_shading=True)
-            reports.append(part_report(spec.name, surface, domain))
+            reports.append(part_report(spec.name, surface, domain, inspection, spec.cells_per_unit))
 
         plotter.add_axes()
         if reset_camera:

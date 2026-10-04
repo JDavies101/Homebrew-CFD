@@ -647,7 +647,8 @@ reproduces run 151 on CUDA. Contents and order may move; the gates do not.
 - v0.3.0, geometry and pre-run checks. STL import in the app (units / scale shown as bounding box and
   cells across the body, watertight check), voxel and boundary-link preview, memory and run-time estimate
   before launch, templates for the Ahmed body, sphere and wheel; first tutorials (wing in ground effect,
-  STL import).
+  STL import). Part transform on import and later: rotate (axis swaps for Z-up / Y-up exports, angle
+  about each axis) and move (offset, snap to floor / centre), applied to the STL before scaling.
 - v0.4.0, studies. Run queue, parametric sweeps (ride height, angle) as one study, run comparison,
   checkpoints to stop and resume, probes (point / line samples of velocity and pressure over time,
   shown on the monitors), and experimental data as input (measured values such as pressure taps,

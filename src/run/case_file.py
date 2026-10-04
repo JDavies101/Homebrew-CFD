@@ -31,6 +31,30 @@ class GeometrySpec:
     angle_degrees: float = 4.0 # naca: incidence, positive = more downforce
     leading_edge: list = field(default_factory=lambda: [240.0, 24.5]) # naca: lowest-point placement (x, y), cells
 
+def stl_spec(path, inspection, domain, name):
+    """
+    First placement of an imported STL: largest scale that fits a quarter of the domain length and half its height
+    and width, front at x = nx / 4, centred in y and z; every value is a starting point to edit.
+
+    Returns a GeometrySpec.
+    """
+
+    lower_corner = inspection["lower_corner"]
+    size = np.maximum(inspection["size"], 1e-30)
+    fit_scale = min(domain.nx / 4 / size[0], domain.ny / 2 / size[1], domain.nz / 2 / size[2])
+    cells_per_unit = float(f"{fit_scale:.3g}")
+    placed_size = size * cells_per_unit
+
+    # front at nx / 4 centered in y and z
+    target_lower = np.array([domain.nx / 4, (domain.ny - placed_size[1]) / 2, 
+                             (domain.nz - placed_size[2]) / 2])
+    offset = target_lower - lower_corner * cells_per_unit
+    reference_area = placed_size[1] * placed_size[2] # bounding box frontal area, cells^2
+
+    return GeometrySpec(name=name, kind="stl", reference_area=float(round(reference_area, 1)), 
+                        path=str(path), cells_per_unit=cells_per_unit, 
+                        offset=[float(round(value, 2)) for value in offset])
+ 
 @dataclass
 class CaseFile:
     """

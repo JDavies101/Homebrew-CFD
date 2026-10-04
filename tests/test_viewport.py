@@ -1,9 +1,9 @@
 # viewport geometry: display surfaces in cells and part size reports
 import pyvista
-from src.geometry.mesh import icosphere, write_stl
+from src.geometry.mesh import icosphere, write_stl, box_mesh
 from src.run.case import Domain
 from src.run.case_file import GeometrySpec
-from app.viewport import part_surface, part_report
+from app.viewport import part_surface, part_report, read_part_mesh
 
 pyvista.OFF_SCREEN = True
 domain = Domain(nx=160, ny=80, nz=4)
@@ -51,3 +51,41 @@ def test_report_flags_outside(tmp_path):
     report = part_report("ball", part_surface(spec, Domain(nx=100, ny=80, nz=80)), Domain(nx=100, ny=80, nz=80))
 
     assert "outside the domain" in report
+
+# test 5: an STL report shows its size in STL units and the scale, and no watertight warning when closed
+def test_report_shows_units_and_scale(tmp_path):
+
+    path = tmp_path / "ball.stl"
+    write_stl(path, icosphere((0.0, 0.0, 0.0), 1.0, subdivisions=2))
+    spec = GeometrySpec(name="ball", kind="stl", reference_area=1.0, path=str(path), cells_per_unit=10.0, offset=[50.0, 40.0, 40.0])
+    big_domain = Domain(nx=100, ny=80, nz=80)
+    _, inspection = read_part_mesh(str(path))
+    report = part_report("ball", part_surface(spec, big_domain), big_domain, inspection, spec.cells_per_unit)
+
+    assert "units at 10 cells/unit" in report
+    assert "not watertight" not in report
+
+# test 6: an STL with a hole is flagged with its open edge count
+def test_report_flags_open_stl(tmp_path):
+
+    path = tmp_path / "open_box.stl"
+    write_stl(path, box_mesh((0.0, 0.0, 0.0), (1.0, 1.0, 1.0))[1:])
+    spec = GeometrySpec(name="box", kind="stl", reference_area=1.0, path=str(path), cells_per_unit=20.0, offset=[40.0, 30.0, 30.0])
+    big_domain = Domain(nx=100, ny=80, nz=80)
+    _, inspection = read_part_mesh(str(path))
+    report = part_report("box", part_surface(spec, big_domain), big_domain, inspection, spec.cells_per_unit)
+
+    assert "not watertight (3 open, 0 flipped, 0 non-manifold edges)" in report
+
+# test 7: the cache returns the same triangles and inspection objects on the second read
+def test_read_part_mesh_cache(tmp_path):
+
+    path = tmp_path / "ball.stl"
+    write_stl(path, icosphere((0.0, 0.0, 0.0), 1.0, subdivisions=1))
+    cache = {}
+    first = read_part_mesh(str(path), cache)
+    second = read_part_mesh(str(path), cache)
+
+    assert second[0] is first[0]
+    assert second[1] is first[1]
+    assert list(cache) == [str(path)]
