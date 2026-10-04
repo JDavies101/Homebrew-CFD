@@ -682,6 +682,21 @@ Backlog (2026-10-02), not yet assigned to a release:
   aerodynamic torque and its inertia (and optional load), instead of only a prescribed rpm.
 - Case file association: double-click opens a case in the app (Inno Setup registry entry; own
   extension such as .hcfd so the app does not claim every .json).
+- Results and post-processing (2026-10-03). Default outputs on every run, plus user-defined ones saved
+  in the case file and re-run on old results without re-solving.
+  - Defaults: force and moment coefficients per part (mean, SE, drift, history with the averaging window
+    shaded), a convergence monitor, and a results table exportable as CSV.
+  - Field views: mean and instantaneous velocity magnitude, pressure coefficient C_p and total-pressure
+    loss C_p0 on cut planes, vorticity / Q-criterion iso-surfaces coloured by velocity, streamlines from
+    a seed line or plane, surface C_p and skin-friction lines on parts, wake survey planes.
+  - Comparisons: two runs side by side or as a difference field, sweep plots (coefficient against ride
+    height or angle, from v0.4.0 studies), downforce split by part, centre-of-pressure position.
+  - Custom outputs: a small output definition (kind: plane / line / point / surface / integral;
+    quantity; location; averaging) evaluated by the solver while it runs (time-averaged fields, probes)
+    or afterwards from saved fields; plots, tables and images from the same definitions; export to CSV,
+    PNG and VTK (ParaView).
+  - Fields needed: time-averaged velocity and pressure (and their RMS) accumulated on the GPU, written
+    at the end; instantaneous snapshots on request. Memory cost goes into the pre-run estimate.
 Product vs development (2026-10-01). Shipped: the engine (`src/`), the app, case templates (the current
 examples as drop-in cases), and a per-run record in each run folder (case, versions, backend, device,
 metrics). Development only: `docs/run_log.csv` (aggregated from run records), tests, the validation

@@ -8,12 +8,14 @@ from src import __version__
 from src.run.case import setting_choices, check_choice
 from src.run.case_file import load_case_file, save_case_file, geometry_choices, stl_spec, part_free_case
 from app.property_form import PropertyForm
-from app.viewport import CaseViewport, named_views, corner_views, read_part_mesh
+from app.viewport import CaseViewport, named_views, corner_views, read_part_mesh, estimate_lines
 from app.run_control import RunController
 from app.monitor_plot import MonitorPlot
 from app.ribbon import Ribbon
 from app import theme
 from app.new_study import StudyPage
+from src.run.estimate import default_throughput
+from src.post.run_log import gpu_total_gb
 
 template_directory = Path(__file__).resolve().parent.parent / "cases" / "templates"
 autosave_milliseconds = 60_000
@@ -92,11 +94,13 @@ class MainWindow(QMainWindow):
         results_page.addWidget(self.results_summary)
         results_page.setSizes([600, 160])
 
+        self.device_total_gb = gpu_total_gb()
+
         # pages: setup (tree, forms, viewport, and summary), results, and the start page, switched by the ribbon
         self.pages = QStackedWidget()
         self.pages.addWidget(splitter)
         self.pages.addWidget(results_page)
-        self.study_page = StudyPage(self.viewport.stl_cache, self.dialog_directory, self.recent_paths)
+        self.study_page = StudyPage(self.viewport.stl_cache, self.dialog_directory, self.recent_paths, self.estimate_inputs)
         self.study_page.created.connect(self.on_study_created)
         self.study_page.open_requested.connect(self.on_study_open_requested)
         self.study_page.blank_requested.connect(self.on_study_blank_requested)
@@ -361,6 +365,31 @@ class MainWindow(QMainWindow):
         settings = QSettings("Homebrew CFD", "Homebrew CFD")
         settings.setValue("recent_cases", paths[:recent_cases_limit])
 
+    def estimate_inputs(self):
+        """
+        What the estimate needs from this machine.
+
+        Returns (throughput in MLUPS, measured, total GPU memory in GB or None).
+        """
+
+        stored = QSettings("Homebrew CFD", "Homebrew CFD").value("throughput_cuda")
+        if stored is None:
+            return default_throughput["cuda"], False, self.device_total_gb
+
+        return float(stored), True, self.device_total_gb
+
+    def remember_throughput(self, result):
+        """
+        Store this machine's throughput from a finished run long enough to swamp the kernel compile.
+        """
+
+        steps = result.get("steps_completed", 0)
+        if result.get("status") != "finished" or steps < 1000 or not result.get("loop_seconds"):
+            return
+
+        throughput = result["cells"] * steps / result["loop_seconds"] / 1e6
+        QSettings("Homebrew CFD", "Homebrew CFD").setValue("throughput_cuda", round(throughput, 1))
+
     def build_tree(self):
         """
         One tree node per settings group, one child per geometry part, each with its own form.
@@ -482,8 +511,10 @@ class MainWindow(QMainWindow):
         mach_number = case_file.flow.free_stream_velocity * 3 ** 0.5
         lines = [f"<b>{case_file.name}</b>", verdict, "",
                  f"tau = {case_file.flow.relaxation_time:.5f}", f"Mach = {mach_number:.3f}",
-                 f"cells = {cells:,}", f"steps = {case.total_steps():,} (warmup {case.warmup_steps():,})",
-                "", "<b>Parts</b>", *self.part_reports]
+                 f"cells = {cells:,}", f"steps = {case.total_steps():,} (warmup {case.warmup_steps():,})"]
+        if error is None:
+            lines += estimate_lines(case_file, *self.estimate_inputs())
+        lines += ["", "<b>Parts</b>", *self.part_reports]
         if self.last_result is not None:
             lines += ["", "<b>Last run</b>", *self.result_lines(self.last_result)]
 
@@ -728,6 +759,7 @@ class MainWindow(QMainWindow):
         status = result.get("status", f"solver exited with code {result['exit_code']} (see console)")        
         self.statusBar().showMessage(f"Run {status}", 10000)
         self.last_result = result
+        self.remember_throughput(result)
         self.refresh_summary()
 
     def result_lines(self, result):

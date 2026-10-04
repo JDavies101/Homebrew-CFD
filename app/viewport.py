@@ -4,11 +4,33 @@ import pyvista
 from pyvistaqt import QtInteractor
 from src.geometry.airfoil import naca_four_digit, place_section
 from src.geometry.mesh import read_stl, inspect_mesh
+from src.run.estimate import case_device_bytes, run_seconds, format_duration
 from app import theme
 
 minimum_cells_across = 10 # fewer cells than this across a part's smallest in-plane size resolves it poorly
 wall_colors = {"static": theme.disabled, "moving": theme.accent}
 layer_color = theme.amber
+
+memory_fraction = 0.9 # leave room for the driver, the display and the boundary-link lists
+
+def estimate_lines(case_file, throughput_mlups, measured, device_total_gb):
+    """
+    Memory and run-time estimate, the memory line in red when the fields will not fit the GPU.
+
+    Returns a list of lines.
+    """
+
+    memory_gb = case_device_bytes(case_file) / 1e9
+    memory_line = f"memory = {memory_gb:.2f} GB on the GPU"
+    if device_total_gb is not None:
+        memory_line += f" of {device_total_gb:.1f} GB"
+        if memory_gb > memory_fraction * device_total_gb:
+            memory_line = f"<span style='color:{theme.error}'>{memory_line}: will not fit (coarser resolution or smaller domain)</span>"
+
+    source = "measured on this machine" if measured else "typical GPU, refined after the first run"
+    time_line = f"run time ≈ {format_duration(run_seconds(case_file, throughput_mlups))} at {throughput_mlups:,.0f} MLUPS ({source})"
+
+    return [memory_line, time_line]
 
 # camera views: (direction from the domain center to the camera, view-up); x streamwise, y up, z span
 named_views = {

@@ -138,7 +138,20 @@ def gpu_used_gb():
     except Exception:
         return None, "n/a"
 
-# field health
+def gpu_total_gb():
+    """
+    Total memory of the first GPU.
+
+    Returns gigabytes, or None when nvidia-smi is unavailable.
+    """
+
+    try:
+        output = subprocess.run(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+                                capture_output=True, text=True, timeout=10, **hidden_window).stdout
+
+        return float(output.strip().splitlines()[0]) * 1048576 / 1e9
+    except Exception:
+        return None
 
 def field_health(velocity, density, solid=None, u_ref=None, band=4):
     """
