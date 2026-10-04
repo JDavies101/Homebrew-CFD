@@ -6,9 +6,9 @@ from PySide6.QtWidgets import (QFileDialog, QLabel, QMainWindow, QMessageBox, QS
                                QVBoxLayout, QWidget, QDockWidget, QPlainTextEdit, QProgressBar, QMenu)
 from src import __version__
 from src.run.case import Case, setting_choices, check_choice
-from src.run.case_file import load_case_file, save_case_file, geometry_choices
+from src.run.case_file import load_case_file, save_case_file, geometry_choices, stl_spec
 from app.property_form import PropertyForm
-from app.viewport import CaseViewport, named_views, corner_views
+from app.viewport import CaseViewport, named_views, corner_views, read_part_mesh
 from app.run_control import RunController
 from app.monitor_plot import MonitorPlot
 from app.ribbon import Ribbon
@@ -169,7 +169,15 @@ class MainWindow(QMainWindow):
         save_as_action = self.make_action("Save as", theme.icon("save_as"), QKeySequence.SaveAs, self.save_as)
         self.make_action("Quit", None, QKeySequence.Quit, self.close)
         self.case_loading_actions = [new_action, open_action]
-        self.ribbon.add_tab("Home").add_group("Case", (new_action, open_action, save_action, save_as_action))
+
+        home_tab = self.ribbon.add_tab("Home")
+        home_tab.add_group("Case", (new_action, open_action, save_action, save_as_action))
+
+        # home: geometry parts
+        import_action = self.make_action("Import STL", theme.icon("import_stl"), None, self.import_stl)
+        remove_part_action = self.make_action("Remove part", theme.icon("remove_part"), None, self.remove_part)
+        self.case_loading_actions += [import_action, remove_part_action]
+        home_tab.add_group("Geometry", (import_action, remove_part_action))
 
         # view: fit, projection, the common views as buttons, every view and corner in a menu
         fit_action = self.make_action("Fit", theme.icon("fit"), QKeySequence("Home"), self.viewport.fit)
@@ -293,6 +301,54 @@ class MainWindow(QMainWindow):
         form.changed.connect(self.on_changed)
         item = QTreeWidgetItem(parent, [label])
         item.setData(0, Qt.UserRole, self.forms.addWidget(form))
+
+    def import_stl(self):
+        """
+        Ask for an STL, inspect it, and add it as a new part placed to fit the domain.
+        """
+
+        # no case yet: start an untitled one from the empty 3D template
+        if self.case_file is None:
+            self.open_path(template_directory / "empty_3d.json", as_template=True)
+
+
+        path, _ = QFileDialog.getOpenFileName(self, "Import STL", str(self.dialog_directory()), "STL files (*.stl)")
+        if not path:
+            return
+        try:
+            _, inspection = read_part_mesh(path, self.viewport.stl_cache)
+        except (OSError, ValueError) as error:
+            QMessageBox.critical(self, "Cannot import STL", f"{path}\n\n{error}")
+            return
+
+        # unique part name from the file name
+        names = {spec.name for spec in self.case_file.geometry}
+        base_name = Path(path).stem
+        name = base_name
+        number = 2
+        while name in names:
+            name = f"{base_name}_{number}"
+            number += 1
+
+        self.case_file.geometry.append(stl_spec(path, inspection, self.case_file.domain, name))
+        self.build_tree()
+        geometry_node = self.tree.topLevelItem(self.tree.topLevelItemCount() - 1)
+        self.tree.setCurrentItem(geometry_node.child(geometry_node.childCount() - 1))
+        self.on_changed()
+
+    def remove_part(self):
+        """
+        Remove the selected geometry part; does nothing when the selection is not a part.
+        """
+
+        item = self.tree.currentItem()
+        parent = item.parent() if item is not None else None
+        if parent is None or parent.text(0) != "Geometry":
+            return
+
+        del self.case_file.geometry[parent.indexOfChild(item)]
+        self.build_tree()
+        self.on_changed()
 
     def show_node(self, item, previous):
         """

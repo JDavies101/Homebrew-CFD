@@ -5,7 +5,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 from src.run.case import Flow, Domain, Turbulence, Timing
-from src.run.case_file import GeometrySpec, CaseFile, save_case_file, load_case_file, build_part
+from src.run.case_file import GeometrySpec, CaseFile, save_case_file, load_case_file, build_part, stl_spec
+from src.geometry.mesh import box_mesh, inspect_mesh
 
 template_path = Path(__file__).resolve().parent.parent / "cases" / "templates" / "wing_ground.json"
 
@@ -79,3 +80,20 @@ def test_build_naca_part():
     assert np.count_nonzero(bouzidi_part.wall_fractions) > 0
     assert staircase_part.wall_fractions is None
     assert np.array_equal(staircase_part.solid, bouzidi_part.solid)
+
+# test 6: an imported STL is scaled to fit a quarter of the length and placed front at nx / 4, centred in y and z
+def test_stl_spec_placement():
+
+    triangles = box_mesh((-1.0, 0.0, -0.5), (3.0, 1.0, 0.5))
+    domain = Domain(nx=200, ny=80, nz=80)
+    spec = stl_spec("body.stl", inspect_mesh(triangles, 1.0), domain, "body")
+    placed = triangles * spec.cells_per_unit + np.asarray(spec.offset)
+    placed_lower = placed.reshape(-1, 3).min(axis=0)
+    placed_upper = placed.reshape(-1, 3).max(axis=0)
+
+    assert spec.cells_per_unit == 12.5
+    assert np.allclose(placed_lower, [50.0, 33.75, 33.75])
+    assert np.allclose(placed_upper, [100.0, 46.25, 46.25])
+    assert abs(spec.reference_area - 156.25) < 0.1
+    assert spec.kind == "stl"
+    assert spec.name == "body"
