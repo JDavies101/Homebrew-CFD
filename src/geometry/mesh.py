@@ -47,6 +47,56 @@ def to_lattice(triangles, origin, spacing):
 
     return (triangles - np.asarray(origin, np.float64)) / spacing
 
+def inspect_mesh(triangles, cells_per_unit, weld_tolerance=1e-9):
+    """
+    Size and closure report for an STL triangle soup.
+
+    Returns a dict: lower_corner, upper_corner, size, cells_across (size * cells_per_unit),
+    triangle_count, open_edges, nonmanifold_edges, flipped_edges, degenerate_triangles, watertight.
+    """
+
+    # bounding box
+    corners = triangles.reshape(-1, 3)
+    lower_corner = corners.min(axis=0)
+    upper_corner = corners.max(axis=0)
+    size = upper_corner - lower_corner
+
+    # weld corners: STL repeats each vertex per triangle
+    scale = max(float(size.max()), 1e-30)
+    keys = np.round(corners / (scale * weld_tolerance)).astype(np.int64)
+    _, vertex_ids = np.unique(keys, axis=0, return_inverse=True)
+    vertex_ids = vertex_ids.reshape(-1, 3)
+
+    # degenerate: two corners welded together
+    degenerate = (vertex_ids[:, 0] == vertex_ids[:, 1]) | (vertex_ids[:, 1] == vertex_ids[:, 2]) | (vertex_ids[:, 2] == vertex_ids[:, 0])
+    
+    # directed edges a -> b of every triangle
+    edge_start = vertex_ids[:, [0, 1, 2]].ravel()
+    edge_end = vertex_ids[:, [1, 2, 0]].ravel()
+    undirected = np.sort(np.stack([edge_start, edge_end], axis=1), axis=1)
+    _, edge_index, use_count = np.unique(undirected, axis=0, return_inverse=True, return_counts=True)
+
+    # orientation: closed, consistently wound edge is used on a->b and b->a
+    forward = (edge_start < edge_end).astype(np.int64)
+    forward_count = np.bincount(edge_index.ravel(), weights=forward, minlength=use_count.size)
+
+    open_edges = int(np.sum(use_count == 1))
+    nonmanifold_edges = int(np.sum(use_count > 2))
+    flipped_edges = int(np.sum((use_count == 2) & (forward_count != 1)))
+
+    return {
+        "lower_corner": lower_corner,
+        "upper_corner": upper_corner,
+        "size": size,
+        "cells_across": size * cells_per_unit,
+        "triangle_count": len(triangles),
+        "open_edges": open_edges,
+        "nonmanifold_edges": nonmanifold_edges,
+        "flipped_edges": flipped_edges,
+        "degenerate_triangles": int(np.sum(degenerate)),
+        "watertight": open_edges == 0 and nonmanifold_edges == 0 and flipped_edges == 0
+    }
+
 def icosphere(center, radius, subdivisions=3):
     """
     Closed triangle mesh of a sphere: icosahedron, each face split into 4, points pushed to the sphere.

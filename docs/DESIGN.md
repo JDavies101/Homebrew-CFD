@@ -649,7 +649,9 @@ reproduces run 151 on CUDA. Contents and order may move; the gates do not.
   before launch, templates for the Ahmed body, sphere and wheel; first tutorials (wing in ground effect,
   STL import).
 - v0.4.0, studies. Run queue, parametric sweeps (ride height, angle) as one study, run comparison,
-  checkpoints to stop and resume.
+  checkpoints to stop and resume, probes (point / line samples of velocity and pressure over time,
+  shown on the monitors), and experimental data as input (measured values such as pressure taps,
+  force balance, PIV overlaid on results and used as comparison bounds).
 - v0.5.0, verification and platforms. Validation suite (case + reference + tolerance) run before every
   release, optional Verification menu, backend auto-detect (CUDA, Vulkan, CPU), Linux build.
 - v1.0, stable. Case schema with migrations, signed builds, complete user documentation and tutorials,
@@ -674,9 +676,6 @@ Backlog (2026-10-02), not yet assigned to a release:
 - Watermark version of the artwork (for screenshots, docs and social previews).
 - State plainly in the README and app that Homebrew CFD is an offline solver (no network calls, no
   accounts, data stays on the machine).
-- Experimental data as input: load measured values (pressure taps, force balance, PIV) to overlay on
-  results and to use as comparison bounds.
-- Probes: point / line samples of velocity and pressure recorded over time, shown on the monitors.
 - Tutorials and manuals (in-app tutorials, user manual).
 - Rotors driven by the flow: a free-spinning rotating part whose angular velocity follows from the
   aerodynamic torque and its inertia (and optional load), instead of only a prescribed rpm.
