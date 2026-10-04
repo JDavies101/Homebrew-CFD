@@ -44,6 +44,8 @@ QDockWidget::title {{ background: {raised}; padding: 4px 8px; }}
 QToolTip {{ background: {raised}; color: {text}; border: 1px solid {grid}; }}
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{ border: 1px solid {grid}; border-radius: 3px; padding: 2px 4px; }}
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{ border-color: {accent}; }}
+QToolButton#card {{ text-align: left; padding: 8px; border: 1px solid {grid}; border-radius: 6px; }}
+QToolButton#card:checked {{ border-color: {accent}; background: {hover}; }}
 """
 
 def heading_font(point_size):

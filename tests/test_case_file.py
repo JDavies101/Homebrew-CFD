@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from src.run.case import Flow, Domain, Turbulence, Timing
-from src.run.case_file import GeometrySpec, CaseFile, save_case_file, load_case_file, build_part, stl_spec
+from src.run.case_file import GeometrySpec, CaseFile, save_case_file, load_case_file, build_part, stl_spec, part_free_case
 from src.geometry.mesh import box_mesh, inspect_mesh
 
 template_path = Path(__file__).resolve().parent.parent / "cases" / "templates" / "wing_ground.json"
@@ -97,3 +97,16 @@ def test_stl_spec_placement():
     assert abs(spec.reference_area - 156.25) < 0.1
     assert spec.kind == "stl"
     assert spec.name == "body"
+
+# test 7: the part-free Case carries the file's settings and no parts
+def test_part_free_case():
+
+    case_file = load_case_file(template_path)
+    case = part_free_case(case_file)
+
+    assert case.name == case_file.name
+    assert case.flow is case_file.flow
+    assert case.domain is case_file.domain
+    assert case.timing is case_file.timing
+    assert case.allow_below_floor == case_file.allow_below_floor
+    assert case.parts == []

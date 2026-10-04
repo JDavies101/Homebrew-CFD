@@ -680,6 +680,8 @@ Backlog (2026-10-02), not yet assigned to a release:
 - Tutorials and manuals (in-app tutorials, user manual).
 - Rotors driven by the flow: a free-spinning rotating part whose angular velocity follows from the
   aerodynamic torque and its inertia (and optional load), instead of only a prescribed rpm.
+- Case file association: double-click opens a case in the app (Inno Setup registry entry; own
+  extension such as .hcfd so the app does not claim every .json).
 Product vs development (2026-10-01). Shipped: the engine (`src/`), the app, case templates (the current
 examples as drop-in cases), and a per-run record in each run folder (case, versions, backend, device,
 metrics). Development only: `docs/run_log.csv` (aggregated from run records), tests, the validation

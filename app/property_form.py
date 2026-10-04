@@ -46,13 +46,15 @@ class PropertyForm(QWidget):
 
     changed = Signal()
 
-    def __init__(self, target, choices, field_names=None, parent=None):
+    def __init__(self, target, choices, field_names=None, parent=None, labels=None):
         """
-        Build one row per field: drop-down for fields with fixed choices, check box for booleans, text otherwise.
+        Build one row per field: drop-down for fields with fixed choices, check box for booleans, text otherwise;
+        labels maps field names and choice values to display text (default: the name with spaces).
         """
 
         super().__init__(parent)
         self.target = target
+        self.labels = labels or {}
         self.editors = {}
         layout = QFormLayout(self)
         for item in dataclasses.fields(target):
@@ -61,7 +63,7 @@ class PropertyForm(QWidget):
 
             editor = self.editor_for(item, choices)
             self.editors[item.name] = editor
-            layout.addRow(item.name.replace("_", " "), editor)
+            layout.addRow(self.labels.get(item.name, item.name.replace("_", " ")), editor)
 
     def editor_for(self, item, choices):
         """
@@ -74,9 +76,10 @@ class PropertyForm(QWidget):
         value = getattr(self.target, name)
         if name in choices:
             editor = QComboBox()
-            editor.addItems(choices[name])
-            editor.setCurrentText(str(value))
-            editor.currentTextChanged.connect(lambda text, name=name: self.write(name, text))
+            for choice in choices[name]:
+                editor.addItem(self.labels.get(choice, choice), choice)
+            editor.setCurrentIndex(editor.findData(value))
+            editor.currentIndexChanged.connect(lambda index, editor=editor, name=name: self.write(name, editor.itemData(index)))
         elif isinstance(value, bool):
             editor = QCheckBox()
             editor.setChecked(value)

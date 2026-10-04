@@ -58,8 +58,13 @@ def main():
     if len(sys.argv) > 1:
         window.open_path(sys.argv[1])
 
+    # no case given: show the start page before the window appears, so there is no empty setup flash
+    if window.case_file is None:
+        window.new_study()
+
     window.show()
     splash.finish(window)
+
     sys.exit(application.exec())
 
 if __name__ == "__main__":
