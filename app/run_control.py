@@ -9,6 +9,18 @@ from src.run.run_folder import new_run_folder_path
 project_root = Path(__file__).resolve().parent.parent
 poll_milliseconds = 500
 
+def solver_command(case_path, solver_arguments):
+    """
+    How to launch the solver: the source build runs python -m src.run, the packaged app runs itself with --solve.
+
+    Returns (arguments, working directory).
+    """
+
+    if getattr(sys, "frozen", False):
+        return ["--solve", str(case_path), *solver_arguments], Path(case_path).resolve().parent
+    
+    return ["-u", "-m", "src.run", str(case_path), *solver_arguments], project_root
+
 class RunController(QObject):
     """
     One solver process at a time: start it, relay its output and progress, stop it, report the result.
@@ -47,13 +59,7 @@ class RunController(QObject):
         self.run_folder = new_run_folder_path(runs_directory, case_name).resolve()
         self.log_offset = 0
         self.sample_count = 0
-        solver_arguments = [str(case_path), "--run-folder", str(self.run_folder)]
-        if getattr(sys, "frozen", False):
-            arguments = ["--solve", *solver_arguments]
-            working_directory = Path(case_path).resolve().parent
-        else:
-            arguments = ["-u", "-m", "src.run", *solver_arguments]
-            working_directory = project_root
+        arguments, working_directory = solver_command(case_path, ["--run-folder", str(self.run_folder)])
         self.process = QProcess(self)
         self.process.setWorkingDirectory(str(working_directory))
         self.process.setProcessChannelMode(QProcess.ForwardedChannels)  # source build: output still reaches the terminal
@@ -143,3 +149,53 @@ class RunController(QObject):
         result["exit_code"] = exit_code
         result["run_folder"] = str(self.run_folder) if self.run_folder is not None else ""
         self.finished.emit(result)
+
+class PreviewController(QObject):
+    """
+    Build a case's geometry in a separate process and hand back the preview file, or why it failed.
+    """
+
+    finished = Signal(str, str) # (preview path, "") on success, ("", last output line) on failure
+
+    def __init__(self, parent=None):
+        """
+        Idle, no process.
+        """
+
+        super().__init__(parent)
+        self.process = None
+        self.preview_path = None
+
+    def is_running(self):
+        """
+        Returns True while a preview build is alive.
+        """
+
+        return self.process is not None and self.process.state() != QProcess.NotRunning
+
+    def start(self, case_path, preview_path):
+        """
+        Remove any old preview file and launch the geometry build.
+        """
+
+        self.preview_path = Path(preview_path)
+        self.preview_path.unlink(missing_ok=True)
+        arguments, working_directory = solver_command(case_path, ["--preview", str(self.preview_path)])
+        self.process = QProcess(self)
+        self.process.setWorkingDirectory(str(working_directory))
+        self.process.setProcessChannelMode(QProcess.MergedChannels)
+        self.process.finished.connect(self.on_finished)
+        self.process.start(sys.executable, arguments)
+
+    def on_finished(self, exit_code, exit_status):
+        """
+        Report the preview file, or the last line the build printed when it failed.
+        """
+
+        if exit_code == 0 and self.preview_path.exists():
+            self.finished.emit(str(self.preview_path), "")
+            return
+
+        output = bytes(self.process.readAll()).decode("utf-8", errors="replace").strip()
+        last_line = output.splitlines()[-1] if output else f"exit code {exit_code}"
+        self.finished.emit("", last_line)
