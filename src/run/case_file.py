@@ -31,18 +31,21 @@ class GeometrySpec:
     angle_degrees: float = 4.0 # naca: incidence, positive = more downforce
     leading_edge: list = field(default_factory=lambda: [240.0, 24.5]) # naca: lowest-point placement (x, y), cells
 
-def stl_spec(path, inspection, domain, name):
+def stl_spec(path, inspection, domain, name, cells_per_unit=None):
     """
     First placement of an imported STL: largest scale that fits a quarter of the domain length and half its height
     and width, front at x = nx / 4, centred in y and z; every value is a starting point to edit.
+    cells_per_unit given: used as it is, no fit.
 
     Returns a GeometrySpec.
     """
 
     lower_corner = inspection["lower_corner"]
     size = np.maximum(inspection["size"], 1e-30)
-    fit_scale = min(domain.nx / 4 / size[0], domain.ny / 2 / size[1], domain.nz / 2 / size[2])
-    cells_per_unit = float(f"{fit_scale:.3g}")
+    if cells_per_unit is None:
+        fit_scale = min(domain.nx / 4 / size[0], domain.ny / 2 / size[1], domain.nz / 2 / size[2])
+        cells_per_unit = float(f"{fit_scale:.3g}")
+
     placed_size = size * cells_per_unit
 
     # front at nx / 4 centered in y and z
@@ -100,6 +103,17 @@ def load_case_file(path):
     
     return CaseFile(flow=Flow(**data.pop("flow")), domain=Domain(**data.pop("domain")), turbulence=Turbulence(**data.pop("turbulence")),
                     timing=Timing(**data.pop("timing")), geometry=geometry, **data)
+
+def part_free_case(case_file):
+    """
+    The Case of a case file without building geometry: for checks and derived numbers before a run.
+
+    Returns a Case with no parts.
+    """
+
+    return Case(name=case_file.name, tag=case_file.name, flow=case_file.flow, domain=case_file.domain, turbulence=case_file.turbulence,
+                timing=case_file.timing, collision=case_file.collision, inlet=case_file.inlet, start=case_file.start,
+                allow_below_floor=case_file.allow_below_floor)  
 
 def build_part(spec, domain, backend):
     """

@@ -67,7 +67,7 @@ class RunController(QObject):
         """
 
         try:
-            with open(self.run_folder / "solver.log", "r", encoding="utf-8", errors="replace") as log_file:
+            with open(self.run_folder / "solver.log", "r", encoding="utf-8", errors="replace", newline="") as log_file:
                 log_file.seek(self.log_offset)
                 text = log_file.read()
         except OSError:

@@ -1,9 +1,8 @@
-# studies: the new-study wizard's answers turned into a 
-# case file (sizing rules, physical to lattice units)
+# studies: the new-study wizard's answers turned into a case file (sizing rules, physical to lattice units)
 import math
 from dataclasses import dataclass
 from src.run.case import Flow, Domain, Turbulence, Timing, minimum_relaxation_time, check_choice
-from src.run.case_file import CaseFile
+from src.run.case_file import CaseFile, stl_spec
 
 fluid_viscosities = {"air": 1.516e-5, "water": 1.004e-6} # nu at 20 C, m^2/s
 resolution_cells = {"coarse": 40, "medium": 64, "fine": 96} # cells across body length
@@ -107,3 +106,11 @@ def case_from_answers(answers):
 
     return CaseFile(name=answers.name, flow=flow, domain=domain, turbulence=Turbulence(sgs=answers.sgs), timing=timing,
                     allow_below_floor=answers.allow_below_floor)
+
+def add_stl_part(case_file, path, inspection, name):
+    """
+    Add an STL as a part scaled so its streamwise length (x) is the reference length, placed like stl_spec.
+    """
+
+    cells_per_unit = case_file.flow.reference_length / max(float(inspection["size"][0]), 1e-30)
+    case_file.geometry.append(stl_spec(path, inspection, case_file.domain, name, cells_per_unit))

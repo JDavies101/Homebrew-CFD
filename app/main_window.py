@@ -5,17 +5,19 @@ from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QFileDialog, QLabel, QMainWindow, QMessageBox, QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem,
                                QVBoxLayout, QWidget, QDockWidget, QPlainTextEdit, QProgressBar, QMenu)
 from src import __version__
-from src.run.case import Case, setting_choices, check_choice
-from src.run.case_file import load_case_file, save_case_file, geometry_choices, stl_spec
+from src.run.case import setting_choices, check_choice
+from src.run.case_file import load_case_file, save_case_file, geometry_choices, stl_spec, part_free_case
 from app.property_form import PropertyForm
 from app.viewport import CaseViewport, named_views, corner_views, read_part_mesh
 from app.run_control import RunController
 from app.monitor_plot import MonitorPlot
 from app.ribbon import Ribbon
 from app import theme
+from app.new_study import StudyPage
 
 template_directory = Path(__file__).resolve().parent.parent / "cases" / "templates"
 autosave_milliseconds = 60_000
+recent_cases_limit = 8
 # the UI offers every choice the engine accepts, except a custom start (a case file cannot hold an initial field)
 form_choices = {**setting_choices, **geometry_choices, "start": ("rest_ramp", "uniform")}
 solver_fields = ("name", "collision", "inlet", "start", "allow_below_floor")
@@ -63,7 +65,7 @@ class MainWindow(QMainWindow):
         self.tree.setHeaderHidden(True)
         self.tree.currentItemChanged.connect(self.show_node)
         self.forms = QStackedWidget()
-        self.summary = QLabel("Open a case or start from a template (File menu).")
+        self.summary = QLabel("No case open: New study (Ctrl+N), New from a template, or Open.")
         self.summary.setAlignment(Qt.AlignTop)
         self.summary.setWordWrap(True)
         summary_pane = QWidget()
@@ -90,10 +92,15 @@ class MainWindow(QMainWindow):
         results_page.addWidget(self.results_summary)
         results_page.setSizes([600, 160])
 
-        # pages: setup (tree, forms, viewport, and summary) and results, switched by the ribbon
+        # pages: setup (tree, forms, viewport, and summary), results, and the start page, switched by the ribbon
         self.pages = QStackedWidget()
         self.pages.addWidget(splitter)
         self.pages.addWidget(results_page)
+        self.study_page = StudyPage(self.viewport.stl_cache, self.dialog_directory, self.recent_paths)
+        self.study_page.created.connect(self.on_study_created)
+        self.study_page.open_requested.connect(self.on_study_open_requested)
+        self.study_page.blank_requested.connect(self.on_study_blank_requested)
+        self.pages.addWidget(self.study_page)
         self.setCentralWidget(self.pages)
         self.splitters = {"setup": splitter, "setup_right": right_pane, "results": results_page}
 
@@ -162,16 +169,16 @@ class MainWindow(QMainWindow):
             action = template_menu.addAction(template_path.stem)
             action.triggered.connect(lambda checked=False, template_path=template_path: self.open_path(template_path, as_template=True))
         
+        new_study_action = self.make_action("New study", theme.icon("new_study"), QKeySequence.New, self.new_study)
         new_action = self.make_action("New", theme.icon("new"), None, None)
         new_action.setMenu(template_menu)
         open_action = self.make_action("Open", theme.icon("open"), QKeySequence.Open, self.open_dialog)
         save_action = self.make_action("Save", theme.icon("save"), QKeySequence.Save, self.save)
         save_as_action = self.make_action("Save as", theme.icon("save_as"), QKeySequence.SaveAs, self.save_as)
         self.make_action("Quit", None, QKeySequence.Quit, self.close)
-        self.case_loading_actions = [new_action, open_action]
-
+        self.case_loading_actions = [new_study_action, new_action, open_action]
         home_tab = self.ribbon.add_tab("Home")
-        home_tab.add_group("Case", (new_action, open_action, save_action, save_as_action))
+        home_tab.add_group("Case", (new_study_action, new_action, open_action, save_action, save_as_action))
 
         # home: geometry parts
         import_action = self.make_action("Import STL", theme.icon("import_stl"), None, self.import_stl)
@@ -230,6 +237,14 @@ class MainWindow(QMainWindow):
 
         self.pages.setCurrentIndex(1 if self.ribbon.widget(index) is self.results_tab else 0)
 
+    def show_start(self, visible):
+        """
+        Show the start page with the ribbon hidden, or return to the normal setup view.
+        """
+
+        self.ribbon.setVisible(not visible)
+        self.pages.setCurrentIndex(2 if visible else 0)
+
     def dialog_directory(self):
         """
         Where file dialogs start: the current case's folder, else the workspace.
@@ -259,16 +274,92 @@ class MainWindow(QMainWindow):
         if not self.confirm_discard():
             return
         try:
-            self.case_file = load_case_file(path)
+            case_file = load_case_file(path)
         except (OSError, ValueError, TypeError, KeyError) as error:
             QMessageBox.critical(self, "Cannot open case", f"{path}\n\n{error}")
             return
-        
-        self.path = None if as_template else Path(path)
-        self.dirty = as_template
+
+        self.show_case(case_file, None if as_template else Path(path))
+
+    def show_case(self, case_file, path):
+        """
+        Make a case current: tree, viewport and summary; a case without a path is untitled and unsaved.
+        """
+
+        self.case_file = case_file
+        self.path = path
+        self.dirty = path is None
         self.build_tree()
-        self.part_reports = self.viewport.draw(self.case_file, reset_camera=True)
+        self.part_reports = self.viewport.draw(case_file, reset_camera=True)
         self.refresh_summary()
+        self.show_start(False)
+        if path is not None:
+            self.remember_recent(path)
+
+    def new_study(self):
+        """
+        Show the start page, fresh and with the current recent-cases list.
+        """
+
+        if not self.confirm_discard():
+            return
+
+        self.study_page.reset()
+        self.study_page.set_recent(self.recent_paths())
+        self.show_start(True)
+
+    def on_study_created(self, case_file):
+        """
+        The start page finished a case: open it untitled for review.
+        """
+
+        self.show_case(case_file, None)
+
+    def on_study_open_requested(self, path):
+        """
+        The start page asked for an existing case: the given path, or the open dialog when path is empty.
+        """
+
+        if path:
+            self.open_path(path)
+        else:
+            self.open_dialog()
+
+    def on_study_blank_requested(self):
+        """
+        The start page asked for a blank case: the empty 3D template, untitled.
+        """
+
+        self.open_path(template_directory / "empty_3d.json", as_template=True)
+
+    def recent_paths(self):
+        """
+        Recently opened case files, newest first, that still exist on disk.
+
+        Returns a list of path strings.
+        """
+
+        settings = QSettings("Homebrew CFD", "Homebrew CFD")
+        stored = settings.value("recent_cases")
+        if stored is None:
+            paths = []
+        elif isinstance(stored, str):
+            paths = [stored]
+        else:
+            paths = list(stored)
+
+        return [path for path in paths if Path(path).exists()]
+
+    def remember_recent(self, path):
+        """
+        Put a case file at the front of the recent-cases list, capped at recent_cases_limit entries.
+        """
+
+        path = str(path)
+        paths = [entry for entry in self.recent_paths() if entry != path]
+        paths.insert(0, path)
+        settings = QSettings("Homebrew CFD", "Homebrew CFD")
+        settings.setValue("recent_cases", paths[:recent_cases_limit])
 
     def build_tree(self):
         """
@@ -375,9 +466,7 @@ class MainWindow(QMainWindow):
         """
 
         case_file = self.case_file
-        case = Case(name=case_file.name, tag=case_file.name, flow=case_file.flow, domain=case_file.domain, turbulence=case_file.turbulence,
-                    timing=case_file.timing, collision=case_file.collision, inlet=case_file.inlet, start=case_file.start,
-                    allow_below_floor=case_file.allow_below_floor)
+        case = part_free_case(case_file)
         
         error = self.validation_error()
         if self.runs.is_running():
@@ -416,9 +505,7 @@ class MainWindow(QMainWindow):
         """
 
         case_file = self.case_file
-        case = Case(name=case_file.name, tag=case_file.name, flow=case_file.flow, domain=case_file.domain, turbulence=case_file.turbulence,
-                    timing=case_file.timing, collision=case_file.collision, inlet=case_file.inlet, start=case_file.start,
-                    allow_below_floor=case_file.allow_below_floor)
+        case = part_free_case(case_file)
         try:
             case.validate()
             for spec in case_file.geometry:
@@ -442,6 +529,7 @@ class MainWindow(QMainWindow):
         save_case_file(self.case_file, self.path)
         self.dirty = False
         self.update_title()
+        self.remember_recent(self.path)
 
         return True
 
@@ -501,6 +589,7 @@ class MainWindow(QMainWindow):
         if self.confirm_discard():
             self.save_layout()
             self.viewport.close()
+            self.study_page.close_preview()
             event.accept()
         else:
             event.ignore()

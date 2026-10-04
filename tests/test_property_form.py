@@ -62,3 +62,16 @@ def test_field_subset():
     form = PropertyForm(Flow(), choices, field_names=("reynolds_number",))
 
     assert list(form.editors) == ["reynolds_number"]
+
+# test 6: labelled choices show the label and write the real value
+def test_labelled_choice_writes_value():
+
+    domain = Domain()
+    labels = {"floor": "Floor", "static": "Static floor", "moving": "Moving floor (road)"}
+    form = PropertyForm(domain, choices, labels=labels)
+    editor = form.editors["floor"]
+    editor.setCurrentIndex(editor.findData("moving"))
+
+    assert domain.floor == "moving"
+    assert editor.currentText() == "Moving floor (road)"
+    assert form.layout().labelForField(editor).text() == "Floor"

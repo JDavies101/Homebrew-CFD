@@ -1,22 +1,14 @@
 # new-study answers: physical to lattice units, Re cap at the tau floor, domain sizing per problem
-from src.run.case import Case, minimum_relaxation_time
-from src.run.study import StudyAnswers, physical_reynolds_number, case_from_answers
-
-def _case(case_file):
-    """
-    The runnable Case of a part-free case file, as the app's summary builds it.
-
-    Returns a Case.
-    """
-
-    return Case(name=case_file.name, tag=case_file.name, flow=case_file.flow, domain=case_file.domain, turbulence=case_file.turbulence,
-                timing=case_file.timing, collision=case_file.collision, inlet=case_file.inlet, start=case_file.start,
-                allow_below_floor=case_file.allow_below_floor)
+import numpy as np
+from src.geometry.mesh import box_mesh, inspect_mesh
+from src.run.case import minimum_relaxation_time
+from src.run.case_file import part_free_case
+from src.run.study import StudyAnswers, physical_reynolds_number, case_from_answers, add_stl_part
 
 # test 1: the defaults alone give a case the engine accepts
 def test_defaults_validate():
 
-    case = _case(case_from_answers(StudyAnswers()))
+    case = part_free_case(case_from_answers(StudyAnswers()))
     case.validate()
 
     assert case.domain.nx == 384
@@ -44,7 +36,7 @@ def test_reynolds_number_capped_at_floor():
 def test_below_floor_keeps_physical_reynolds_number():
 
     answers = StudyAnswers(allow_below_floor=True)
-    case = _case(case_from_answers(answers))
+    case = part_free_case(case_from_answers(answers))
     case.validate()
 
     assert case.flow.reynolds_number == physical_reynolds_number(answers)
@@ -107,3 +99,17 @@ def test_unknown_problem_rejected():
         rejected = True
 
     assert rejected
+
+# test 11: an STL part is scaled so its x-length is the body length in cells, front at nx / 4
+def test_add_stl_part_scale():
+
+    triangles = box_mesh((-1.0, 0.0, -0.5), (3.0, 1.0, 0.5))
+    case_file = case_from_answers(StudyAnswers())
+    add_stl_part(case_file, "body.stl", inspect_mesh(triangles, 1.0), "body")
+    spec = case_file.geometry[0]
+    placed = (triangles * spec.cells_per_unit + np.asarray(spec.offset)).reshape(-1, 3)
+
+    assert spec.cells_per_unit == 16.0
+    assert abs((placed[:, 0].max() - placed[:, 0].min()) - 64.0) < 1e-9
+    assert abs(placed[:, 0].min() - 96.0) < 1e-9
+    assert len(case_file.geometry) == 1
