@@ -133,6 +133,8 @@ def main():
                       walls=", ".join(f"{spec.name} {spec.wall}" for spec in case_file.geometry),
                       boundaries=f"inlet {case.inlet} / x {case.domain.x_boundary} / y {case.domain.y_boundary} / z {case.domain.side_walls}")
 
+    loop_seconds = time.perf_counter() - timing["solver_ready"]
+   
     # results: per-part coefficient statistics and history
     status = "finished"
     if result.blow_up_step >= 0:
@@ -146,7 +148,8 @@ def main():
         parts = {spec.name: part_statistics(coefficients[:, index, :]) for index, spec in enumerate(case_file.geometry)}
     write_json_atomic(folder / "result.json", {"status": status, "case_hash": digest, "version": __version__, "backend": options.backend,
                                                "steps": case.total_steps(), "steps_completed": result.steps_completed, "warmup": case.warmup_steps(),
-                                               "blow_up_step": result.blow_up_step, "stopped_step": result.stopped_step, "parts": parts})
+                                               "blow_up_step": result.blow_up_step, "stopped_step": result.stopped_step, "parts": parts,
+                                               "cells": case.domain.nx * case.domain.ny * case.domain.nz, "loop_seconds": round(loop_seconds, 2)})
     write_json_atomic(progress_path, {"status": status, "step": result.steps_completed, "steps": case.total_steps()})
 
     # run record: first part's y coefficient as the headline (the wing's -CL is its negative)

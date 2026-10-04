@@ -7,7 +7,7 @@ from src.run.case import setting_choices
 from src.run.case_file import part_free_case
 from src.run.study import StudyAnswers, study_choices, physical_reynolds_number, case_from_answers, add_stl_part
 from app.property_form import PropertyForm
-from app.viewport import CaseViewport, read_part_mesh
+from app.viewport import CaseViewport, read_part_mesh, estimate_lines
 from app import theme
 
 wizard_choices = {**study_choices, "sgs": setting_choices["sgs"]}
@@ -90,15 +90,17 @@ class StudyPage(QWidget):
     open_requested = Signal(str)
     blank_requested = Signal()
 
-    def __init__(self, stl_cache, start_directory_function, recent_paths_function, preview=None, parent=None):
+    def __init__(self, stl_cache, start_directory_function, recent_paths_function, estimate_function, preview=None, parent=None):
         """
         Build the rail, the step stack, the bottom bar and the preview; start on the first step.
+        estimate_function returns (throughput in MLUPS, measured, total GPU memory in GB or None).
         """
 
         super().__init__(parent)
         self.stl_cache = stl_cache
         self.start_directory_function = start_directory_function
         self.recent_paths_function = recent_paths_function
+        self.estimate_function = estimate_function
         self.answers = StudyAnswers()
         self.stl_path = None
         self.stl_inspection = None
@@ -417,6 +419,7 @@ class StudyPage(QWidget):
                  f"tau = {flow.relaxation_time:.5f}",
                  f"Mach = {flow.free_stream_velocity * 3 ** 0.5:.3f}",
                  f"grid = {domain.nx} x {domain.ny} x {domain.nz} ({domain.nx * domain.ny * domain.nz:,} cells)"]
+        lines += estimate_lines(self.case_file(), *self.estimate_function())
 
         # a bad STL must never break the preview or the verdict
         try:

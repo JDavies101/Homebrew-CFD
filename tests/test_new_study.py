@@ -35,7 +35,7 @@ def make_page():
     Returns the StudyPage.
     """
 
-    return StudyPage({}, lambda: ".", lambda: [], preview=FakePreview())
+    return StudyPage({}, lambda: ".", lambda: [], lambda: (600.0, False, None), preview=FakePreview())
 
 # test 1: the defaults give a valid, part-free case and the verdict shows the capped Re
 def test_defaults_finish():
@@ -46,6 +46,7 @@ def test_defaults_finish():
 
     assert page.error is None
     assert "capped" in page.verdict.text()
+    assert "memory =" in page.verdict.text()
     assert case_file.geometry == []
 
 # test 2: an answer the engine rejects shows the error and blocks Next

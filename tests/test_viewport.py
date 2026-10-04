@@ -1,12 +1,14 @@
 # viewport geometry: display surfaces in cells and part size reports
+from pathlib import Path
 import pyvista
 from src.geometry.mesh import icosphere, write_stl, box_mesh
 from src.run.case import Domain
-from src.run.case_file import GeometrySpec
-from app.viewport import part_surface, part_report, read_part_mesh
+from src.run.case_file import GeometrySpec, load_case_file
+from app.viewport import part_surface, part_report, read_part_mesh, estimate_lines
 
 pyvista.OFF_SCREEN = True
 domain = Domain(nx=160, ny=80, nz=4)
+template_path = Path(__file__).resolve().parent.parent / "cases" / "templates" / "wing_ground.json"
 
 # test 1: a NACA spec spans one chord in x (rotated by the incidence) and the full span in z
 def test_naca_surface_extent():
@@ -89,3 +91,16 @@ def test_read_part_mesh_cache(tmp_path):
     assert second[0] is first[0]
     assert second[1] is first[1]
     assert list(cache) == [str(path)]
+
+# test 8: the memory line turns red with "will not fit" when the fields exceed the GPU, and drops the total when unknown
+def test_estimate_lines_fit():
+
+    case_file = load_case_file(template_path)
+    fits = estimate_lines(case_file, 600.0, False, 100.0)
+    too_big = estimate_lines(case_file, 600.0, True, 0.1)
+    unknown = estimate_lines(case_file, 600.0, False, None)
+
+    assert "will not fit" not in fits[0]
+    assert "will not fit" in too_big[0]
+    assert "measured on this machine" in too_big[1]
+    assert " of " not in unknown[0]
