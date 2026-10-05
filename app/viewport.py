@@ -243,14 +243,14 @@ class CaseViewport:
 
     def show_preview(self, preview):
         """
-        Overlay the voxelized parts (solid cells as cubes) and the Bouzidi wall points coloured by q.
+        Overlay the voxelized parts (solid cells as cubes) and the Bouzidi wall points colored by q.
         """
 
         solid = mask_surface(preview["part_id"])
         if solid.n_points > 0:
             self.plotter.add_mesh(solid, color=theme.viewport_part, show_edges=True, name="preview_solid")
 
-        # wall points x + q c_q, coloured by q
+        # wall points x + q c_q, colored by q
         if len(preview["fractions"]) > 0:
             points = pyvista.PolyData(wall_points(preview["nodes"], preview["directions"], preview["fractions"]))
             points.point_data["q"] = preview["fractions"]

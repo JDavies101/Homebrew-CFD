@@ -8,6 +8,10 @@ application, but the solver is general: external bodies, internal ducts, heat tr
 aeroacoustics are all within reach of the same core. Anthropic's Claude was used to assist with
 code outline, documentation upkeep, and planning. Early icon concepts were drafted with Google Gemini; the final icon, splash screen and ribbon icons are generated in code (the streamlines are a computed potential flow around the wing), and the wordmark uses Saira under the SIL Open Font License.
 
+Homebrew CFD is an offline solver: it makes no network calls and has no accounts, and cases, geometry
+and results stay on the machine. The user manual and tutorials are in [docs/manual](docs/manual) and in
+the app under Help (F1).
+
 ## Goals
 
 - **Accuracy first.** Every capability is backed by a validation case with published

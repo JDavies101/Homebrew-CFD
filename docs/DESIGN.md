@@ -641,14 +641,14 @@ reproduces run 151 on CUDA. Contents and order may move; the gates do not.
   (unsigned builds 3/70, Wacatac.C!ml); SmartScreen still warns until the certificate earns reputation
   (submitted to Microsoft 2026-10-02). If I move to the UK, individuals are not eligible: switch to Certum
   open source. Remaining: logo refined from the current icon (navy, silver airfoil, blue -> violet ->
-  orange streamlines), one colour palette applied as a Qt theme and to the plots, a matching icon set for
+  orange streamlines), one color palette applied as a Qt theme and to the plots, a matching icon set for
   every ribbon button, startup splash screen, installer icon; artwork generated and refined under my
   direction. Default case / run folder in Documents\Homebrew CFD.
 - v0.3.0, geometry and pre-run checks. STL import in the app (units / scale shown as bounding box and
   cells across the body, watertight check), voxel and boundary-link preview, memory and run-time estimate
   before launch, templates for the Ahmed body, sphere and wheel; first tutorials (wing in ground effect,
   STL import). Part transform on import and later: rotate (axis swaps for Z-up / Y-up exports, angle
-  about each axis) and move (offset, snap to floor / centre), applied to the STL before scaling.
+  about each axis) and move (offset, snap to floor / center), applied to the STL before scaling.
   Project folders: one folder per project in the workspace (case file, geometry\ with imported STLs
   copied in and stored relative, runs\, exports\), so a project can be moved or shared whole.
 - v0.4.0, studies. Run queue, parametric sweeps (ride height, angle) as one study, run comparison,
@@ -664,7 +664,7 @@ reproduces run 151 on CUDA. Contents and order may move; the gates do not.
 - After v1.0, Apple version (decided 2026-10-03): a separate repository (not a fork; no shared code),
   native SwiftUI + Metal, one codebase for iPad, iPhone and macOS, built on my Mac. Scope: 2D D2Q9 first
   (TRT, bounce-back, velocity inlet, pressure outlet, float32; Metal has no float64), interactive: draw
-  obstacles by touch or Apple Pencil and watch the flow live, colour maps in the icon palette. Validated
+  obstacles by touch or Apple Pencil and watch the flow live, color maps in the icon palette. Validated
   against JSON fixtures exported from the NumPy D2Q9 reference here (Poiseuille, cavity, cylinder
   Strouhal number), with a validation screen in the app. 3D only for small cases, if ever (thermal
   throttling, battery, touch set-up). The Python / Taichi / PySide6 stack does not run on iOS, so this is
@@ -684,15 +684,21 @@ Backlog (2026-10-02), not yet assigned to a release:
   aerodynamic torque and its inertia (and optional load), instead of only a prescribed rpm.
 - Case file association: double-click opens a case in the app (Inno Setup registry entry; own
   extension such as .hcfd so the app does not claim every .json).
+- Network features, all opt-in (2026-10-04): update check or auto-updater (new-version notice; a
+  possible route to monetization), and anonymous usage data for product improvement (needs terms and a
+  privacy notice before it ships). Until then the app stays offline, and the README and manual say so;
+  both statements change when the first network feature lands.
+- Unit systems (2026-10-04): choose and switch units (SI, imperial; lattice units shown alongside),
+  through a settings window that also holds the other app preferences.
 - Results and post-processing (2026-10-03). Default outputs on every run, plus user-defined ones saved
   in the case file and re-run on old results without re-solving.
   - Defaults: force and moment coefficients per part (mean, SE, drift, history with the averaging window
     shaded), a convergence monitor, and a results table exportable as CSV.
   - Field views: mean and instantaneous velocity magnitude, pressure coefficient C_p and total-pressure
-    loss C_p0 on cut planes, vorticity / Q-criterion iso-surfaces coloured by velocity, streamlines from
+    loss C_p0 on cut planes, vorticity / Q-criterion iso-surfaces colored by velocity, streamlines from
     a seed line or plane, surface C_p and skin-friction lines on parts, wake survey planes.
   - Comparisons: two runs side by side or as a difference field, sweep plots (coefficient against ride
-    height or angle, from v0.4.0 studies), downforce split by part, centre-of-pressure position.
+    height or angle, from v0.4.0 studies), downforce split by part, center-of-pressure position.
   - Custom outputs: a small output definition (kind: plane / line / point / surface / integral;
     quantity; location; averaging) evaluated by the solver while it runs (time-averaged fields, probes)
     or afterwards from saved fields; plots, tables and images from the same definitions; export to CSV,
@@ -859,7 +865,7 @@ engaged nodes at H = 24, one at H = 48), and by the implicit LES filter width sh
 size.
 
 With the wall model disabled (runs 127-129) Cd is 0.754, 0.700 and 0.629 at H = 24, 32 and 48, identical
-to the wall-modelled runs within the standard error. The log-law model has no measurable effect on Cd
+to the wall-modeled runs within the standard error. The log-law model has no measurable effect on Cd
 here, so the resolution trend comes from the grid and the implicit LES filter: the mean WALE eddy
 viscosity falls from 6.2 nu at H = 24 to 3.0 nu at H = 48, and Cd falls with it. The differences between
 successive grids (0.055, 0.033, 0.039) are not decreasing geometrically, so the runs are not yet in the

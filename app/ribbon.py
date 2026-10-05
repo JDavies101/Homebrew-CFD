@@ -52,7 +52,7 @@ class RibbonTab(QWidget):
 
         column.addLayout(buttons)
 
-        # group caption under the buttons, greyed
+        # group caption under the buttons, grayed
         caption = QLabel(title)
         caption.setAlignment(Qt.AlignHCenter)
         caption.setEnabled(False)
