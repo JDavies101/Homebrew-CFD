@@ -53,13 +53,14 @@ Curved walls also need a **wall fraction** field `q`, shaped `(Q, nx, ny, nz)`: 
 fluid node and direction, the fraction of that link lying inside the fluid before it
 crosses the surface. `0` means the link is not a boundary link. Interpolated bounce-back
 consumes it; it is produced per shape in `src/geometry/` (analytically for cylinder and
-sphere, from a signed-distance field for arbitrary STL later).
+sphere, from a signed-distance field and exact link-triangle intersection for STL meshes, Phase 4.1).
 
-> No CAD/geometry files exist yet - intentional. Phases 1-3 run entirely on parametric and
-> hand-drawn shapes, so validation never blocks on external assets. STL import is only
-> needed at Phase 4.
+> Status: Phases 1-3 ran entirely on parametric shapes, so validation never blocked on external
+> assets. STL import landed in Phase 4.1 (`src/geometry/mesh.py`, `mesh_distance.py`) and in the
+> application in v0.3.0 (size and watertight report). Hand-drawn 2D sections (path 2) and OBJ are not
+> built yet.
 
-## 4. Outputs (all four requested)
+## 4. Outputs
 
 - **Force coefficients:** integrate momentum exchange on solid nodes -> Cd, Cl/downforce,
   drag counts; per-part breakdown via geometry tags.
@@ -69,6 +70,10 @@ sphere, from a signed-distance field for arbitrary STL later).
   adjust inlet speed / yaw angle on the fly at reduced resolution.
 - **Design comparison:** config-driven runs + a sweep harness (ride height, wing angle,
   yaw) that tabulates coefficients across variants.
+
+Status (2026-10-04): force coefficients with per-part breakdown are done (Phase 4.3); VTK export is
+done; the live view is the desktop application's force monitors (Phase 6) rather than a Taichi GUI, and
+live field views are not built; design comparison (sweeps, run comparison) is v0.4.0.
 
 ## 5. Validation strategy (the heart of "accuracy first")
 
@@ -121,7 +126,7 @@ homebrew-cfd/
 
 ## 7. Phased roadmap
 
-**Phase 0 - Scaffold.** Repo structure, environment (Taichi + CUDA verified on the 3090),
+**Phase 0 - Scaffold. DONE.** Repo structure, environment (Taichi + CUDA verified on the 3090),
 CI-style `pytest` skeleton, config loader. *Exit: `pytest` runs green on an empty suite.*
 
 **Phase 1 - 2D LBM core. DONE.** D2Q9 BGK in **NumPy** (not Taichi - Phase 1 stays
@@ -159,7 +164,9 @@ where the y and z symmetry planes meet injects spurious energy (`max|u|` ~4x inl
 node-based specular-reflection artifact needing proper corner handling (Phase 3). So the
 sphere validates the machinery, not a clean Cd. It also still uses staircase
 `bounce_back`: only `wall_fraction_cylinder` exists, so the sphere never got Bouzidi.
-A `wall_fraction_sphere` is the fix.
+A `wall_fraction_sphere` is the fix. Resolved later: TRT and the regularized collision run the sphere
+at Re 50, `wall_fraction_sphere` and the SDF give it Bouzidi walls, and the free-slip corner is avoided
+by the NEEM inlet / pressure outlet set-up with x relaxation layers (Phase 4.1).
 
 Regression net: `tests/test_engine3d.py` (6 Tier-A invariant tests - macroscopic, collide
 fixed-point, conservation, bounce-back swap, free-slip involution, inlet). It caught a real
@@ -303,7 +310,7 @@ Guo force-correction to Pi (regularization zeroes f_neq's -F/2 first moment) - d
 nothing regularized is forced here.
 
 **Wall function generalized + wired. DONE.** `wall_model` now finds the wall normal per node from
-the discrete solid gradient (`-sum c_q over solid neighbours`), so it works on any wall
+the discrete solid gradient (`-sum c_q over solid neighbors`), so it works on any wall
 orientation (roof/floor/base/front/slant), using the wall-parallel speed and reducing exactly to
 the old y-normal case (test 21 still passes; a new x-wall test 24 checks the normal). Wired into
 the Ahmed loop (macroscopic -> wall_model(nu, 0.5) -> collide_reg), with `collide_reg` adding
@@ -396,6 +403,9 @@ error bars on Cd in `ahmed.py`; (2) check the 25 deg wake PNG for reattachment o
 convention and rerun all three); (4) if still flat, fall back to another relative test
 (rounded vs square nose, or a ground-clearance sweep).
 
+*Historical record above. The slant sweep is closed: E6 (section 7a) shows both slants separated at
+Re_H 30000, so the Ahmed body is not a usable relative test here.*
+
 **Phase 3 close-out.** Gate met: the relative aero gate (nose-shape, square vs round, +48%
 Cd, correct sign and mechanism) passed. All core operators done and unit-tested: TRT,
 Bouzidi interpolated bounce-back, LES Smagorinsky (textbook constant), regularized collision,
@@ -405,16 +415,18 @@ green: Poiseuille, cavity (Ghia), cylinder (Cd 1.576, St 0.165), sphere (Bouzidi
 facing step, Re_tau=180 channel (U+ 18.5), Ahmed stability + nose gate.
 
 *Carried forward (known, deferred by decision - none block the Phase 3 gate):*
-- Absolute Ahmed Cd - out of charter (hardware-bound at 24 GB; needs H~150-300 = cluster).
-- Free-slip corner artifact - `free_slip_y_top` built but unwired; Ahmed uses no-slip tunnel
-  walls instead. Needs corner treatment before free-slip far-field walls are usable.
+- Absolute Ahmed Cd - out of charter (hardware-bound at 24 GB; needs H~150-300 = cluster). Still open; E6 (section 7a) shows Cd is not grid-converged up to H = 48.
+- Free-slip corner artifact - `free_slip_y_top` was removed in the 4.2 bug hunt; open boundaries use
+  NEEM inlet / pressure outlet with relaxation layers instead.
 - Wall-aware SGS (van Driest / WALE / Vreman) - static Smagorinsky over-damps the near-wall
   log layer, so the wall model can't engage cleanly at high Re. Needed for trustworthy
-  wall-modeled car surfaces.
+  wall-modeled car surfaces. Done in 4.0 (WALE with a Smagorinsky floor).
 - SDF wall-distance field - wall normals come from the discrete solid gradient today; an SDF
-  gives both sub-cell `q` and normals for arbitrary (STL) surfaces.
-- Forced + regularized Guo correction to Pi - deferred (nothing regularized is forced yet).
-- Second-order channel turbulence (`u'_rms`) - minimal-box high; needs a full-size box.
+  gives both sub-cell `q` and normals for arbitrary (STL) surfaces. Done in 4.0 (`src/geometry/sdf.py`,
+  `build_wall_list(phi)`).
+- Forced + regularized Guo correction to Pi - deferred (nothing regularized is forced yet). Done in 4.0.
+- Second-order channel turbulence (`u'_rms`) - minimal-box high; needs a full-size box. Still open (not
+  needed for the current cases).
 
 **Phase 4 - Automotive features. LARGELY DONE (4.0-4.3 complete; 4.4 reached with the quasi-2D wing in ground effect; a 3D front wing or full car remains).** Turn the validated solver into a car-aero tool. Real
 geometry, real road boundary conditions, part-resolved forces. Same charter as Phase 3:
@@ -520,7 +532,7 @@ relative comparisons and credible trends, not certification-grade absolute Cd. S
   inlet ramp. The first attempt (run 54) corrected all pairs, so in-plane populations circulating
   along the x-periodic floor row gained 6 w U per step without bound, and the wall model used the
   absolute velocity, engaging the whole moving floor (79244 nodes). Fixes: fluid-bound links only,
-  and `build_wall_list` now stores the mean wall velocity of each node's solid neighbours so
+  and `build_wall_list` now stores the mean wall velocity of each node's solid neighbors so
   `wall_model_fast(nu, scale)` works on u - u_w. Tests: exact Couette profile (0.1% of U) with no
   cross-flow. Ahmed: mean mid-span u/U one cell above the floor at x0 - 56 is 0.995 (moving) vs
   0.419 (static), within 2% of the free stream over j = 1-6; underbody u/U at j = 1 is 1.09 vs
@@ -536,7 +548,7 @@ relative comparisons and credible trends, not certification-grade absolute Cd. S
   pressure outlet, start at U, x layers): non-rotating Cd 1.378, St 0.165 (run 56); at spin ratio
   alpha = 1 (counter-clockwise), Cl -2.653 with the Magnus sign, Cd 1.166, St 0.165 (run 58),
   against about |Cl| 2.5 and Cd 1.1 reported for unconfined flow at Re 100.
-- *4.2 close-out - bug hunt fixes (runs 59-63).* WALE now takes a solid neighbour's wall velocity
+- *4.2 close-out - bug hunt fixes (runs 59-63).* WALE now takes a solid neighbor's wall velocity
   instead of zero, so moving walls are not seen as a velocity jump. Bouzidi falls back to halfway
   bounce-back when the q <= 1/2 upstream node is solid (thin gaps, wheel contact patches). The
   interpolated-wall force uses the Galilean-invariant form F = sum c (f_in + f_out) - u_w (f_in - f_out).
@@ -564,12 +576,13 @@ relative comparisons and credible trends, not certification-grade absolute Cd. S
   monotonically as the gap closes (0.094 to 0.145). All runs stable, drift below 0.5%. The
   enhancement-then-reduction trend is reproduced; the peak sits at larger h/c and the enhancement
   is weaker than in high-Re moving-ground experiments, which I attribute provisionally to the low
-  Reynolds number (thicker wing and ground boundary layers) and will test in the envelope study.
+  Reynolds number (thicker wing and ground boundary layers) and will test in the envelope study. Envelope study done (E5, section 7a): the peak moves toward the ground
+as Re rises, confirming the low-Re explanation.
 
-**Phase 5 - Interactivity & sweeps.** Taichi GGUI live viewer (in-run visualization, no
-export round-trip), parameter sweeps, A/B comparison tables, mixed-precision for larger
-domains. Refactor F (AA-pattern in-place streaming, section 10) lands here or in Phase 4 the
-moment a real car domain exceeds the 24 GB cap - it is the memory headroom the bigger runs need.
+**Phase 5 - Interactivity & sweeps. Folded into Phase 6.** The live view is the application's monitors;
+parameter sweeps, A/B comparison and the run queue are release v0.4.0; mixed precision stays open
+(section 9). Refactor F (AA-pattern in-place streaming, section 10) lands the moment a real car domain
+exceeds the 24 GB cap.
 
 **Phase 6 - Application (UI).** A standalone setup / run-control / post app: load an STL,
 assign boundary conditions, set domain/Re, launch, monitor live, and A/B compare - wrapping the
@@ -590,10 +603,10 @@ progress, live force monitors, clean stop and exit); M5 Windows build (PyInstall
 engine and Taichi as source, one executable with `--solve`, Inno Setup installer, icon). Gates: the
 wing template reproduces run 151 exactly from the command line (runs 165-166), from the application,
 and from the installed executable. Wing geometry set-up fell from 42 s to 6 s (phi evaluated once, on
-one xy-plane for extruded sections). Next: release pipeline, UI backlog, STL import in the UI,
-validation suite, sweeps.
+one xy-plane for extruded sections). Releases since then are tracked in the release roadmap
+below (v0.1.1 to v0.3.0 published).
 
-v0.1.1 plan (2026-10-01). v0.1.0 shipped as a pre-release built locally and unsigned; VirusTotal flags it
+v0.1.1 plan (2026-10-01, done; kept as the record). v0.1.0 shipped as a pre-release built locally and unsigned; VirusTotal flags it
 on 1 of about 70 engines (Arctic Wolf, generic machine-learning verdict), a known pattern for unsigned
 PyInstaller builds. v0.1.1 is a hygiene and polish release, no solver changes:
 - Build: `upx=False` in the spec (EXE and COLLECT); evaluate a PyInstaller bootloader built from source;
@@ -613,25 +626,25 @@ PyInstaller builds. v0.1.1 is a hygiene and polish release, no solver changes:
   arrive, false positives become a nuisance, or before v1.0. Update 2026-10-01: Microsoft Defender flags
   the CI-built HomebrewCFD.exe (`Trojan:Win32/Wacatac.C!ml`, 3 of 70 engines on VirusTotal) with the stock
   and with a source-built PyInstaller bootloader alike, so the verdict follows the PyInstaller layout, not
-  the launcher. Reported to Microsoft as an incorrect detection; signing (SignPath first) moves to v0.2.0.
+  the launcher. Reported to Microsoft as an incorrect detection; signing moved to v0.2.0 (Azure Artifact Signing, see the roadmap).
 - UI backlog: summary shows Running during a run; inputs frozen while running (still navigable); Run /
   Stop on their own ribbon tab; Monitors on a resizable Results tab; warmup / averaging phase in the
   status line and as a marker on the plot; running-mean line; x-axis in flow-throughs; capitalized
   status, console and summary messages; "max |u|" spacing; floor / ceiling drawn only for y walls.
 - Gate: the CI-built installer reproduces run 151 (C_y -0.3368, SE 0.0004, C_x 0.1144).
 
-Release roadmap (estimated, 2026-10-01). Each version is a set of short feature branches merged through
+Release roadmap (2026-10-01, updated 2026-10-04). Each version is a set of short feature branches merged through
 pull requests with CI green; the tag builds a draft release in CI, and I publish it after the installer
 reproduces run 151 on CUDA. Contents and order may move; the gates do not.
-- v0.1.1 (in progress), hygiene and polish. Done: UPX off (run 167 = run 151), release workflow with CPU
+- v0.1.1 (published 2026-10-02), hygiene and polish: UPX off (run 167 = run 151), release workflow with CPU
   smoke test (wing_smoke C_y -0.0335), checksums and attestation, pinned dependencies with pip-audit and
   Dependabot, code signing deferred, branching with a protected main; capitalized messages, Running state
   and frozen inputs during a run, monitors in flow-throughs with shaded warmup and running means, ribbon
   (Home / View / Run / Results) replacing menus and toolbar, Results tab with full-size monitors, saved
   window layout with Reset, visible splitters, PyInstaller bootloader compiled from source in CI, run
   artifacts, SECURITY.md, repository settings (squash merges, tag ruleset, CodeQL, secret scanning).
-  Remaining: tag and release.
-- v0.2.0 (in progress), look and identity. Done: code signing with Azure Artifact Signing as an individual
+  Gate: run 167 = run 151.
+- v0.2.0 (published 2026-10-03), look and identity: code signing with Azure Artifact Signing as an individual
   (publisher "Jake Davies", Public Trust profile homebrew-cfd, account homebrewcfd, East US; SignPath
   rejected because the publisher would read "SignPath Foundation"). CI: tag-only `sign` job in the
   `release` GitHub environment (v* tags only), OIDC login (federated subject uses the ID form
@@ -640,30 +653,35 @@ reproduces run 151 on CUDA. Contents and order may move; the gates do not.
   and the draft release; PR builds stay unsigned. Test tag v0.2.0-sign1: both files signed, VirusTotal 0/66
   (unsigned builds 3/70, Wacatac.C!ml); SmartScreen still warns until the certificate earns reputation
   (submitted to Microsoft 2026-10-02). If I move to the UK, individuals are not eligible: switch to Certum
-  open source. Remaining: logo refined from the current icon (navy, silver airfoil, blue -> violet ->
-  orange streamlines), one color palette applied as a Qt theme and to the plots, a matching icon set for
-  every ribbon button, startup splash screen, installer icon; artwork generated and refined under my
-  direction. Default case / run folder in Documents\Homebrew CFD.
-- v0.3.0, geometry and pre-run checks. STL import in the app (units / scale shown as bounding box and
-  cells across the body, watertight check), voxel and boundary-link preview, memory and run-time estimate
-  before launch, templates for the Ahmed body, sphere and wheel; first tutorials (wing in ground effect,
-  STL import). Part transform on import and later: rotate (axis swaps for Z-up / Y-up exports, angle
-  about each axis) and move (offset, snap to floor / center), applied to the STL before scaling.
-  Project folders: one folder per project in the workspace (case file, geometry\ with imported STLs
-  copied in and stored relative, runs\, exports\), so a project can be moved or shared whole.
-- v0.4.0, studies. Run queue, parametric sweeps (ride height, angle) as one study, run comparison,
+  open source. Also shipped: icon and splash screen generated in code (packaging/artwork/make_icon.py;
+  the streamlines are a Hess-Smith potential-flow solution), a dark Qt theme (app/theme.py) applied to
+  the plots, SVG ribbon icons, the installer icon, and the workspace folder Documents\Homebrew CFD
+  Projects. Gate: run 170 = run 151.
+- v0.3.0 (published 2026-10-04), geometry and pre-run checks. Shipped: STL import in the app with a
+  size, scale and watertight report (`mesh.inspect_mesh`); a new-study start page (`src/run/study.py`,
+  `app/new_study.py`); memory and run-time estimate before launch (`src/run/estimate.py`); voxel and
+  boundary-link preview built by the solver in its own process (`--preview`,
+  `src/geometry/preview.py`); templates for the Ahmed body, sphere and spinning cylinder (gates runs
+  171-174 = runs 72, 155, 66); project folders (case, geometry\ with STLs copied in, runs\, exports\;
+  relative paths; `src/run/project.py`); the user manual with two tutorials (Help > Manual, F1).
+  Release gate: run 175 = run 151 on the signed CI installer. Moved out: part rotate / move on import
+  (axis swaps for Z-up / Y-up exports, angle about each axis, offset, snap to floor / center) and a
+  wheel body template, both to before v1.0.
+- v0.4.0 (next), studies. Run queue, parametric sweeps (ride height, angle) as one study, run comparison,
   checkpoints to stop and resume, probes (point / line samples of velocity and pressure over time,
   shown on the monitors), and experimental data as input (measured values such as pressure taps,
   force balance, PIV overlaid on results and used as comparison bounds).
 - v0.5.0, verification and platforms. Validation suite (case + reference + tolerance) run before every
   release, optional Verification menu, backend auto-detect (CUDA, Vulkan, CPU), Linux build.
-  Real validation (Jake, 2026-10-04, required before v1.0): every validation template shows its
+  Real validation (2026-10-04, required before v1.0): every validation template shows its
   reproducible result next to the accepted reference results from the literature (experiment or
   established correlation, with the full citation, conditions and uncertainty), the difference, and
   why it differs (resolution, confinement, Reynolds number); the self-reproduction gates (template =
   logged run) stay as regression checks, not as validation.
 - v1.0, stable. Case schema with migrations, signed builds, complete user documentation and tutorials,
-  every validation gate green on the release build.
+  every validation gate green on the release build. Also before v1.0: part rotate / move on import, a
+  wheel body template, Bouzidi walls on the Ahmed body, unit systems and a settings window, case file
+  association (.hcfd).
 - After v1.0: D3Q15 / D3Q27 (section 8), 2D engine parity with the 3D physics, full car and 3D front
   wing cases, thermal and aeroacoustic extensions (scope note below).
 - After v1.0, Apple version (decided 2026-10-03): a separate repository (not a fork; no shared code),
@@ -676,15 +694,11 @@ reproduces run 151 on CUDA. Contents and order may move; the gates do not.
   a rewrite of the core, not a port. Free provisioning for my own devices; the Apple Developer Program
   ($99 a year) only for TestFlight / App Store. Brand assets (icon, palette, Saira) copied over.
 
-Backlog (2026-10-02), not yet assigned to a release:
-- Before the v0.2.0 release: README credit for the image / icon work and the fonts (Saira, SIL OFL),
-  plus a short "about the icon" note (the streamlines are a real potential-flow solution: Hess-Smith
-  panels with the Kutta condition around an inverted NACA 8415-style section at 14 degrees, generated
-  by packaging/artwork/make_icon.py).
+Backlog (2026-10-02, updated 2026-10-04), not yet assigned to a release:
 - Watermark version of the artwork (for screenshots, docs and social previews).
-- State plainly in the README and app that Homebrew CFD is an offline solver (no network calls, no
-  accounts, data stays on the machine).
-- Tutorials and manuals (in-app tutorials, user manual).
+- Offline statement: done in the README; add it to the app (About dialog).
+- Tutorials and manual: the manual and two tutorials shipped in v0.3.0; in-app tutorials and a complete
+  manual come near v1.0.
 - Rotors driven by the flow: a free-spinning rotating part whose angular velocity follows from the
   aerodynamic torque and its inertia (and optional load), instead of only a prescribed rpm.
 - Case file association: double-click opens a case in the app (Inno Setup registry entry; own
@@ -710,6 +724,7 @@ Backlog (2026-10-02), not yet assigned to a release:
     PNG and VTK (ParaView).
   - Fields needed: time-averaged velocity and pressure (and their RMS) accumulated on the GPU, written
     at the end; instantaneous snapshots on request. Memory cost goes into the pre-run estimate.
+
 Product vs development (2026-10-01). Shipped: the engine (`src/`), the app, case templates (the current
 examples as drop-in cases), and a per-run record in each run folder (case, versions, backend, device,
 metrics). Development only: `docs/run_log.csv` (aggregated from run records), tests, the validation
@@ -733,8 +748,8 @@ App requirements from common CFD-tool experience (2026-10-01):
   processes (kill on exit, PID file), half-written progress files (write to temp, then rename), stale
   results after a case edit (case hash stored per run), paths with spaces / non-ASCII, Windows DPI scaling,
   decimal-comma locales (JSON only, never locale-formatted numbers in files).
-- Later, high value for F1 use: parametric sweeps (ride height, angle) as one queued study; checkpoints
-  to stop and resume.
+- High value for F1 use: parametric sweeps (ride height, angle) as one queued study, and checkpoints to
+  stop and resume (both v0.4.0).
 
 Release security (2026-10-01): GitHub does not malware-scan release binaries. Releases are built only
 by GitHub Actions from a tagged commit (never from a local machine), with build-provenance attestation and
@@ -923,14 +938,15 @@ descriptor tests (weights sum to 1, opposites reverse, isotropy moments).
 
 ## 9. Open questions to revisit
 
-- Taichi vs Warp final call (decide after Phase 1 ergonomics).
+- Taichi vs Warp: decided, Taichi (the production engine and every release run on it).
 - Collision operator: **TRT chosen** for Phase 3 (two-relaxation-time). Near-BGK cost
   (LBM is memory-bound), decouples stability from viscosity, and Lambda=3/16 fixes the
   tau-dependent wall location. **Full MRT deferred** as a later option if TRT proves
   insufficient at extreme Re (it buys more control at ~10-25% cost and much more code).
 - FP16 storage - how much accuracy is traded for domain size? (measure in Phase 5).
-- Real F1 geometry source and its licensing (needed by Phase 4).
-- Cylinder Cd calibration: blockage, resolution, tau, MEM factor (Phase 2, in progress).
+- Real F1 geometry source and its licensing (still open; needed for a 3D front wing or full car).
+- Cylinder Cd calibration: closed by the envelope study (E3 Mach, E4 blockage, section 7a); non-rotating
+  Cd 1.378 at Re 100 with 7.5% blockage.
 
 - Generic runner (done 2026-10-01, runs 151-164): every example is ported to one `Case` + `run_case` so runs compare
   like for like; each port must reproduce its logged reference run exactly. `Case` carries `lattice`
@@ -1014,4 +1030,4 @@ Open (in order):
   cells. Bigger change (alternating even/odd kernels, boundaries must follow the pattern);
   only if H=48+ runs hit the memory cap.
 
-After the backlog: resume the slant sweep follow-ups (section 7, Ahmed "Sweep, first pass").
+The slant sweep follow-ups are closed (E6, section 7a).
