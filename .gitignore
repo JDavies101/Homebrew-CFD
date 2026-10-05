@@ -24,6 +24,7 @@ results/
 outputs/
 runs/
 Runs/
+previews/
 
 # Geometry assets (add explicitly if a case needs one)
 *.stl

@@ -2,7 +2,7 @@
 from pathlib import Path
 from PySide6.QtCore import QTimer, Qt, QSettings, QStandardPaths
 from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import (QFileDialog, QLabel, QMainWindow, QMessageBox, QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem,
+from PySide6.QtWidgets import (QTableWidget, QTableWidgetItem, QFileDialog, QLabel, QMainWindow, QMessageBox, QSplitter, QStackedWidget, QTabWidget, QTreeWidget, QTreeWidgetItem,
                                QVBoxLayout, QWidget, QDockWidget, QPlainTextEdit, QProgressBar, QMenu, QInputDialog)
 from src import __version__
 from src.run.case import setting_choices, check_choice
@@ -19,6 +19,10 @@ from app import theme
 from app.new_study import StudyPage
 from src.run.project import create_project, is_project, runs_directory_for, adopt_geometry
 from app.manual import ManualWindow
+from app.run_queue import RunQueue
+from app.study_dialog import StudyDialog
+from app.study_view import StudyView, study_rows
+from src.run.parametric import write_study, sweep_labels
 
 template_directory = Path(__file__).resolve().parent.parent / "cases" / "templates"
 autosave_milliseconds = 60_000
@@ -26,6 +30,7 @@ recent_cases_limit = 8
 # the UI offers every choice the engine accepts, except a custom start (a case file cannot hold an initial field)
 form_choices = {**setting_choices, **geometry_choices, "start": ("rest_ramp", "uniform")}
 solver_fields = ("name", "collision", "inlet", "start", "allow_below_floor")
+queue_columns = ("#", "Case", "Study value", "State", "Result", "Run folder")
 
 def workspace_directory():
     """
@@ -96,13 +101,17 @@ class MainWindow(QMainWindow):
         results_page.addWidget(self.monitor)
         results_page.addWidget(self.results_summary)
         results_page.setSizes([600, 160])
+        self.study_view = StudyView()
+        self.results_tabs = QTabWidget()
+        self.results_tabs.addTab(results_page, "Monitors")
+        self.results_tabs.addTab(self.study_view, "Study")
 
         self.device_total_gb = gpu_total_gb()
 
         # pages: setup (tree, forms, viewport, and summary), results, and the start page, switched by the ribbon
         self.pages = QStackedWidget()
         self.pages.addWidget(splitter)
-        self.pages.addWidget(results_page)
+        self.pages.addWidget(self.results_tabs)
         self.study_page = StudyPage(self.viewport.stl_cache, self.dialog_directory, self.recent_paths, self.estimate_inputs)
         self.study_page.created.connect(self.on_study_created)
         self.study_page.open_requested.connect(self.on_study_open_requested)
@@ -123,6 +132,12 @@ class MainWindow(QMainWindow):
         self.runs.samples.connect(self.monitor.update_samples)
         self.last_result = None
 
+        self.queue = RunQueue(workspace_directory() / "queue")
+        self.queue_entry = None # id of the queue entry now running, None for a direct run
+        self.queue_paused = False
+        self.current_study = None # folder path of the parametric study shown in the study view
+        self.study_parameter = "Value"
+
         # geometry preview: built by the solver in its own process, drawn over the case
         self.previews = PreviewController(self)
         self.previews.finished.connect(self.on_preview_finished)
@@ -136,6 +151,22 @@ class MainWindow(QMainWindow):
         console_dock.setObjectName("console")
         console_dock.setWidget(self.console)
         self.addDockWidget(Qt.BottomDockWidgetArea, console_dock)
+
+        # queue dock, tabbed with the console
+        self.queue_table = QTableWidget(0, len(queue_columns))
+        self.queue_table.setHorizontalHeaderLabels(queue_columns)
+        self.queue_table.horizontalHeader().setStretchLastSection(True)
+        self.queue_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.queue_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.queue_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.queue_table.customContextMenuRequested.connect(self.show_queue_menu)
+        self.queue_dock = QDockWidget("Queue", self)
+        self.queue_dock.setObjectName("queue")
+        self.queue_dock.setWidget(self.queue_table)
+        self.addDockWidget(Qt.BottomDockWidgetArea, self.queue_dock)
+        self.tabifyDockWidget(console_dock, self.queue_dock)
+        console_dock.raise_()
+        self.refresh_queue()
         self.run_progress = QProgressBar()
         self.run_progress.setVisible(False)
         self.statusBar().addPermanentWidget(self.run_progress)
@@ -245,7 +276,12 @@ class MainWindow(QMainWindow):
         self.run_action = self.make_action("Run", theme.icon("run"), QKeySequence("F5"), self.start_run)
         self.stop_action = self.make_action("Stop", theme.icon("stop"), QKeySequence("Shift+F5"), self.runs.stop)
         self.stop_action.setEnabled(False)
-        self.ribbon.add_tab("Run").add_group("Solver", (self.run_action, self.stop_action))
+        parametric_action = self.make_action("Parametric study", theme.icon("new_study"), None, self.new_parametric_study)
+        run_queue_action = self.make_action("Run queue", theme.icon("run"), None, self.run_queue)
+        clear_finished_action = self.make_action("Clear finished", theme.icon("remove_part"), None, self.clear_finished)
+        run_tab = self.ribbon.add_tab("Run")
+        run_tab.add_group("Solver", (self.run_action, self.stop_action))
+        run_tab.add_group("Queue", (parametric_action, run_queue_action, clear_finished_action))
 
         # results: the monitors page with run control at hand
         self.results_tab = self.ribbon.add_tab("Results")
@@ -822,6 +858,148 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Starting solver...")
         self.refresh_summary()
 
+    def add_to_queue(self):
+        """
+        Validate and queue a snapshot of the open case; starts it at once when the queue is idle and not paused.
+        """
+
+        if self.case_file is None:
+            return
+        
+        error = self.validation_error()
+        if error is not None:
+            QMessageBox.warning(self, "Cannot queue", error)
+            return
+        
+        if (self.dirty or self.path is None) and not self.save():
+            return
+        
+        self.queue.add(self.case_file, runs_directory_for(self.path, workspace_directory()))
+        self.refresh_queue()
+
+    def new_parametric_study(self):
+        """
+        Ask for one swept parameter, write the study folder beside the case, queue every variant and start the queue.
+        """
+
+        if self.case_file is None:
+            return
+
+        error = self.validation_error()
+        if error is not None:
+            QMessageBox.warning(self, "Cannot start study", error)
+            return
+
+        if (self.dirty or self.path is None) and not self.save():
+            return
+
+        if is_project(self.path):
+            studies_directory = self.path.parent / "studies"
+        else:
+            studies_directory = workspace_directory() / "studies"
+
+        dialog = StudyDialog(self.case_file, self.estimate_inputs()[0], studies_directory, self)
+        if dialog.exec() != StudyDialog.Accepted:
+            return
+
+        study_name, part_name, parameter, values = dialog.result_values()
+        folder = studies_directory / study_name
+        try:
+            _, written = write_study(folder, self.case_file, part_name, parameter, values, study_name)
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, "Cannot create study", sentence_case(str(error)))
+            return
+
+        runs_directory = runs_directory_for(self.path, workspace_directory())
+        study_path = str(folder.resolve())
+        for (variant, _), value in zip(written, values):
+            self.queue.add(variant, runs_directory, study=study_path, value=value)
+
+        self.current_study = study_path
+        self.study_parameter = sweep_labels[parameter]
+        self.refresh_queue()
+        self.results_tabs.setCurrentWidget(self.study_view)
+        self.run_queue()
+
+    def clear_finished(self):
+        """
+        Drop finished entries from the queue.
+        """
+
+        self.queue.clear_finished()
+        self.refresh_queue()
+
+    def refresh_queue(self):
+        """
+        Rebuild the queue table and the study view of the current study.
+        """
+
+        self.queue_table.setRowCount(len(self.queue.entries))
+        for row, entry in enumerate(self.queue.entries):
+            value = "" if entry.get("value") is None else f"{entry['value']:g}"
+            cells = (str(row + 1), entry["name"], value, entry["state"], entry["headline"], entry["run_folder"])
+            for column, text in enumerate(cells):
+                item = QTableWidgetItem(text)
+                item.setData(Qt.UserRole, entry["id"])
+                self.queue_table.setItem(row, column, item)
+
+        self.queue_table.resizeColumnsToContents()
+        self.queue_table.horizontalHeader().setStretchLastSection(True)
+        entries = self.queue.study_entries(self.current_study) if self.current_study else []
+        self.study_view.show_rows(study_rows(entries), self.study_parameter)
+
+    def show_queue_menu(self, position):
+        """
+        Right-click menu on a queue row: remove (not while running), move up, move down.
+        """
+
+        item = self.queue_table.itemAt(position)
+        if item is None:
+            return
+
+        identifier = item.data(Qt.UserRole)
+        menu = QMenu(self)
+        remove_action = menu.addAction("Remove")
+        remove_action.setEnabled(self.queue.find(identifier)["state"] != "running")
+        up_action = menu.addAction("Move up")
+        down_action = menu.addAction("Move down")
+        chosen = menu.exec(self.queue_table.viewport().mapToGlobal(position))
+
+        if chosen == remove_action:
+            self.queue.remove(identifier)
+        elif chosen == up_action:
+            self.queue.move(identifier, -1)
+        elif chosen == down_action:
+            self.queue.move(identifier, 1)
+
+        self.refresh_queue()
+
+    def run_queue(self):
+        """
+        Resume the queue: start the next pending entry if nothing is running.
+        """
+
+        self.queue_paused = False
+        self.start_next_queued()
+
+    def start_next_queued(self):
+        """
+        Launch the first pending entry through the run controller.
+        """
+
+        entry = self.queue.next_pending()
+        if entry is None or self.runs.is_running() or self.queue_paused:
+            return
+        
+        self.queue_entry = entry["id"]
+        self.queue.mark(entry["id"], "running")
+        self.console.clear()
+        self.monitor.clear()
+        self.set_running(True)
+        self.runs.start(entry["case"], entry["runs"], entry["name"])
+        self.statusBar().showMessage(f"Queue: running {entry['name']}")
+        self.refresh_queue()
+
     def on_run_output(self, line):
         """
         Append one solver line to the console.
@@ -857,6 +1035,22 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Run {status}", 10000)
         self.last_result = result
         self.remember_throughput(result)
+
+        if self.queue_entry is not None:
+            state = result.get("status", "failed")
+            headline = ""
+            if result.get("parts"):
+                name, statistics = next(iter(result["parts"].items()))
+                headline = f"{name} C_x {statistics['x']['mean']:.4f} C_y {statistics['y']['mean']:.4f}"
+
+            self.queue.mark(self.queue_entry, state, result.get("run_folder", ""), headline)
+            self.queue_entry = None
+            self.refresh_queue()
+            if state == "stopped":
+                self.queue_paused = True
+
+            QTimer.singleShot(0, self.start_next_queued)
+
         self.refresh_summary()
 
     def result_lines(self, result):

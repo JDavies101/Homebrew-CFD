@@ -1,4 +1,5 @@
 # geometry preview: solid mask and boundary links of built parts, saved for the app to draw without Taichi
+from pathlib import Path
 import numpy as np
 from src.engine import lattice_d3q19 as d3q19
 
@@ -44,6 +45,7 @@ def save_preview(path, parts, shape):
             fractions.append(part_fractions)
             link_part.append(np.full(len(part_fractions), index + 1, np.uint8))
 
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(path, part_id=part_id, nodes=np.concatenate(nodes),
                         directions=np.concatenate(directions),
                         fractions=np.concatenate(fractions), link_part=np.concatenate(link_part),
