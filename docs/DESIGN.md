@@ -649,6 +649,8 @@ reproduces run 151 on CUDA. Contents and order may move; the gates do not.
   before launch, templates for the Ahmed body, sphere and wheel; first tutorials (wing in ground effect,
   STL import). Part transform on import and later: rotate (axis swaps for Z-up / Y-up exports, angle
   about each axis) and move (offset, snap to floor / centre), applied to the STL before scaling.
+  Project folders: one folder per project in the workspace (case file, geometry\ with imported STLs
+  copied in and stored relative, runs\, exports\), so a project can be moved or shared whole.
 - v0.4.0, studies. Run queue, parametric sweeps (ride height, angle) as one study, run comparison,
   checkpoints to stop and resume, probes (point / line samples of velocity and pressure over time,
   shown on the monitors), and experimental data as input (measured values such as pressure taps,

@@ -7,6 +7,10 @@ import pytest
 from src.run.case import Flow, Domain, Turbulence, Timing
 from src.run.case_file import GeometrySpec, CaseFile, save_case_file, load_case_file, build_part, stl_spec, part_free_case
 from src.geometry.mesh import box_mesh, inspect_mesh
+from src.geometry.sphere_body import sphere
+from src.geometry.cylinder_body import cylinder
+from src.geometry.ahmed_body import ahmed_body
+from src.geometry.wall_fraction import wall_fraction_sphere
 
 template_path = Path(__file__).resolve().parent.parent / "cases" / "templates" / "wing_ground.json"
 
@@ -71,8 +75,8 @@ def test_build_naca_part():
 
     domain = Domain(nx=160, ny=80, nz=4)
     spec = GeometrySpec(name="wing", kind="naca", reference_area=160.0, chord=40.0, angle_degrees=4.0, leading_edge=[60.0, 20.0])
-    bouzidi_part = build_part(spec, domain, "cpu")
-    staircase_part = build_part(dataclasses.replace(spec, wall="staircase"), domain, "cpu")
+    bouzidi_part = build_part(spec, domain, "cpu", 0.05)
+    staircase_part = build_part(dataclasses.replace(spec, wall="staircase"), domain, "cpu", 0.05)
 
     assert bouzidi_part.solid.shape == (160, 80, 4)
     assert bouzidi_part.solid.sum() > 0
@@ -110,3 +114,50 @@ def test_part_free_case():
     assert case.timing is case_file.timing
     assert case.allow_below_floor == case_file.allow_below_floor
     assert case.parts == []
+
+# test 8: every shipped template loads and passes the engine's checks
+def test_templates_validate():
+
+    template_paths = sorted((Path(__file__).resolve().parent.parent / "cases" / "templates").glob("*.json"))
+    for path in template_paths:
+        part_free_case(load_case_file(path)).validate()
+
+    assert {path.stem for path in template_paths} >= {"empty_3d", "wing_ground", "sphere", "ahmed", "spinning_cylinder"}
+
+# test 9: sphere, cylinder and ahmed specs build exactly the example's mask and wall fractions
+def test_analytic_kinds_match_examples():
+
+    domain = Domain(nx=48, ny=40, nz=36)
+    sphere_part = build_part(GeometrySpec(name="s", kind="sphere", reference_area=1.0, center=[20.3, 19.6, 18.2], radius=7.5), domain, "cpu", 0.1)
+    cylinder_part = build_part(GeometrySpec(name="c", kind="cylinder", reference_area=1.0, center=[20.3, 19.6, 0.0], radius=7.5), domain, "cpu", 0.1)
+    ahmed_part = build_part(GeometrySpec(name="a", kind="ahmed", reference_area=1.0, wall="staircase", x_start=4, body_height=8), domain, "cpu", 0.1)
+
+    assert np.array_equal(sphere_part.solid, sphere(48, 40, 36, 20.3, 19.6, 18.2, 7.5))
+    assert np.array_equal(sphere_part.wall_fractions, wall_fraction_sphere(48, 40, 36, 20.3, 19.6, 18.2, 7.5))
+    assert np.array_equal(cylinder_part.solid, cylinder(48, 40, 36, 20.3, 19.6, 7.5))
+    assert cylinder_part.wall_velocity is None
+    assert np.array_equal(ahmed_part.solid, ahmed_body(48, 40, 36, 4, 8, 25, "round"))
+    assert ahmed_part.wall_fractions is None
+
+# test 10: spin gives u_w = omega x r on the surface band, omega = alpha U / R
+def test_cylinder_spin_velocity():
+
+    domain = Domain(nx=40, ny=40, nz=4)
+    part = build_part(GeometrySpec(name="c", kind="cylinder", reference_area=1.0, center=[20.0, 20.0, 0.0], radius=8.0, spin_ratio=2.0),
+                      domain, "cpu", 0.05)
+    angular_velocity = 2.0 * 0.05 / 8.0
+
+    assert abs(part.wall_velocity[0, 20, 28, 0] - (-angular_velocity * 8.0)) < 1e-7
+    assert abs(part.wall_velocity[1, 28, 20, 0] - (angular_velocity * 8.0)) < 1e-7
+    assert part.wall_velocity[0, 20, 20 + 15, 0] == 0.0
+
+# test 11: an Ahmed body with Bouzidi walls is refused, not silently staircased
+def test_ahmed_bouzidi_refused():
+
+    try:
+        build_part(GeometrySpec(name="a", kind="ahmed", reference_area=1.0, wall="bouzidi"), Domain(nx=48, ny=40, nz=36), "cpu", 0.05)
+        refused = False
+    except ValueError:
+        refused = True
+
+    assert refused

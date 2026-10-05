@@ -99,6 +99,18 @@ def main():
     live_path.write_text(",".join(f"{spec.name}_{axis}" for spec in case_file.geometry for axis in "xyz") + "\n")
     samples_written = 0
 
+    def write_new_samples(force_coefficients):
+        """
+        Append the coefficient samples not yet in coefficients_live.csv.
+        """
+
+        nonlocal samples_written
+        if len(force_coefficients) > samples_written:
+            with live_path.open("a") as live_file:
+                for sample in force_coefficients[samples_written:]:
+                    live_file.write(",".join(f"{value:.7g}" for part_row in sample for value in part_row) + "\n")
+            samples_written = len(force_coefficients)
+
     def report_progress(time_step, steps, max_velocity, force_coefficients):
         """
         Publish progress and any new coefficient samples; time the first step; a STOP file ends the run cleanly.
@@ -106,14 +118,9 @@ def main():
         Returns True to stop.
         """
 
-        nonlocal samples_written
         if time_step == 0:
             print(f"\nFirst step (kernel compile) {time.perf_counter() - timing['solver_ready']:.1f} s")
-        if len(force_coefficients) > samples_written:
-            with live_path.open("a") as live_file:
-                for sample in force_coefficients[samples_written:]:
-                    live_file.write(",".join(f"{value:.7g}" for part_row in sample for value in part_row) + "\n")
-            samples_written = len(force_coefficients)
+        write_new_samples(force_coefficients)
 
         phase = "warmup" if time_step < case.warmup_steps() else "averaging"
         write_json_atomic(progress_path, {"status": phase, "step": time_step + 1, "steps": steps, "max_velocity": max_velocity,
@@ -144,6 +151,9 @@ def main():
                       boundaries=f"inlet {case.inlet} / x {case.domain.x_boundary} / y {case.domain.y_boundary} / z {case.domain.side_walls}")
 
     loop_seconds = time.perf_counter() - timing["solver_ready"]
+
+    # samples after the last progress callback (up to check_every steps) would otherwise never reach the monitor
+    write_new_samples(result.force_coefficients)
    
     # results: per-part coefficient statistics and history
     status = "finished"

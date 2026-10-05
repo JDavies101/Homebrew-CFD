@@ -104,3 +104,15 @@ def test_estimate_lines_fit():
     assert "will not fit" in too_big[0]
     assert "measured on this machine" in too_big[1]
     assert " of " not in unknown[0]
+
+# test 9: analytic kinds draw at their size: sphere 2R across, cylinder 2R across and the full span
+def test_analytic_surfaces():
+
+    big_domain = Domain(nx=100, ny=80, nz=12)
+    sphere_bounds = part_surface(GeometrySpec(name="s", kind="sphere", reference_area=1.0, center=[50.0, 40.0, 6.0], radius=5.0), big_domain).bounds
+    cylinder_bounds = part_surface(GeometrySpec(name="c", kind="cylinder", reference_area=1.0, center=[50.0, 40.0, 0.0], radius=5.0), big_domain).bounds
+
+    assert abs((sphere_bounds[1] - sphere_bounds[0]) - 10.0) < 0.1
+    assert abs((cylinder_bounds[1] - cylinder_bounds[0]) - 10.0) < 0.1
+    assert cylinder_bounds[4] == 0.0
+    assert cylinder_bounds[5] == 12.0

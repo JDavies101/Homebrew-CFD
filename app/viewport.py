@@ -3,6 +3,7 @@ import numpy as np
 import pyvista
 from pyvistaqt import QtInteractor
 from src.geometry.airfoil import naca_four_digit, place_section
+from src.geometry.ahmed_body import ahmed_body
 from src.geometry.mesh import read_stl, inspect_mesh
 from src.geometry.preview import wall_points
 from src.run.estimate import case_device_bytes, run_seconds, format_duration
@@ -101,6 +102,18 @@ def read_part_mesh(path, stl_cache=None):
 
     return entry
 
+def mask_surface(mask):
+    """
+    Outer surface of the nonzero cells of a mask, each cell spanning its node +- 1/2.
+
+    Returns a pyvista.PolyData (empty when the mask is all zero).
+    """
+
+    grid = pyvista.ImageData(dimensions=np.array(mask.shape) + 1, origin=(-0.5, -0.5, -0.5))
+    grid.cell_data["mask"] = mask.ravel(order="F")
+
+    return grid.threshold(0.5, scalars="mask").extract_surface()
+
 def part_surface(spec, domain, stl_cache=None):
     """
     Display surface of one geometry spec in grid cells, without voxelizing.
@@ -115,6 +128,16 @@ def part_surface(spec, domain, stl_cache=None):
         outline = pyvista.PolyData(points, faces=np.concatenate([[len(points)], np.arange(len(points))]))
 
         return outline.triangulate().extrude((0.0, 0.0, float(domain.nz)), capping=True)
+    
+    if spec.kind == "sphere":
+        return pyvista.Sphere(radius=spec.radius, center=spec.center, theta_resolution=48, phi_resolution=48)
+
+    if spec.kind == "cylinder":
+        return pyvista.Cylinder(center=(spec.center[0], spec.center[1], domain.nz / 2), direction=(0.0, 0.0, 1.0), radius=spec.radius,
+                                height=float(domain.nz), resolution=96)
+
+    if spec.kind == "ahmed":
+        return mask_surface(ahmed_body(domain.nx, domain.ny, domain.nz, spec.x_start, spec.body_height, spec.slant_angle, spec.nose))
 
     # stl: read once per path, then scale and offset like build_part does
     triangles, _ = read_part_mesh(spec.path, stl_cache)
@@ -223,21 +246,18 @@ class CaseViewport:
         Overlay the voxelized parts (solid cells as cubes) and the Bouzidi wall points coloured by q.
         """
 
-        part_id = preview["part_id"]
-
-        # cell (i, j, k) spans node +- 1/2, like the wall rows in draw
-        grid = pyvista.ImageData(dimensions=np.array(part_id.shape) + 1, origin=(-0.5, -0.5, -0.5))
-        grid.cell_data["part"] = part_id.ravel(order="F")
-        solid = grid.threshold(0.5, scalars="part")
-        if solid.n_cells > 0:
-            self.plotter.add_mesh(solid.extract_surface(), color=theme.viewport_part, show_edges=True, name="preview_solid")
+        solid = mask_surface(preview["part_id"])
+        if solid.n_points > 0:
+            self.plotter.add_mesh(solid, color=theme.viewport_part, show_edges=True, name="preview_solid")
 
         # wall points x + q c_q, coloured by q
         if len(preview["fractions"]) > 0:
             points = pyvista.PolyData(wall_points(preview["nodes"], preview["directions"], preview["fractions"]))
             points.point_data["q"] = preview["fractions"]
             self.plotter.add_mesh(points, scalars="q", clim=(0.0, 1.0), cmap="viridis", point_size=4,
-                                  render_points_as_spheres=True, name="preview_links")
+                                  render_points_as_spheres=True, name="preview_links",
+                                  scalar_bar_args={"title": "q", "vertical": True, "position_x": 0.9, "position_y": 0.1,
+                                                   "width": 0.04, "height": 0.35, "n_labels": 3, "fmt": "%.1f"})
 
     def close(self):
         """
