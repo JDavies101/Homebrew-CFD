@@ -148,8 +148,8 @@ def trace(velocity, seeds, inside, step=0.004, max_steps=1200):
     return lines
 
 
-def colour(points, wake_y):
-    """Blue upstream, warm stops downstream, warmest near the wake centreline."""
+def color(points, wake_y):
+    """Blue upstream, warm stops downstream, warmest near the wake centerline."""
 
     downstream = np.clip(points[:, 0] - 0.25, 0, 1)
     near_wake = np.exp(-((points[:, 1] - wake_y(points[:, 0])) / 0.55) ** 2)
@@ -165,17 +165,17 @@ def colour(points, wake_y):
     return ramp
 
 
-def draw_lines(lines, colours, widths):
-    """Coloured polylines on a black RGB canvas, segment by segment, one width per line."""
+def draw_lines(lines, colors, widths):
+    """Colored polylines on a black RGB canvas, segment by segment, one width per line."""
 
     canvas = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))
     pen = ImageDraw.Draw(canvas)
-    for line, line_colours, width in zip(lines, colours, widths):
+    for line, line_colors, width in zip(lines, colors, widths):
         pixels = to_pixels(line)
         for k in range(len(pixels) - 1):
-            pen.line([tuple(pixels[k]), tuple(pixels[k + 1])], fill=tuple(int(c) for c in line_colours[k]), width=width)
+            pen.line([tuple(pixels[k]), tuple(pixels[k + 1])], fill=tuple(int(c) for c in line_colors[k]), width=width)
             pen.ellipse([pixels[k][0] - width / 2, pixels[k][1] - width / 2, pixels[k][0] + width / 2, pixels[k][1] + width / 2],
-                        fill=tuple(int(c) for c in line_colours[k]))
+                        fill=tuple(int(c) for c in line_colors[k]))
 
     return np.asarray(canvas, float)
 
@@ -229,7 +229,7 @@ def main():
     for line in lines:
         end = line[np.argmin(np.abs(line[:, 0] - 1.2))]
         strengths.append(np.exp(-((end[1] - wake_y(end[0])) / 0.4) ** 2))
-    colours = [colour(line, wake_y) * min(1.0, (0.8 if SMALL else 0.35) + 0.65 * strength) for line, strength in zip(lines, strengths)]
+    colors = [color(line, wake_y) * min(1.0, (0.8 if SMALL else 0.35) + 0.65 * strength) for line, strength in zip(lines, strengths)]
     widths = [int(((16 + 6 * strength) if SMALL else (5 + 6 * strength)) * SUPER) for strength in strengths]
 
     # background with grid
@@ -241,11 +241,11 @@ def main():
     image = np.asarray(background, float)
 
     # wake band, wide glow, line glow, line core (additive)
-    wake_colour = np.array([colour(wake, wake_y)[k] for k in range(len(wake))])
-    band = draw_lines([wake], [wake_colour], [(150 if SMALL else 80) * SUPER])
+    wake_color = np.array([color(wake, wake_y)[k] for k in range(len(wake))])
+    band = draw_lines([wake], [wake_color], [(150 if SMALL else 80) * SUPER])
     band_glow = np.asarray(Image.fromarray(band.astype(np.uint8)).filter(ImageFilter.GaussianBlur((70 if SMALL else 45) * SUPER)), float)
     image += (1.6 if SMALL else 1.2) * band_glow
-    lines_layer = draw_lines(lines, colours, widths)
+    lines_layer = draw_lines(lines, colors, widths)
     line_glow = np.asarray(Image.fromarray(lines_layer.astype(np.uint8)).filter(ImageFilter.GaussianBlur(10 * SUPER)), float)
     image += 0.8 * line_glow
     image += 0.35 * np.asarray(Image.fromarray(lines_layer.astype(np.uint8)).filter(ImageFilter.GaussianBlur(3 * SUPER)), float)

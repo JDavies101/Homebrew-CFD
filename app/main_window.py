@@ -18,6 +18,7 @@ from app.ribbon import Ribbon
 from app import theme
 from app.new_study import StudyPage
 from src.run.project import create_project, is_project, runs_directory_for, adopt_geometry
+from app.manual import ManualWindow
 
 template_directory = Path(__file__).resolve().parent.parent / "cases" / "templates"
 autosave_milliseconds = 60_000
@@ -111,6 +112,8 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(self.study_page)
         self.setCentralWidget(self.pages)
         self.splitters = {"setup": splitter, "setup_right": right_pane, "results": results_page}
+
+        self.manual_window = None
 
         # runs: controller, console dock, status-bar progress
         self.runs = RunController(self)
@@ -248,6 +251,10 @@ class MainWindow(QMainWindow):
         self.results_tab = self.ribbon.add_tab("Results")
         self.results_tab.add_group("Solver", (self.run_action, self.stop_action))
         self.ribbon.currentChanged.connect(self.show_page)
+
+        # help: the manual
+        manual_action = self.make_action("Manual", theme.icon("manual"), QKeySequence.HelpContents, self.show_manual)
+        self.ribbon.add_tab("Help").add_group("Help", (manual_action,))
 
     def show_page(self, index):
         """
@@ -866,3 +873,13 @@ class MainWindow(QMainWindow):
             lines.append(f"<small>{result['run_folder']}</small>")
 
         return lines
+    
+    def show_manual(self):
+        """
+        Open the manual window (one at a time; brought to the front if already open).
+        """
+
+        if self.manual_window is None:
+            self.manual_window = ManualWindow(self)
+        self.manual_window.show()
+        self.manual_window.raise_()

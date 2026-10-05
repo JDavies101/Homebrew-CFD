@@ -20,7 +20,7 @@ def plot_velocity_magnitude(velocity):
 
 def plot_streamlines(velocity):
     """
-    2D streamlines coloured by speed.
+    2D streamlines colored by speed.
 
     Returns fig, ax.
     """
@@ -91,7 +91,7 @@ def plot_velocity_slice(velocity, axis, index, component=0):
     color_limit = float(np.nanmax(np.abs(component_slice))) or 1.0
     fig, ax = plt.subplots()
     colormap = plt.get_cmap("RdBu_r").copy()
-    colormap.set_bad("0.45")  # NaN = solid, grey
+    colormap.set_bad("0.45")  # NaN = solid, gray
     image = ax.imshow(component_slice.T, origin="lower", cmap=colormap, vmin=-color_limit, vmax=color_limit,
                       interpolation="nearest", aspect="equal")
     fig.colorbar(image, ax=ax, label=f"u_{axis_names[component]}")

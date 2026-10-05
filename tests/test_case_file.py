@@ -85,7 +85,7 @@ def test_build_naca_part():
     assert staircase_part.wall_fractions is None
     assert np.array_equal(staircase_part.solid, bouzidi_part.solid)
 
-# test 6: an imported STL is scaled to fit a quarter of the length and placed front at nx / 4, centred in y and z
+# test 6: an imported STL is scaled to fit a quarter of the length and placed front at nx / 4, centered in y and z
 def test_stl_spec_placement():
 
     triangles = box_mesh((-1.0, 0.0, -0.5), (3.0, 1.0, 0.5))

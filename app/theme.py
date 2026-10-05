@@ -1,5 +1,5 @@
 # theme: dark navy palette from the icon, Fusion style, Saira headings; 
-# every UI colour comes from here
+# every UI color comes from here
 from pathlib import Path
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette, QIcon
 
@@ -10,7 +10,7 @@ raised = "#1a2d45" # ribbon, dock titles, headers
 grid = "#283e5a" # borders, separators, splitter handles (icon grid)
 hover = "#22385a"
 text = "#d6d9df" # wordmark silver
-muted = "#96a0b2" # captions, axis labels, tagline grey
+muted = "#96a0b2" # captions, axis labels, tagline gray
 disabled = "#5c6a80"
 accent = "#1e78ff" # selection, focus (streamline blue)
 accent_hover = "#4a93ff"
@@ -21,7 +21,7 @@ silver = "#c4c9d2" # geometry
 ok = "#4cd38a"
 error = "#ff5a3c"
 viewport_background = "#ffffff"
-viewport_outline = grid # navy-grey domain box, visible on white
+viewport_outline = grid # navy-gray domain box, visible on white
 viewport_part = "#7d8696" # darker steel so parts read on white
 # curve colors for monitors, in order of first appearance
 curve_colors = (accent, amber, violet, orange_red, silver, "#7fb6ff")
@@ -89,7 +89,7 @@ def apply_theme(application):
     for role, color in roles.items():
         palette.setColor(role, QColor(color))
 
-    # disabled widgets (frozen inputs during a run, greyed group captions)
+    # disabled widgets (frozen inputs during a run, grayed group captions)
     for role in (QPalette.WindowText, QPalette.Text, QPalette.ButtonText):
         palette.setColor(QPalette.Disabled, role, QColor(disabled))
 

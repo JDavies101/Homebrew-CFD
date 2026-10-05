@@ -46,7 +46,7 @@ class GeometrySpec:
 def stl_spec(path, inspection, domain, name, cells_per_unit=None):
     """
     First placement of an imported STL: largest scale that fits a quarter of the domain length and half its height
-    and width, front at x = nx / 4, centred in y and z; every value is a starting point to edit.
+    and width, front at x = nx / 4, centered in y and z; every value is a starting point to edit.
     cells_per_unit given: used as it is, no fit.
 
     Returns a GeometrySpec.
