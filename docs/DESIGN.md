@@ -657,6 +657,11 @@ reproduces run 151 on CUDA. Contents and order may move; the gates do not.
   force balance, PIV overlaid on results and used as comparison bounds).
 - v0.5.0, verification and platforms. Validation suite (case + reference + tolerance) run before every
   release, optional Verification menu, backend auto-detect (CUDA, Vulkan, CPU), Linux build.
+  Real validation (Jake, 2026-10-04, required before v1.0): every validation template shows its
+  reproducible result next to the accepted reference results from the literature (experiment or
+  established correlation, with the full citation, conditions and uncertainty), the difference, and
+  why it differs (resolution, confinement, Reynolds number); the self-reproduction gates (template =
+  logged run) stay as regression checks, not as validation.
 - v1.0, stable. Case schema with migrations, signed builds, complete user documentation and tutorials,
   every validation gate green on the release build.
 - After v1.0: D3Q15 / D3Q27 (section 8), 2D engine parity with the 3D physics, full car and 3D front
