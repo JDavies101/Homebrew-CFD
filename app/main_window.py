@@ -105,6 +105,8 @@ class MainWindow(QMainWindow):
         self.study_page.created.connect(self.on_study_created)
         self.study_page.open_requested.connect(self.on_study_open_requested)
         self.study_page.blank_requested.connect(self.on_study_blank_requested)
+        self.study_page.template_requested.connect(lambda path: self.open_path(path, as_template=True))
+        self.study_page.set_templates(sorted(template_directory.glob("*.json")))
         self.pages.addWidget(self.study_page)
         self.setCentralWidget(self.pages)
         self.splitters = {"setup": splitter, "setup_right": right_pane, "results": results_page}
@@ -524,7 +526,7 @@ class MainWindow(QMainWindow):
         preview_directory.mkdir(exist_ok=True)
         save_case_file(self.case_file, preview_directory / "case.json")
         self.previews.start(preview_directory / "case.json", preview_directory / "preview.npz")
-        self.preview_action.setEnabled(False)
+        self.set_preview_busy(True)
         self.statusBar().showMessage("Building geometry preview...")
 
     def on_preview_finished(self, path, error):
@@ -532,7 +534,7 @@ class MainWindow(QMainWindow):
         Draw the preview over the case, or say why it failed.
         """
 
-        self.preview_action.setEnabled(not self.runs.is_running())
+        self.set_preview_busy(False)
         if not path:
             self.preview_action.setChecked(False)
             self.statusBar().showMessage(f"Geometry preview failed: {error}", 10000)
@@ -763,6 +765,19 @@ class MainWindow(QMainWindow):
         self.run_action.setEnabled(not running)
         self.stop_action.setEnabled(running)
         self.run_progress.setVisible(running)
+
+    def set_preview_busy(self, busy):
+        """
+        Lock the window like a run while the geometry preview builds, with a moving (indeterminate) progress bar.
+        """
+
+        self.forms.setEnabled(not busy)
+        for action in self.case_loading_actions:
+            action.setEnabled(not busy)
+
+        self.run_action.setEnabled(not busy)
+        self.run_progress.setRange(0, 0 if busy else 100)
+        self.run_progress.setVisible(busy)
     
     def start_run(self):
         """

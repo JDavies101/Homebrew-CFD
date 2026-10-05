@@ -110,3 +110,15 @@ def test_every_field_and_card_labelled():
         for value in study_choices[name]:
             assert value in card_titles
             assert value in card_descriptions
+
+# test 7: a template entry emits its path
+def test_template_activation():
+
+    page = make_page()
+    requested = []
+    page.template_requested.connect(requested.append)
+    page.set_templates(["C:/templates/sphere.json"])
+    page.template_list.itemActivated.emit(page.template_list.item(0))
+
+    assert requested == ["C:/templates/sphere.json"]
+    assert page.template_list.item(0).text() == "sphere"

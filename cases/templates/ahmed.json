@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "name": "ahmed",
+  "flow": {"free_stream_velocity": 0.05, "reynolds_number": 30000.0, "reference_length": 32.0},
+  "domain": {"nx": 696, "ny": 120, "nz": 117, "floor": "static", "ceiling": "static", "side_walls": "free_slip", "relax_width_x": 24, "relax_width_z": 12, "relax_sigma": 0.1, "relax_mean_rate": 0.0005},
+  "turbulence": {"sgs": "wale", "wale_constant": 0.5, "smagorinsky_constant": 0.04, "wall_model": true},
+  "timing": {"ramp_flow_throughs": 1.0, "warmup_flow_throughs": 5.0, "total_flow_throughs": 11.0, "sample_every": 25},
+  "geometry": [
+    {"name": "ahmed", "kind": "ahmed", "reference_area": 1376.0, "wall": "staircase", "x_start": 116, "body_height": 32, "slant_angle": 25, "nose": "round"}
+  ],
+  "allow_below_floor": true
+}

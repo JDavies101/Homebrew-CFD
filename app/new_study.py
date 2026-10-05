@@ -89,6 +89,7 @@ class StudyPage(QWidget):
     created = Signal(object)
     open_requested = Signal(str)
     blank_requested = Signal()
+    template_requested = Signal(str)
 
     def __init__(self, stl_cache, start_directory_function, recent_paths_function, estimate_function, preview=None, parent=None):
         """
@@ -171,6 +172,12 @@ class StudyPage(QWidget):
 
         self.build_steps()
         self.set_recent(self.recent_paths_function())
+
+        self.template_list = QListWidget()
+        self.template_list.itemActivated.connect(lambda item: self.template_requested.emit(item.data(Qt.UserRole)))
+        left_layout.addWidget(QLabel("Templates"))
+        left_layout.addWidget(self.template_list)
+
         self.go_to(0)
         self.refresh()
 
@@ -505,6 +512,17 @@ class StudyPage(QWidget):
             item.setToolTip(str(path))
             item.setData(Qt.UserRole, str(path))
             self.recent_list.addItem(item)
+
+    def set_templates(self, paths):
+        """
+        Fill the templates list: name shown (file stem, spaced), full path as item data.
+        """
+
+        self.template_list.clear()
+        for path in paths:
+            item = QListWidgetItem(Path(path).stem.replace("_", " "))
+            item.setData(Qt.UserRole, str(path))
+            self.template_list.addItem(item)
 
     def on_recent_activated(self, item):
         """

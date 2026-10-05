@@ -14,3 +14,20 @@ def cylinder(nx, ny, nz, center_x, center_y, radius):
     solid[disc] = 1
 
     return solid
+
+def spin_wall_velocity(nx, ny, nz, center_x, center_y, radius, angular_velocity):
+    """
+    Rigid rotation about the z axis on a band covering both sides of the surface (Bouzidi reads u_w on either side).
+
+    Returns float32 (3, nx, ny, nz): u_w = omega x r inside the band, 0 elsewhere.
+    """
+
+    X, Y = np.meshgrid(np.arange(nx, dtype=np.float64), np.arange(ny, dtype=np.float64), indexing="ij")
+    offset_x = X - center_x
+    offset_y = Y - center_y
+    band = np.sqrt(offset_x * offset_x + offset_y * offset_y) < radius + 2.0
+    wall_velocity = np.zeros((3, nx, ny, nz), np.float32)
+    wall_velocity[0][band] = (-angular_velocity * offset_y[band])[:, None]
+    wall_velocity[1][band] = (angular_velocity * offset_x[band])[:, None]
+
+    return wall_velocity

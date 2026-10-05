@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "name": "spinning_cylinder",
+  "flow": {"free_stream_velocity": 0.1, "reynolds_number": 100.0, "reference_length": 45.0},
+  "domain": {"nx": 1800, "ny": 600, "nz": 4, "y_boundary": "free_slip", "relax_width_x": 24, "relax_sigma": 0.1, "layer_kind": "separate"},
+  "turbulence": {"sgs": "none", "smagorinsky_constant": 0.0},
+  "timing": {"steps_override": 60000, "warmup_override": 30000, "sample_every": 20, "check_every": 500},
+  "geometry": [
+    {"name": "cylinder", "kind": "cylinder", "reference_area": 180.0, "center": [450.0, 300.0, 0.0], "radius": 22.5, "spin_ratio": 1.0}
+  ],
+  "collision": "bgk",
+  "inlet": "neem",
+  "start": "uniform"
+}

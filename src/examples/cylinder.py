@@ -2,7 +2,7 @@
 # usage: python -m src.examples.cylinder [spin_ratio] [--velocity U] [--diameter D] [--reynolds Re]
 import argparse
 import numpy as np
-from src.geometry.cylinder_body import cylinder
+from src.geometry.cylinder_body import cylinder, spin_wall_velocity
 from src.geometry.wall_fraction import wall_fraction_cylinder
 from src.post.vtk import write_field
 from src.post.statistics import dominant_frequency
@@ -48,13 +48,7 @@ def main():
     # rigid rotation on a band covering both sides of the surface
     wall_velocity = None
     if spin_ratio != 0.0:
-        X, Y = np.meshgrid(np.arange(nx, dtype=np.float64), np.arange(ny, dtype=np.float64), indexing="ij")
-        offset_x = X - center_x
-        offset_y = Y - center_y
-        band = np.sqrt(offset_x * offset_x + offset_y * offset_y) < diameter / 2 + 2.0
-        wall_velocity = np.zeros((3, nx, ny, nz), np.float32)
-        wall_velocity[0][band] = (-angular_velocity * offset_y[band])[:, None]
-        wall_velocity[1][band] = (angular_velocity * offset_x[band])[:, None]
+        wall_velocity = spin_wall_velocity(nx, ny, nz, center_x, center_y, diameter / 2, angular_velocity)
 
     body = Part(name="cylinder", solid=cylinder(nx, ny, nz, center_x, center_y, diameter / 2), reference_area=frontal_area,
                 wall_fractions=wall_fraction_cylinder(nx, ny, nz, center_x, center_y, diameter / 2), wall_velocity=wall_velocity)

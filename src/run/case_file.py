@@ -7,16 +7,20 @@ from src.geometry.airfoil import naca_four_digit, place_section, extruded_sectio
 from src.geometry.mesh import read_stl
 from src.geometry.mesh_distance import sdf_from_mesh, q_from_mesh
 from src.geometry.sdf import solid_from_sdf, q_from_sdf, node_values
+from src.geometry.ahmed_body import ahmed_body
+from src.geometry.cylinder_body import cylinder, spin_wall_velocity
+from src.geometry.sphere_body import sphere
+from src.geometry.wall_fraction import wall_fraction_sphere, wall_fraction_cylinder
 from src.run.case import Flow, Domain, Turbulence, Timing, Part, Case, check_choice
 
 schema_version = 1 # bump when a field is renamed or removed; old files then need a migration
 
-geometry_choices = {"kind": ("stl", "naca"), "wall": ("bouzidi", "staircase")}
+geometry_choices = {"kind": ("stl", "naca", "sphere", "cylinder", "ahmed"), "wall": ("bouzidi", "staircase"), "nose": ("round", "square")}
 
 @dataclass
 class GeometrySpec:
     """
-    One part as the file stores it: where the shape comes from and how it sits on the grid.
+    One part as the file stores it: where the shape comes from and how it sits on the grid. Fields unused by a kind are ignored.
     """
 
     name: str
@@ -30,6 +34,14 @@ class GeometrySpec:
     chord: float = 80.0 # naca: c, cells
     angle_degrees: float = 4.0 # naca: incidence, positive = more downforce
     leading_edge: list = field(default_factory=lambda: [240.0, 24.5]) # naca: lowest-point placement (x, y), cells
+
+    center: list = field(default_factory=lambda: [120.0, 64.0, 64.0]) # sphere: (x, y, z), cylinder: (x, y, unused); cells
+    radius: float = 10.0 # sphere, cylinder: R, cells
+    spin_ratio: float = 0.0 # cylinder: alpha = omega R / U, + = counter-clockwise about z
+    x_start: int = 116 # ahmed: nose position, cells
+    body_height: int = 32 # ahmed: H, cells (every other size follows from it)
+    slant_angle: int = 25 # ahmed: rear slant, degrees
+    nose: str = "round" # ahmed: "round" or "square"
 
 def stl_spec(path, inspection, domain, name, cells_per_unit=None):
     """
@@ -115,9 +127,10 @@ def part_free_case(case_file):
                 timing=case_file.timing, collision=case_file.collision, inlet=case_file.inlet, start=case_file.start,
                 allow_below_floor=case_file.allow_below_floor)  
 
-def build_part(spec, domain, backend):
+def build_part(spec, domain, backend, free_stream_velocity):
     """
-    Voxelize one geometry spec on the grid: solid mask, plus Bouzidi wall fractions when wall = "bouzidi".
+    Voxelize one geometry spec on the grid: solid mask, plus Bouzidi wall fractions when wall = "bouzidi",
+    plus the rigid surface velocity of a spinning cylinder (omega from the free stream U).
 
     Returns a Part.
     """
@@ -127,13 +140,15 @@ def build_part(spec, domain, backend):
     nx = domain.nx
     ny = domain.ny
     nz = domain.nz
+    wall_velocity = None # at rest unless a cylinder spins
 
     if spec.kind == "stl":
         triangles = read_stl(spec.path) * spec.cells_per_unit + np.asarray(spec.offset, np.float64)
         grid, phi = sdf_from_mesh(triangles, nx, ny, nz, backend=backend)
         solid = (grid < 0.0).astype(np.int32)
         wall_fractions = q_from_mesh(triangles, phi, nx, ny, nz, backend=backend) if spec.wall == "bouzidi" else None
-    else:
+
+    elif spec.kind == "naca":
         polygon_x, polygon_y = naca_four_digit(spec.section)
         placed_x, placed_y = place_section(polygon_x, polygon_y, spec.chord, spec.angle_degrees, spec.leading_edge[0], spec.leading_edge[1])
         phi = extruded_section_sdf(placed_x, placed_y)
@@ -141,7 +156,30 @@ def build_part(spec, domain, backend):
         solid = solid_from_sdf(phi, nx, ny, nz, node_phi)
         wall_fractions = q_from_sdf(phi, nx, ny, nz, node_phi=node_phi) if spec.wall == "bouzidi" else None
 
-    return Part(name=spec.name, solid=solid, reference_area=spec.reference_area, wall_fractions=wall_fractions)
+    elif spec.kind == "sphere":
+        center_x, center_y, center_z = spec.center
+        solid = sphere(nx, ny, nz, center_x, center_y, center_z, spec.radius)
+        wall_fractions = wall_fraction_sphere(nx, ny, nz, center_x, center_y, center_z, spec.radius) if spec.wall == "bouzidi" else None
+    
+    elif spec.kind == "cylinder":
+        center_x = spec.center[0]
+        center_y = spec.center[1]
+        solid = cylinder(nx, ny, nz, center_x, center_y, spec.radius)
+        wall_fractions = wall_fraction_cylinder(nx, ny, nz, center_x, center_y, spec.radius) if spec.wall == "bouzidi" else None
+        if spec.spin_ratio != 0.0:
+            angular_velocity = spec.spin_ratio * free_stream_velocity / spec.radius # omega = alpha U / R
+            wall_velocity = spin_wall_velocity(nx, ny, nz, center_x, center_y, spec.radius, angular_velocity)
+            
+    else:
+        if spec.wall != "staircase":
+            raise ValueError("ahmed: staircase walls only (the mask has no Bouzidi fractions yet)")
+        
+        check_choice("ahmed nose", spec.nose, geometry_choices["nose"])
+        solid = ahmed_body(nx, ny, nz, spec.x_start, spec.body_height, spec.slant_angle, spec.nose)
+        wall_fractions = None
+
+    return Part(name=spec.name, solid=solid, reference_area=spec.reference_area,
+                wall_fractions=wall_fractions, wall_velocity=wall_velocity)
 
 def build_case(case_file, backend="cuda"):
     """
@@ -150,7 +188,7 @@ def build_case(case_file, backend="cuda"):
     Returns a Case (not yet validated; run_case validates).
     """
 
-    parts = [build_part(spec, case_file.domain, backend) for spec in case_file.geometry]
+    parts = [build_part(spec, case_file.domain, backend, case_file.flow.free_stream_velocity) for spec in case_file.geometry]
 
     return Case(name=case_file.name, tag=case_file.name, flow=case_file.flow, domain=case_file.domain, turbulence=case_file.turbulence,
                 timing=case_file.timing, parts=parts, collision=case_file.collision, inlet=case_file.inlet, start=case_file.start,
