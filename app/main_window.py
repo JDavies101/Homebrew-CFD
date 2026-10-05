@@ -3,7 +3,7 @@ from pathlib import Path
 from PySide6.QtCore import QTimer, Qt, QSettings, QStandardPaths
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QFileDialog, QLabel, QMainWindow, QMessageBox, QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem,
-                               QVBoxLayout, QWidget, QDockWidget, QPlainTextEdit, QProgressBar, QMenu)
+                               QVBoxLayout, QWidget, QDockWidget, QPlainTextEdit, QProgressBar, QMenu, QInputDialog)
 from src import __version__
 from src.run.case import setting_choices, check_choice
 from src.run.case_file import load_case_file, save_case_file, geometry_choices, stl_spec, part_free_case
@@ -17,6 +17,7 @@ from app.monitor_plot import MonitorPlot
 from app.ribbon import Ribbon
 from app import theme
 from app.new_study import StudyPage
+from src.run.project import create_project, is_project, runs_directory_for, adopt_geometry
 
 template_directory = Path(__file__).resolve().parent.parent / "cases" / "templates"
 autosave_milliseconds = 60_000
@@ -620,7 +621,15 @@ class MainWindow(QMainWindow):
 
         if self.path is None:
             return self.save_as()
-        
+
+        # a project keeps its own copy of every STL, so the folder is complete on its own
+        if is_project(self.path):
+            try:
+                adopt_geometry(self.case_file, self.path)
+            except OSError as error:
+                QMessageBox.critical(self, "Cannot copy geometry", str(error))
+                return False
+
         save_case_file(self.case_file, self.path)
         self.dirty = False
         self.update_title()
@@ -630,17 +639,21 @@ class MainWindow(QMainWindow):
 
     def save_as(self):
         """
-        Ask for a file name and save there.
+        Ask for a project name, create the project folder in the workspace, and save the case into it.
 
         Returns True when saved.
         """
 
-        suggested = self.dialog_directory() / f"{self.case_file.name}.json"
-        path, _ = QFileDialog.getSaveFileName(self, "Save case", str(suggested), "Case files (*.json)")
-        if not path:
+        name, accepted = QInputDialog.getText(self, "Save as project", "Project name:", text=self.case_file.name)
+        if not accepted:
             return False
-        
-        self.path = Path(path)
+        try:
+            path = create_project(workspace_directory(), name.strip())
+        except (FileExistsError, ValueError) as error:
+            QMessageBox.warning(self, "Cannot create project", sentence_case(str(error)))
+            return False
+
+        self.path = path
 
         return self.save()
 
@@ -798,7 +811,7 @@ class MainWindow(QMainWindow):
         self.run_progress.setValue(0)
         self.set_running(True)
         self.ribbon.setCurrentWidget(self.results_tab)
-        self.runs.start(self.path, workspace_directory() / "Runs", self.case_file.name)
+        self.runs.start(self.path, runs_directory_for(self.path, workspace_directory()), self.case_file.name)
         self.statusBar().showMessage("Starting solver...")
         self.refresh_summary()
 

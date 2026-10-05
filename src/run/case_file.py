@@ -87,13 +87,37 @@ class CaseFile:
     start: str = "rest_ramp" # "custom" is not available from a file (no initial field stored)
     allow_below_floor: bool = False
 
-def save_case_file(case_file, path):
+def portable_path(file_path, base_directory):
     """
-    Write the case as indented JSON with its schema version.
+    A file path as a case file stores it: relative with forward slashes when the file sits inside the case's
+    folder (so the folder can move), else absolute; a path already relative is relative to the case's folder
+    and is kept as it is.
+
+    Returns the string.
     """
 
+    if not Path(file_path).is_absolute():
+        return Path(file_path).as_posix()
+
+    file_path = Path(file_path).resolve()
+    base_directory = Path(base_directory).resolve()
+    if file_path.is_relative_to(base_directory):
+        return file_path.relative_to(base_directory).as_posix()
+    
+    return str(file_path)
+
+def save_case_file(case_file, path):
+    """
+    Write the case as indented JSON with its schema version; STL paths inside the case's folder are stored relative.
+    """
+
+    path = Path(path)
     data = {"schema_version": schema_version, **asdict(case_file)}
-    Path(path).write_text(json.dumps(data, indent=2))
+    for spec in data["geometry"]:
+        if spec["kind"] == "stl" and spec["path"]:
+            spec["path"] = portable_path(spec["path"], path.parent)
+
+    path.write_text(json.dumps(data, indent=2))
 
 def load_case_file(path):
     """
