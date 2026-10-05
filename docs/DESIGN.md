@@ -594,6 +594,14 @@ gates do not.
   - **App:** run queue, parametric sweeps (ride height, angle) as one study, run comparison on the existing
     coefficients.
   - **Gate:** suite green; each sweep point reproduces a single run of the same case; run 151.
+  - **Blocker found by the first study (runs 177-184):** wing C_y varies 12% over a one-cell move of the
+    wing (-0.3368, -0.3443, -0.3293, -0.3020, -0.3355 at y 24.5 to 25.5), periodic in the lattice phase.
+    `q_from_sdf` builds neighbor solids without wrap, so every link crossing a periodic boundary is dropped:
+    364 of 3456 wing links (xz / yz diagonals at k = 0 and nz - 1) get no Bouzidi treatment at every
+    position. Affects SDF and STL parts on periodic axes (the quasi-2D wing runs since 4.4); the analytic
+    cylinder q spans z and is unaffected. Fix: periodic wrap in `q_from_sdf`, then repeat the placement
+    study; pass = C_y within 1% over the cell. Logged wing results stand as relative trends at half-cell
+    positions until rerun.
 - v0.5.0 - outputs.
   - **Engine:** one output-definition system evaluated while the solver runs: time-averaged velocity and
     pressure with RMS accumulated on the GPU, point / line probes, planes, surface C_p. Checkpoints share the
