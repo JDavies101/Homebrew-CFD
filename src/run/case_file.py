@@ -164,13 +164,14 @@ def build_part(spec, domain, backend, free_stream_velocity):
     nx = domain.nx
     ny = domain.ny
     nz = domain.nz
+    periodic = (domain.x_boundary == "periodic", domain.y_boundary == "periodic", domain.side_walls == "periodic")
     wall_velocity = None # at rest unless a cylinder spins
 
     if spec.kind == "stl":
         triangles = read_stl(spec.path) * spec.cells_per_unit + np.asarray(spec.offset, np.float64)
         grid, phi = sdf_from_mesh(triangles, nx, ny, nz, backend=backend)
         solid = (grid < 0.0).astype(np.int32)
-        wall_fractions = q_from_mesh(triangles, phi, nx, ny, nz, backend=backend) if spec.wall == "bouzidi" else None
+        wall_fractions = q_from_mesh(triangles, phi, nx, ny, nz, backend=backend, periodic=periodic) if spec.wall == "bouzidi" else None
 
     elif spec.kind == "naca":
         polygon_x, polygon_y = naca_four_digit(spec.section)
@@ -178,7 +179,7 @@ def build_part(spec, domain, backend, free_stream_velocity):
         phi = extruded_section_sdf(placed_x, placed_y)
         node_phi = node_values(phi, nx, ny, nz, extruded=True)
         solid = solid_from_sdf(phi, nx, ny, nz, node_phi)
-        wall_fractions = q_from_sdf(phi, nx, ny, nz, node_phi=node_phi) if spec.wall == "bouzidi" else None
+        wall_fractions = q_from_sdf(phi, nx, ny, nz, node_phi=node_phi, periodic=periodic) if spec.wall == "bouzidi" else None
 
     elif spec.kind == "sphere":
         center_x, center_y, center_z = spec.center

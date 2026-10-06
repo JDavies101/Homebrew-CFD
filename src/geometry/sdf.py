@@ -61,9 +61,10 @@ def solid_from_sdf(phi, nx, ny, nz, node_phi=None):
 
     return (node_phi < 0.0).astype(np.int32)
 
-def q_from_sdf(phi, nx, ny, nz, iterations=40, node_phi=None):
+def q_from_sdf(phi, nx, ny, nz, iterations=40, node_phi=None, periodic=(False, False, False)):
     """
-    Bouzidi wall fraction q on every fluid-to-solid link, by bisection of phi along the link.
+    Bouzidi wall fraction q on every fluid-to-solid link, by bisection of phi along the link; links cross a
+    periodic face to the wrapped neighbour, as streaming does.
 
     Returns float32 q (19, nx, ny, nz), 0 on non-boundary links.
     """
@@ -72,16 +73,20 @@ def q_from_sdf(phi, nx, ny, nz, iterations=40, node_phi=None):
         node_phi = node_values(phi, nx, ny, nz)
     solid = node_phi < 0.0
     q = np.zeros((d3q19.direction_count, nx, ny, nz), np.float32)
+    sizes = (nx, ny, nz)
 
     for d in range(d3q19.direction_count):
         ex, ey, ez = (int(v) for v in d3q19.lattice_velocities[d])
         if ex == 0 and ey == 0 and ez == 0:
             continue
 
-        # neighbour_solid[i, j, k] = solid[i + ex, j + ey, k + ez], False out of bounds (no wrap)
-        neighbour_solid = np.zeros_like(solid)
-        neighbour_solid[max(-ex, 0) : nx - max(ex, 0), max(-ey, 0) : ny - max(ey, 0), max(-ez, 0) : nz - max(ez, 0)] = \
-            solid[max(ex, 0) : nx + min(ex, 0), max(ey, 0) : ny + min(ey, 0), max(ez, 0) : nz + min(ez, 0)]
+        # neighbour_solid[i, j, k] = solid[i + ex, j + ey, k + ez]: wraps on periodic axes, False past a closed face
+        neighbour_solid = np.roll(solid, (-ex, -ey, -ez), axis=(0, 1, 2))
+        for axis, step in enumerate((ex, ey, ez)):
+            if step != 0 and not periodic[axis]:
+                face = [slice(None)] * 3
+                face[axis] = sizes[axis] - 1 if step > 0 else 0
+                neighbour_solid[tuple(face)] = False
         link = (~solid) & neighbour_solid
         link_index = np.nonzero(link)
         x_start = link_index[0].astype(np.float64)
@@ -90,10 +95,16 @@ def q_from_sdf(phi, nx, ny, nz, iterations=40, node_phi=None):
         lower = np.zeros_like(x_start)
         upper = np.ones_like(x_start)
 
-        # bisection: keep the crossing between lower (fluid) and upper (solid)
+        # bisection: keep the crossing between lower (fluid) and upper (solid); periodic axes read phi wrapped
         for _ in range(iterations):
             middle = 0.5 * (lower + upper)
-            inside = phi(x_start + middle * ex, y_start + middle * ey, z_start + middle * ez) < 0.0
+            x = x_start + middle * ex
+            y = y_start + middle * ey
+            z = z_start + middle * ez
+            x = np.mod(x, nx) if periodic[0] else x
+            y = np.mod(y, ny) if periodic[1] else y
+            z = np.mod(z, nz) if periodic[2] else z
+            inside = phi(x, y, z) < 0.0
             upper = np.where(inside, middle, upper)
             lower = np.where(inside, lower, middle)
 

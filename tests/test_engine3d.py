@@ -4,7 +4,7 @@ import pytest
 from src.engine import lattice_d3q19 as d3q19
 from src.engine import runtime
 from src.engine.simulation3d import Simulation3D
-from src.geometry.sdf import sdf_sphere, solid_from_sdf, q_from_sdf, node_grid
+from src.geometry.sdf import sdf_sphere, solid_from_sdf, q_from_sdf, node_grid, node_values
 from src.turbulence.wall_function import friction_velocity
 
 rng = np.random.default_rng(0)
@@ -937,3 +937,48 @@ def test_f_absmax(sim):
 
     assert np.isclose(finite_max, 5.0)
     assert nan_max >= 1e29
+
+# test 43: a z-periodic Bouzidi wall is invariant under a one-layer shift in z (links and upstream nodes wrap)
+def test_bouzidi_periodic_shift_invariance():
+
+    nx, ny, nz = 24, 16, 8
+    populations = rng.uniform(0.01, 0.1, (d3q19.direction_count, nx, ny, nz)).astype(np.float32)
+    results = []
+
+    # sphere through the z face (center z = 0.4), then the same sphere and populations one layer up
+    for shift, center_z in ((0, 0.4), (1, 1.4)):
+
+        def phi(x, y, z, center_z=center_z):
+
+            dz = np.mod(z - center_z + nz / 2, nz) - nz / 2
+
+            return np.sqrt((x - 12.0) * (x - 12.0) + (y - 8.0) * (y - 8.0) + dz * dz) - 3.0
+
+        node_phi = node_values(phi, nx, ny, nz)
+        sim = Simulation3D(nx, ny, nz, "cpu", interp=True, periodic=(True, True, True))
+        sim.solid.from_numpy(solid_from_sdf(phi, nx, ny, nz, node_phi))
+        sim.set_wall_fractions(q_from_sdf(phi, nx, ny, nz, node_phi=node_phi, periodic=(True, True, True)))
+        shifted = np.roll(populations, shift, axis=3)
+        sim.f.from_numpy(shifted)
+        sim.fc.from_numpy(shifted)
+        sim.bounce_back_interp()
+        results.append(sim.f.to_numpy())
+
+    assert np.array_equal(np.roll(results[0], 1, axis=3), results[1])
+
+# test 44: wall-node normals of a z-invariant slab are the same on every layer with periodic z
+def test_wall_list_periodic_layers_match():
+
+    nx, ny, nz = 12, 12, 4
+    solid = np.zeros((nx, ny, nz), np.int32)
+    solid[:, :5, :] = 1
+    sim = Simulation3D(nx, ny, nz, "cpu", periodic=(False, False, True))
+    sim.solid.from_numpy(solid)
+    sim.build_wall_list()
+    nodes = sim.wall_ijk.to_numpy()[:sim.n_wall]
+    normals = sim.wall_n.to_numpy()[:sim.n_wall]
+    face_layer = normals[(nodes[:, 2] == 0) & (nodes[:, 0] == 6)]
+    middle_layer = normals[(nodes[:, 2] == 1) & (nodes[:, 0] == 6)]
+
+    assert len(face_layer) == len(middle_layer) == 1
+    assert np.allclose(face_layer, middle_layer)

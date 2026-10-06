@@ -42,7 +42,7 @@ def main():
     phi = extruded_section_sdf(placed_x, placed_y)
     node_phi = node_values(phi, nx, ny, nz, extruded=True)
     wing = Part(name="wing", solid=solid_from_sdf(phi, nx, ny, nz, node_phi), reference_area=reference_area,
-                wall_fractions=q_from_sdf(phi, nx, ny, nz, node_phi=node_phi))
+                wall_fractions=q_from_sdf(phi, nx, ny, nz, node_phi=node_phi, periodic=(False, False, True)))
 
     case = Case(name="wing_ground", tag=tag,
                 flow=Flow(free_stream_velocity=0.05, reynolds_number=options.reynolds, reference_length=chord),

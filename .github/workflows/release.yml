@@ -48,7 +48,7 @@ jobs:
           $result = Get-ChildItem smoke_runs -Recurse -Filter result.json | Select-Object -First 1 | Get-Content -Raw | ConvertFrom-Json
           if ($result.status -ne "finished") { throw "smoke run status: $($result.status)" }
           $lift = $result.parts.wing.y.mean
-          if ([double]::IsNaN($lift) -or [math]::Abs($lift - (-0.0335)) -gt 0.001) { throw "smoke run C_y $lift outside -0.0335 +/- 0.001" }
+          if ([double]::IsNaN($lift) -or [math]::Abs($lift - (-0.0494)) -gt 0.001) { throw "smoke run C_y $lift outside -0.0494 +/- 0.001" }
           Write-Host "smoke run finished, C_y $lift"
       - uses: actions/upload-artifact@v7
         with:

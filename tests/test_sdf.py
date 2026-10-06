@@ -4,6 +4,7 @@ from src.geometry.sdf import sdf_sphere, solid_from_sdf, q_from_sdf, normals_fro
 from src.geometry.wall_fraction import wall_fraction_sphere
 from src.engine.simulation3d import Simulation3D
 from src.geometry.airfoil import naca_four_digit, place_section, extruded_section_sdf
+from src.engine import lattice_d3q19 as d3q19
 
 grid_size = 24
 center = (11.3, 12.1, 11.7)  # off-lattice center so q takes many different values
@@ -90,3 +91,21 @@ def test_node_phi_reuse_sphere():
     node_phi = node_values(phi, grid_size, grid_size, grid_size)
 
     assert np.array_equal(q_from_sdf(phi, grid_size, grid_size, grid_size, node_phi=node_phi), q_from_sdf(phi, grid_size, grid_size, grid_size))
+
+# test 8: links across a periodic z face are found; a closed face drops them
+def test_periodic_links_across_face():
+
+    nx, ny, nz = 12, 12, 4
+
+    # z-invariant slab y < 5.3: every fluid node beside it links in all directions on every layer
+    def phi(x, y, z):
+
+        return y - 5.3
+
+    q_periodic = q_from_sdf(phi, nx, ny, nz, periodic=(False, False, True))
+    q_closed = q_from_sdf(phi, nx, ny, nz)
+    plus_z_diagonal = int(np.where((d3q19.lattice_velocities == [0, -1, 1]).all(axis=1))[0][0])
+
+    assert q_periodic[plus_z_diagonal, 6, 6, nz - 1] > 0.0
+    assert q_closed[plus_z_diagonal, 6, 6, nz - 1] == 0.0
+    assert np.allclose(q_periodic[plus_z_diagonal, :, 6, :], q_periodic[plus_z_diagonal, :, 6, :1])

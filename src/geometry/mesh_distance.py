@@ -240,7 +240,7 @@ def _link_hits(triangles: ti.types.ndarray(), lattice_velocities: ti.types.ndarr
                                     if t >= 0.0 and t <= 1.0:
                                         ti.atomic_min(q[d, i, j, k], t)
 
-def q_from_mesh(triangles, phi, nx, ny, nz, backend="cpu"):
+def q_from_mesh(triangles, phi, nx, ny, nz, backend="cpu", periodic=(False, False, False)):
     """
     Exact Bouzidi fractions for a triangle mesh; phi (from sdf_from_mesh) defines which links are boundary links.
 
@@ -255,7 +255,7 @@ def q_from_mesh(triangles, phi, nx, ny, nz, backend="cpu"):
     _link_hits(np.ascontiguousarray(triangles, np.float32), np.ascontiguousarray(d3q19.lattice_velocities, np.int32), hit_fraction)
 
     mesh_hits = hit_fraction.to_numpy()
-    q_sdf = q_from_sdf(phi, nx, ny, nz)
+    q_sdf = q_from_sdf(phi, nx, ny, nz, periodic=periodic)
     boundary_link = q_sdf > 0.0
     hit = mesh_hits <= 1.0
     q = np.where(boundary_link & hit, np.maximum(mesh_hits, 1e-6), q_sdf)
