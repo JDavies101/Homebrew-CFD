@@ -15,16 +15,20 @@ class Simulation3D:
     f (populations), rho (density), u (velocity), uw (wall velocity), solid, body, lid.
     """
 
-    def __init__(self, nx, ny, nz, backend="cpu", interp=False, max_parts=8):
+    def __init__(self, nx, ny, nz, backend="cpu", interp=False, max_parts=8, periodic=(False, False, False)):
         """
         Allocate fields and load the lattice constants. interp=True adds the Bouzidi fields (q, fc).
         max_parts is the largest part id body may hold (part_force has max_parts + 1 rows).
+        periodic (x, y, z) marks the axes whose Bouzidi upstream nodes wrap like streaming.
         """
 
         runtime.init(backend)
         self.direction_count = d3q19.direction_count
         self.dimension = d3q19.dimension
-        self.nx, self.ny, self.nz = nx, ny, nz
+        self.nx = nx
+        self.ny = ny
+        self.nz = nz
+        self.periodic_x, self.periodic_y, self.periodic_z = (bool(flag) for flag in periodic)
 
         # populations + macroscopic
         self.f = ti.field(ti.f32, shape=(self.direction_count, nx, ny, nz))
@@ -297,6 +301,14 @@ class Simulation3D:
                     neighbour_i = i + self.lattice_velocities[q, 0]
                     neighbour_j = j + self.lattice_velocities[q, 1]
                     neighbour_k = k + self.lattice_velocities[q, 2]
+
+                    # periodic axes wrap like streaming; a closed face leaves the neighbour outside
+                    if ti.static(self.periodic_x):
+                        neighbour_i = (neighbour_i + self.nx) % self.nx
+                    if ti.static(self.periodic_y):
+                        neighbour_j = (neighbour_j + self.ny) % self.ny
+                    if ti.static(self.periodic_z):
+                        neighbour_k = (neighbour_k + self.nz) % self.nz
                     if 0 <= neighbour_i < self.nx and 0 <= neighbour_j < self.ny and 0 <= neighbour_k < self.nz:
                         if self.solid[neighbour_i, neighbour_j, neighbour_k] == 1:
                             normal_sum_x += self.lattice_velocities[q, 0]
@@ -472,12 +484,16 @@ class Simulation3D:
         lattice_velocities = d3q19.lattice_velocities
         nx, ny, nz = self.nx, self.ny, self.nz
 
+        periodic = (self.periodic_x, self.periodic_y, self.periodic_z)
+
         def shift(array, offset):
-            # array[c] -> array[c + offset], zero-filled out of bounds
-            shifted = np.zeros_like(array)
-            source_slices = tuple(slice(max(step, 0), array.shape[axis] + min(step, 0)) for axis, step in enumerate(offset))
-            destination_slices = tuple(slice(max(-step, 0), array.shape[axis] - max(step, 0)) for axis, step in enumerate(offset))
-            shifted[destination_slices] = array[source_slices]
+            # array[c] -> array[c + offset]: wraps on periodic axes, zero past a closed face
+            shifted = np.roll(array, tuple(-int(step) for step in offset), axis=(0, 1, 2))
+            for axis, step in enumerate(offset):
+                if step != 0 and not periodic[axis]:
+                    face = [slice(None)] * 3
+                    face[axis] = array.shape[axis] - 1 if step > 0 else 0
+                    shifted[tuple(face)] = 0
 
             return shifted
 
@@ -654,6 +670,14 @@ class Simulation3D:
                 upstream_i = i - self.lattice_velocities[direction, 0]
                 upstream_j = j - self.lattice_velocities[direction, 1]
                 upstream_k = k - self.lattice_velocities[direction, 2]
+
+                # periodic axes wrap like streaming; a closed face leaves the upstream node outside
+                if ti.static(self.periodic_x):
+                    upstream_i = (upstream_i + self.nx) % self.nx
+                if ti.static(self.periodic_y):
+                    upstream_j = (upstream_j + self.ny) % self.ny
+                if ti.static(self.periodic_z):
+                    upstream_k = (upstream_k + self.nz) % self.nz
                 upstream_fluid = 0
                 if 0 <= upstream_i < self.nx and 0 <= upstream_j < self.ny and 0 <= upstream_k < self.nz:
                     if self.solid[upstream_i, upstream_j, upstream_k] == 0:
@@ -900,6 +924,14 @@ class Simulation3D:
                     neighbour_i = i + self.lattice_velocities[q, 0]
                     neighbour_j = j + self.lattice_velocities[q, 1]
                     neighbour_k = k + self.lattice_velocities[q, 2]
+
+                    # periodic axes wrap like streaming; a closed face leaves the neighbour outside
+                    if ti.static(self.periodic_x):
+                        neighbour_i = (neighbour_i + self.nx) % self.nx
+                    if ti.static(self.periodic_y):
+                        neighbour_j = (neighbour_j + self.ny) % self.ny
+                    if ti.static(self.periodic_z):
+                        neighbour_k = (neighbour_k + self.nz) % self.nz
                     if 0 <= neighbour_i < self.nx and 0 <= neighbour_j < self.ny and 0 <= neighbour_k < self.nz:
                         part = 0
                         link_hits_target = False

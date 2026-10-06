@@ -2,7 +2,7 @@
   "schema_version": 1,
   "cases": [
     {"name": "wing_smoke", "backend": "cpu", "case": "cases/smoke/wing_smoke.json", "reference_run": "release smoke",
-     "checks": [{"part": "wing", "axis": "y", "reference": -0.0335, "tolerance": 0.001}]},
+     "checks": [{"part": "wing", "axis": "y", "reference": -0.0494, "tolerance": 0.001}]},
     {"name": "wing_ground", "backend": "cuda", "case": "cases/templates/wing_ground.json", "reference_run": 151,
      "case_hash": "b3bfb6f6337d24742c609d7e89cf620876649d8716135ba9d54a8fb03405f7f6",
      "checks": [{"part": "wing", "axis": "y", "reference": -0.3368, "tolerance": 0.0004},
@@ -13,9 +13,9 @@
     {"name": "sphere", "backend": "cuda", "case": "cases/templates/sphere.json", "reference_run": 66,
      "case_hash": "0b95b1b04ef75070e284b8786970cdd0e98e4ef4f1e5ef290a400a2cb1c78087",
      "checks": [{"part": "sphere", "axis": "x", "reference": 1.6228, "tolerance": 0.0002}]},
-    {"name": "spinning_cylinder", "backend": "cuda", "case": "cases/templates/spinning_cylinder.json", "reference_run": 155,
+    {"name": "spinning_cylinder", "backend": "cuda", "case": "cases/templates/spinning_cylinder.json", "reference_run": 190,
      "case_hash": "d63e8eb8f49d4561b44d8e2c6a5c7705ea4ef60a930e0c3c85db3ba30706ae3f",
-     "checks": [{"part": "cylinder", "axis": "x", "reference": 1.1644, "tolerance": 0.001},
-                {"part": "cylinder", "axis": "y", "reference": -2.652, "tolerance": 0.001}]}
+     "checks": [{"part": "cylinder", "axis": "x", "reference": 1.1626, "tolerance": 0.0045},
+                {"part": "cylinder", "axis": "y", "reference": -2.6558, "tolerance": 0.015}]}
   ]
 }

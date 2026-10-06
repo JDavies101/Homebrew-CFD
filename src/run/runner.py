@@ -104,7 +104,8 @@ def run_case(case, backend="cuda", before_loop=None, after_collide=None, after_s
     free_stream_velocity = flow.free_stream_velocity
     bouzidi = any(part.wall_fractions is not None for part in case.parts)
     staircase = any(part.wall_fractions is None for part in case.parts)
-    sim = Simulation3D(nx, ny, nz, backend, interp=bouzidi)
+    periodic = (domain.x_boundary == "periodic", domain.y_boundary == "periodic", domain.side_walls == "periodic")
+    sim = Simulation3D(nx, ny, nz, backend, interp=bouzidi, periodic=periodic)
 
     # parts: part id = index + 1, union mask, floor and ceiling rows
     body = np.zeros((nx, ny, nz), np.int32)
