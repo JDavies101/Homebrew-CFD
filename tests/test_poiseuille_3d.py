@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 from src.engine.simulation3d import Simulation3D
 from src.engine import lattice_d3q19 as d3q19
+from src.geometry.sdf import node_values, solid_from_sdf, q_from_sdf
 
 # validation gate: force-driven channel flow should be an exact parabola
 pytestmark = pytest.mark.slow
@@ -163,4 +164,133 @@ def test_bouzidi_channel_wall_location(relaxation_time, wall_fraction):
     assert abs(bottom_error) < 0.06
     assert abs(top_error) < 0.06
     assert abs(peak_error) < 0.03
+    assert abs(force_error) < 0.01
+
+def _tilted_band(relaxation_time, offset):
+    """
+    Force-driven flow in a band at slope 1/16 between Bouzidi walls, periodic in x and y so the walls cross every
+    sub-cell position along x; regularized collision and the runner's step order.
+
+    Returns (lower wall error, upper wall error) in cells along the wall normal from the fitted along-band profile,
+    the RMS scatter of the nodes about that fit relative to the peak, and the wall force's relative error against
+    the total body force.
+    """
+
+    band_nx = 256
+    band_ny = 16
+    band_nz = 4
+    slope = band_ny / band_nx
+    cosine = 1.0 / np.sqrt(1.0 + slope * slope)
+    sine = slope * cosine
+    band_height = 10.0  # vertical width of the fluid band, cells
+    normal_width = band_height * cosine
+    band_viscosity = (relaxation_time - 0.5) / 3
+    force = 0.4 * band_viscosity / (normal_width * normal_width * cosine)  # along-band peak about 0.05: signal well above float32 rounding in the wall-force sum
+    step_count = int(8 * normal_width * normal_width / (np.pi * np.pi * band_viscosity))
+
+    # signed distance to the band walls: > 0 inside the band; periodic because the band rises ny over nx
+    def phi(x, y, z):
+
+        height = np.mod(y - slope * x - offset, band_ny)
+        inside = np.minimum(height, band_height - height)
+        outside = -np.minimum(height - band_height, band_ny - height)
+
+        return cosine * np.where(height < band_height, inside, outside)
+
+    node_phi = node_values(phi, band_nx, band_ny, band_nz)
+    solid = solid_from_sdf(phi, band_nx, band_ny, band_nz, node_phi)
+    sim = Simulation3D(band_nx, band_ny, band_nz, "cpu", interp=True, periodic=(True, True, True))
+    sim.solid.from_numpy(solid)
+    sim.body.from_numpy(solid)  # walls are part 1, so drag_interp sums their links
+    sim.set_wall_fractions(q_from_sdf(phi, band_nx, band_ny, band_nz, node_phi=node_phi, periodic=(True, True, True)))
+
+    # start at rest, then the production step order
+    sim.f.from_numpy(np.tile(d3q19.lattice_weights[:, None, None, None], (1, band_nx, band_ny, band_nz)).astype(np.float32))
+    for _ in range(step_count):
+        sim.collide_reg(relaxation_time, 0.0, force)
+        sim.fc.copy_from(sim.f)
+        sim.stream()
+        sim.bounce_back()
+        sim.bounce_back_interp()
+    sim.drag_interp()
+    sim.macroscopic()
+
+    # along-band speed against the wall-normal coordinate, every fluid node of one layer, Guo half-force corrected
+    velocity = sim.u.to_numpy()[:, :, :, 0]
+    density = sim.rho.to_numpy()[:, :, 0]
+    fluid = solid[:, :, 0] == 0
+    x, y = np.nonzero(fluid)
+    velocity_x = velocity[0][fluid] + force / (2 * density[fluid])
+    along = velocity_x * cosine + velocity[1][fluid] * sine
+    normal = cosine * np.mod(y - slope * x - offset, band_ny)
+    coefficients = np.polyfit(normal, along, 2)
+    roots = np.sort(np.roots(coefficients).real)
+    scatter = along - np.polyval(coefficients, normal)
+    peak = coefficients[2] - coefficients[1] * coefficients[1] / (4 * coefficients[0])
+
+    # steady state: the walls carry all the body force put into the fluid
+    body_force_total = force * int(fluid.sum()) * band_nz
+    wall_force_x = float(sim.force.to_numpy()[0])
+
+    return roots[0], roots[1] - normal_width, np.sqrt(np.mean(scatter * scatter)) / peak, wall_force_x / body_force_total - 1
+
+# test 6: shallow-angle Bouzidi walls (slope 1/16) keep the analytic band profile at every sub-cell position
+@pytest.mark.parametrize("relaxation_time", [0.6, 0.5024])
+@pytest.mark.parametrize("offset", [0.0, 0.25, 0.5])
+def test_tilted_band_profile(relaxation_time, offset):
+
+    lower_error, upper_error, scatter, force_error = _tilted_band(relaxation_time, offset)
+    print(f"tau {relaxation_time} offset {offset}: wall error {lower_error:+.4f} / {upper_error:+.4f} cells, "
+          f"scatter {scatter:.3%}, wall force {force_error:+.3%}")
+
+    assert abs(lower_error) < 0.06
+    assert abs(upper_error) < 0.06
+    assert scatter < 0.01
+    assert abs(force_error) < 0.03  # near tau = 1/2 the shallow-wall force balance converges to about -2% (measured)
+
+# test 7: a channel between two plates thinner than a cell: walls where the plates are, no leak, force on the part
+def test_thin_plate_channel():
+
+    nx, ny, nz = 4, 16, 4
+    plate_relaxation_time = 0.6
+    plate_viscosity = (plate_relaxation_time - 0.5) / 3
+    bottom_wall = 2.55
+    top_wall = 13.45
+    width = top_wall - bottom_wall
+    force = 0.08 * plate_viscosity / (width * width)  # peak u = g W^2 / (8 nu) = 0.01
+    step_count = int(8 * width * width / (np.pi * np.pi * plate_viscosity))
+
+    # two plates 0.1 cells thick at y = 2.5 and 13.5: no node falls inside either
+    def phi(x, y, z):
+
+        return np.minimum(np.abs(y - 2.5), np.abs(y - 13.5)) - 0.05
+
+    wall_fractions = q_from_sdf(phi, nx, ny, nz, periodic=(True, True, True))
+    sim = Simulation3D(nx, ny, nz, "cpu", interp=True, periodic=(True, True, True))
+    sim.solid.from_numpy(np.zeros((nx, ny, nz), np.int32))
+    sim.set_wall_fractions(wall_fractions, (wall_fractions > 0.0).astype(np.int8))
+
+    # start at rest, then the production step order
+    sim.f.from_numpy(np.tile(d3q19.lattice_weights[:, None, None, None], (1, nx, ny, nz)).astype(np.float32))
+    for _ in range(step_count):
+        sim.collide_reg(plate_relaxation_time, 0.0, force)
+        sim.fc.copy_from(sim.f)
+        sim.stream()
+        sim.bounce_back()
+        sim.bounce_back_interp()
+    sim.drag_interp()
+    sim.macroscopic()
+
+    # inner band (rows 3-13), Guo half-force corrected; every node is fluid, so all of them are driven
+    column = nx // 2
+    layer = nz // 2
+    density = sim.rho.to_numpy()[column, 3:14, layer]
+    velocity_x = sim.u.to_numpy()[0, column, 3:14, layer] + force / (2 * density)
+    y = np.arange(3, 14, dtype=np.float64)
+    roots = np.sort(np.roots(np.polyfit(y, velocity_x, 2)).real)
+    body_force_total = force * nx * ny * nz
+    force_error = float(sim.part_force.to_numpy()[1, 0]) / body_force_total - 1
+
+    assert abs(roots[0] - bottom_wall) < 0.06
+    assert abs(roots[1] - top_wall) < 0.06
     assert abs(force_error) < 0.01
