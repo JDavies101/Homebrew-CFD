@@ -860,7 +860,7 @@ def test_part_forces_sum_to_drag_interp(sim):
     sim.solid.from_numpy(solid)
     sim.body.from_numpy(parts)
     sim.uw.from_numpy(np.zeros((3, grid_size, grid_size, grid_size), np.float32))
-    sim.set_wall_fractions(q_from_sdf(phi, grid_size, grid_size, grid_size))  # after body: link_part is read from it
+    sim.set_wall_fractions(q_from_sdf(phi, grid_size, grid_size, grid_size, thin_walls=False))  # after body: link_part is read from it at the solid end
     populations = _random_populations(0.9, 1.1)
     sim.f.from_numpy(populations)
     sim.fc.from_numpy(populations)

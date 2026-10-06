@@ -13,10 +13,12 @@ radius = 6.4
 def test_q_from_sdf_matches_analytic_sphere():
 
     phi = sdf_sphere(*center, radius)
-    q_sdf = q_from_sdf(phi, grid_size, grid_size, grid_size)
+    q_sdf = q_from_sdf(phi, grid_size, grid_size, grid_size, thin_walls=False)
+    q_thin = q_from_sdf(phi, grid_size, grid_size, grid_size)
     q_reference = wall_fraction_sphere(grid_size, grid_size, grid_size, *center, radius)
 
     assert (q_reference > 0).sum() > 500  # plenty of links, not a vacuous compare
+    assert np.array_equal(q_thin[q_reference > 0], q_sdf[q_reference > 0])  # thin links only add links, never change one
     assert np.array_equal(q_sdf > 0, q_reference > 0)  # same set of boundary links
     assert np.allclose(q_sdf, q_reference, atol=1e-5)  # same crossing points
     assert q_sdf.min() >= 0.0 and q_sdf.max() <= 1.0
@@ -109,3 +111,24 @@ def test_periodic_links_across_face():
     assert q_periodic[plus_z_diagonal, 6, 6, nz - 1] > 0.0
     assert q_closed[plus_z_diagonal, 6, 6, nz - 1] == 0.0
     assert np.allclose(q_periodic[plus_z_diagonal, :, 6, :], q_periodic[plus_z_diagonal, :, 6, :1])
+
+# test 9: a plate thinner than a cell between two fluid rows gives wall links from both sides
+def test_thin_plate_links():
+
+    nx, ny, nz = 8, 12, 4
+
+    # plate 0.2 cells thick centered at y = 5.5: no node falls inside it
+    def phi(x, y, z):
+
+        return np.abs(y - 5.5) - 0.1
+
+    q = q_from_sdf(phi, nx, ny, nz, periodic=(True, False, True))
+    up = int(np.where((d3q19.lattice_velocities == [0, 1, 0]).all(axis=1))[0][0])
+    down = int(np.where((d3q19.lattice_velocities == [0, -1, 0]).all(axis=1))[0][0])
+    up_diagonal = int(np.where((d3q19.lattice_velocities == [1, 1, 0]).all(axis=1))[0][0])
+
+    assert solid_from_sdf(phi, nx, ny, nz).sum() == 0
+    assert np.allclose(q[up, :, 5, :], 0.4, atol=1e-6)
+    assert np.allclose(q[down, :, 6, :], 0.4, atol=1e-6)
+    assert np.allclose(q[up_diagonal, :, 5, :], 0.4, atol=1e-6)
+    assert (q[:, :, 4, :] == 0.0).all()

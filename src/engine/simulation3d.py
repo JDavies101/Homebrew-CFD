@@ -600,12 +600,13 @@ class Simulation3D:
 
         self._bounce_back(scale)
 
-    def set_wall_fractions(self, q):
+    def set_wall_fractions(self, q, link_parts=None):
         """
         Load the per-link wall fractions q (Q, nx, ny, nz) and build the compact boundary-link list.
 
         Bouzidi and drag_interp loop over this list instead of scanning all 19 x N entries each step.
-        Call after body is loaded; link_part is taken from it.
+        link_parts (Q, nx, ny, nz) gives each link's part id (needed for thin-wall links, which have no solid end);
+        without it the id is read from body at the solid end, so call after body is loaded.
         """
 
         self.q.from_numpy(q)
@@ -622,12 +623,15 @@ class Simulation3D:
             self.link_node.from_numpy(np.stack([i, j, k], axis=1).astype(np.int32))
             self.link_fraction.from_numpy(q[direction, i, j, k].astype(np.float32))
 
-            # part id at the solid end of each link (body must be loaded before this call)
-            body = self.body.to_numpy()
-            solid_i = (i + d3q19.lattice_velocities[direction, 0]) % self.nx
-            solid_j = (j + d3q19.lattice_velocities[direction, 1]) % self.ny
-            solid_k = (k + d3q19.lattice_velocities[direction, 2]) % self.nz
-            self.link_part.from_numpy(body[solid_i, solid_j, solid_k].astype(np.int32))
+            # part id per link: given, or read from body at the solid end
+            if link_parts is not None:
+                self.link_part.from_numpy(link_parts[direction, i, j, k].astype(np.int32))
+            else:
+                body = self.body.to_numpy()
+                solid_i = (i + d3q19.lattice_velocities[direction, 0]) % self.nx
+                solid_j = (j + d3q19.lattice_velocities[direction, 1]) % self.ny
+                solid_k = (k + d3q19.lattice_velocities[direction, 2]) % self.nz
+                self.link_part.from_numpy(body[solid_i, solid_j, solid_k].astype(np.int32))
 
     @ti.func
     def _link_wall_velocity(self, i, j, k, direction, fraction, scale):
@@ -680,7 +684,8 @@ class Simulation3D:
                     upstream_k = (upstream_k + self.nz) % self.nz
                 upstream_fluid = 0
                 if 0 <= upstream_i < self.nx and 0 <= upstream_j < self.ny and 0 <= upstream_k < self.nz:
-                    if self.solid[upstream_i, upstream_j, upstream_k] == 0:
+                    # a thin wall between x_f and the upstream node blocks it like a solid one
+                    if self.solid[upstream_i, upstream_j, upstream_k] == 0 and self.q[opposite, i, j, k] == 0.0:
                         upstream_fluid = 1
 
                 if upstream_fluid == 1:

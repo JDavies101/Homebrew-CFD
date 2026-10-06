@@ -132,9 +132,11 @@ def run_case(case, backend="cuda", before_loop=None, after_collide=None, after_s
     sim.body.from_numpy(body)
     if bouzidi:
         wall_fractions = np.zeros((19, nx, ny, nz), np.float32)
-        for part in case.parts:
+        link_parts = np.zeros((19, nx, ny, nz), np.int8)
+        for part_id, part in enumerate(case.parts, start=1):
             wall_fractions = np.maximum(wall_fractions, part.wall_fractions)
-        sim.set_wall_fractions(wall_fractions)
+            link_parts[part.wall_fractions > 0.0] = part_id
+        sim.set_wall_fractions(wall_fractions, link_parts)
     if turbulence.wall_model:
         sim.build_wall_list()
     fluid = solid == 0
