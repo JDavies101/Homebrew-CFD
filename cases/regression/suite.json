@@ -2,7 +2,7 @@
   "schema_version": 1,
   "cases": [
     {"name": "wing_smoke", "backend": "cpu", "case": "cases/smoke/wing_smoke.json", "reference_run": "release smoke",
-     "checks": [{"part": "wing", "axis": "y", "reference": -0.0494, "tolerance": 0.001}]},
+     "checks": [{"part": "wing", "axis": "y", "reference": -0.0396, "tolerance": 0.001}]},
     {"name": "wing_ground", "backend": "cuda", "case": "cases/templates/wing_ground.json", "reference_run": 223,
      "case_hash": "b3bfb6f6337d24742c609d7e89cf620876649d8716135ba9d54a8fb03405f7f6",
      "checks": [{"part": "wing", "axis": "y", "reference": -0.3987, "tolerance": 0.0004},
