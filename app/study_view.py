@@ -32,6 +32,25 @@ def study_rows(entries):
 
     return rows
 
+def read_samples(run_folder):
+    """
+    The force coefficient samples of a run, from its coefficients_live.csv (complete rows only).
+
+    Returns (column names, values array (samples, columns)), or None when the file is missing or has no rows.
+    """
+
+    try:
+        lines = (Path(run_folder) / "coefficients_live.csv").read_text().splitlines()
+    except OSError:
+        return None
+
+    header = lines[0].split(",") if lines else []
+    rows = [line.split(",") for line in lines[1:] if line.count(",") == len(header) - 1]
+    if not rows:
+        return None
+
+    return header, np.array(rows, dtype=float)
+
 class StudyView(QWidget):
     """
     Table above a plot of the force coefficients against the swept value.

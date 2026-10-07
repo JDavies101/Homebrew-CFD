@@ -151,6 +151,28 @@ def part_free_case(case_file):
                 timing=case_file.timing, collision=case_file.collision, inlet=case_file.inlet, start=case_file.start,
                 allow_below_floor=case_file.allow_below_floor)  
 
+def ahmed_fit_error(spec, domain):
+    """
+    Why an Ahmed body does not fit the domain (length, top and width follow body_height with the scaling
+    ahmed_body uses), or None when it fits.
+
+    Returns the message or None.
+    """
+
+    body_length = round(1044 / 288 * spec.body_height)
+    body_width = round(389 / 288 * spec.body_height)
+    body_top = round(50 / 288 * spec.body_height) + 1 + spec.body_height
+    if spec.x_start < 0 or spec.x_start + body_length > domain.nx:
+        return f"{spec.name}: the body runs from x {spec.x_start} to {spec.x_start + body_length}, the domain is {domain.nx} long (nx)"
+
+    if body_top > domain.ny:
+        return f"{spec.name}: the body reaches y {body_top}, the domain is {domain.ny} high (ny)"
+
+    if body_width > domain.nz:
+        return f"{spec.name}: the body is {body_width} cells wide, the domain is {domain.nz} (nz)"
+
+    return None
+
 def build_part(spec, domain, backend, free_stream_velocity):
     """
     Voxelize one geometry spec on the grid: solid mask, plus Bouzidi wall fractions when wall = "bouzidi",
@@ -200,6 +222,10 @@ def build_part(spec, domain, backend, free_stream_velocity):
             raise ValueError("ahmed: staircase walls only (the mask has no Bouzidi fractions yet)")
         
         check_choice("ahmed nose", spec.nose, geometry_choices["nose"])
+        fit_error = ahmed_fit_error(spec, domain)
+        if fit_error is not None:
+            raise ValueError(fit_error)
+
         solid = ahmed_body(nx, ny, nz, spec.x_start, spec.body_height, spec.slant_angle, spec.nose)
         wall_fractions = None
 

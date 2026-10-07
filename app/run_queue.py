@@ -5,8 +5,6 @@ from pathlib import Path
 from src.run.case_file import save_case_file
 from src.run.run_folder import write_json_atomic
 
-finished_states =("finished", "stopped", "blow_up", "failed", "interrupted")
-
 class RunQueue:
     """
     Ordered queue entries, each a case snapshot with its runs folder, state, run folder and headline result.
@@ -70,12 +68,23 @@ class RunQueue:
 
         return next(entry for entry in self.entries if entry["id"] == identifier)
     
-    def next_pending(self):
+    def project_entries(self, runs_directory):
         """
-        Returns the first pending entry, or None when nothing is waiting.
+        Returns the entries that run into this runs folder (one project's), in queue order.
         """
 
-        return next((entry for entry in self.entries if entry["state"] == "pending"), None)
+        folder = Path(runs_directory).resolve()
+
+        return [entry for entry in self.entries if Path(entry["runs"]).resolve() == folder]
+
+    def next_pending(self, runs_directory=None):
+        """
+        Returns the first pending entry (of one runs folder when given), or None when nothing is waiting.
+        """
+
+        candidates = self.entries if runs_directory is None else self.project_entries(runs_directory)
+
+        return next((entry for entry in candidates if entry["state"] == "pending"), None)
     
     def mark(self, identifier, state, run_folder="", headline=""):
         """
@@ -107,21 +116,42 @@ class RunQueue:
 
     def move(self, identifier, offset):
         """
-        Move an entry up (offset -1) or down (+1) in the order, clamped to the ends.
+        Move a pending entry up (offset -1) or down (+1) past the next pending entry; running and finished entries
+        keep their place, and a move past either end does nothing.
         """
 
-        index = self.entries.index(self.find(identifier))
-        target = min(max(index + offset, 0), len(self.entries) - 1)
-        self.entries.insert(target, self.entries.pop(index))
+        entry = self.find(identifier)
+        pending = [candidate for candidate in self.entries if candidate["state"] == "pending"]
+        if entry not in pending:
+            return
+
+        target = pending.index(entry) + offset
+        if target < 0 or target >= len(pending):
+            return
+
+        first = self.entries.index(entry)
+        second = self.entries.index(pending[target])
+        self.entries[first], self.entries[second] = self.entries[second], self.entries[first]
         self.save()
 
-    def clear_finished(self):
+    def clear_pending(self, runs_directory):
         """
-        Drop every finished entry and its snapshot (the run folders stay).
+        Drop every pending entry of one runs folder with its snapshot; the running entry and finished ones (whose
+        results the studies read) stay.
         """
 
-        for entry in [entry for entry in self.entries if entry["state"] in finished_states]:
+        for entry in self.project_entries(runs_directory):
+            if entry["state"] != "pending":
+                continue
+
             Path(entry["case"]).unlink(missing_ok=True)
             self.entries.remove(entry)
 
         self.save()
+
+    def active_entries(self, runs_directory):
+        """
+        Returns the pending and running entries of one runs folder, in queue order (what the queue table shows).
+        """
+
+        return [entry for entry in self.project_entries(runs_directory) if entry["state"] in ("pending", "running")]
