@@ -2,7 +2,7 @@
 import numpy as np
 import pyvista
 from pyvistaqt import QtInteractor
-from src.geometry.airfoil import naca_four_digit, place_section
+from src.geometry.airfoil import naca_four_digit, place_section, naca_leading_edge_radius
 from src.geometry.ahmed_body import ahmed_body
 from src.geometry.mesh import read_stl, inspect_mesh
 from src.geometry.preview import wall_points
@@ -10,6 +10,7 @@ from src.run.estimate import case_device_bytes, run_seconds, format_duration
 from app import theme
 
 minimum_cells_across = 10 # fewer cells than this across a part's smallest in-plane size resolves it poorly
+minimum_radius_cells = 5 # a curved edge tighter than this (leading edges) makes forces depend on sub-cell placement
 wall_colors = {"static": theme.disabled, "moving": theme.accent}
 layer_color = theme.amber
 
@@ -147,10 +148,10 @@ def part_surface(spec, domain, stl_cache=None):
 
     return pyvista.PolyData(vertices, faces)
 
-def part_report(name, surface, domain, inspection=None, cells_per_unit=1.0):
+def part_report(name, surface, domain, inspection=None, cells_per_unit=1.0, smallest_radius=None):
     """
-    Size of a part in cells, with warnings for coarse resolution or geometry outside the domain
-    or a STL that is not watertight.
+    Size of a part in cells, with warnings for coarse resolution, a curved edge tighter than
+    minimum_radius_cells (smallest_radius, cells), geometry outside the domain or a STL that is not watertight.
 
     Returns one line of text.
     """
@@ -167,6 +168,10 @@ def part_report(name, surface, domain, inspection=None, cells_per_unit=1.0):
                             f"{inspection['nonmanifold_edges']} non-manifold edges)")
     if min(extent[0], extent[1]) < minimum_cells_across:
         warnings.append(f"under {minimum_cells_across} cells across (check STL units / scale)")
+
+    if smallest_radius is not None and smallest_radius < minimum_radius_cells:
+        warnings.append(f"smallest radius {smallest_radius:.1f} cells (under {minimum_radius_cells}: forces change by a few "
+                        f"percent with sub-cell placement)")
     
     if x_min < 0 or y_min < 0 or z_min < 0 or x_max > domain.nx or y_max > domain.ny or z_max > domain.nz:
         warnings.append("extends outside the domain")
@@ -233,7 +238,12 @@ class CaseViewport:
                 reports.append(f"{spec.name}: <span style='color:{theme.error}'>cannot read geometry ({error})</span>")
                 continue
             plotter.add_mesh(surface, color=theme.viewport_part, smooth_shading=True, opacity=part_opacity)
-            reports.append(part_report(spec.name, surface, domain, inspection, spec.cells_per_unit))
+            smallest_radius = None
+            if spec.kind == "naca":
+                smallest_radius = naca_leading_edge_radius(spec.section) * spec.chord
+            elif spec.kind == "stl":
+                smallest_radius = inspection["smallest_radius"] * spec.cells_per_unit
+            reports.append(part_report(spec.name, surface, domain, inspection, spec.cells_per_unit, smallest_radius))
 
         plotter.add_axes()
         if reset_camera:

@@ -116,3 +116,14 @@ def test_analytic_surfaces():
     assert abs((cylinder_bounds[1] - cylinder_bounds[0]) - 10.0) < 0.1
     assert cylinder_bounds[4] == 0.0
     assert cylinder_bounds[5] == 12.0
+
+# test 10: the template wing's 1.3-cell leading edge is flagged; a wide radius is not
+def test_small_radius_flagged():
+
+    spec = load_case_file(template_path).geometry[0]
+    surface = part_surface(spec, Domain(nx=800, ny=400, nz=4))
+    tight = part_report(spec.name, surface, Domain(nx=800, ny=400, nz=4), smallest_radius=1.27)
+    wide = part_report(spec.name, surface, Domain(nx=800, ny=400, nz=4), smallest_radius=6.0)
+
+    assert "smallest radius 1.3 cells" in tight
+    assert "smallest radius" not in wide

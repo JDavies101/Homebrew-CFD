@@ -599,8 +599,7 @@ gates do not.
     edge thinner than a cell was invisible to Bouzidi (thin-wall links). The remaining spread is the
     leading-edge resolution, recorded as E7 (section 7a).
   - **Remaining:** pre-run warning for an under-resolved leading edge (NACA nose radius in cells; smallest
-    curvature radius in cells for STL parts, in the import report); study dialog warning when position steps
-    are not multiples of 0.5 cells; queue per project with Clear all; layout rework (tree with Study and
+    curvature radius in cells for STL parts, in the import report); queue per project with Clear all; layout rework (tree with Study and
     Results branches, two-click stop, Save / Save as behavior, spin-box arrows, form fields per part kind).
 - v0.5.0 - outputs.
   - **Engine:** one output-definition system evaluated while the solver runs: time-averaged velocity and
@@ -625,7 +624,19 @@ gates do not.
   - **App:** memory estimate for the new layout, wheel body template, 3D front wing case.
   - **Gate:** every reference run reproduces exactly or within its standard error, with MLUPS logged; the
     full ladder plus E1 and E6 at the new resolution (Ahmed at H = 64 or more).
-- v0.7.0 - platforms and verification.
+- v0.7.0 - local refinement.
+  - **Engine:** nested grid levels, each halving the cell size, around the parts (a thin shell of fine cells
+    instead of a fine grid everywhere), with populations rescaled at level interfaces (multi-level LBM, for
+    example Dupuis and Chopard 2003, Lagrava et al. 2012; citations to verify before use). This is the step
+    commercial LBM codes take and the one the uniform grid cannot: E7 shows forces depend on sub-cell
+    placement while a leading-edge radius is under about 5 cells, and on a uniform 3D grid resolving that
+    costs the cube of the refinement.
+  - **App:** refinement regions in the case (box or offset from a part, number of levels), shown in the
+    viewport and the voxel preview; memory and run-time estimate per level.
+  - **Gate:** a uniform-grid case reproduces with one level; the E7 placement study with the nose resolved
+    by refinement (radius 5 cells or more) spreads within 1% at a fraction of the uniform grid's memory;
+    sphere and cylinder at a refined boundary match the uniform fine grid.
+- v0.8.0 - platforms and verification.
   - **Engine:** backend auto-detect (CUDA, Vulkan, CPU). Real validation: every validation template shows
     its reproducible result next to accepted literature results (full citation, conditions, uncertainty),
     the difference, and why it differs (resolution, confinement, Reynolds number). The self-reproduction
@@ -640,8 +651,7 @@ gates do not.
     does not claim every .json); signed builds; complete manual and in-app tutorials.
   - **Gate:** every validation gate green on the release build.
 - After v1.0: D3Q15 / D3Q27 (section 8), 2D engine parity with the 3D physics, mixed precision beyond v0.6.0,
-  local grid refinement (resolves leading edges and other small radii on a 3D car without refining the whole
-  domain, E7), full car, thermal and aeroacoustic extensions (scope note below), and rotors driven by the flow (a
+  full car, thermal and aeroacoustic extensions (scope note below), and rotors driven by the flow (a
   free-spinning part whose angular velocity follows from the aerodynamic torque and its inertia, instead of a
   prescribed rpm). Apple version: a separate repository (not a fork; no shared code), native SwiftUI +
   Metal, one codebase for iPad, iPhone and macOS, built on my Mac. Scope: 2D D2Q9 first (TRT, bounce-back,
@@ -875,7 +885,7 @@ Each step below changes one thing and repeats a placement study (y in quarter ce
   207-210): linear Bouzidi on a well-resolved curve.
 - Uncertainty to state with wing results: about +/-3.5% (c = 80) and +/-2.7% (c = 120) from sub-cell
   placement; absolute lift also changes 15% between c = 80 and 120 with thin walls (not converged).
-- Practice until local refinement exists: keep the leading-edge radius at 5 cells or more where the
+- Practice until local refinement exists (v0.7.0): keep the leading-edge radius at 5 cells or more where the
   coefficients matter (chord about 300 for NACA 4412, affordable quasi-2D), move parts in steps of 0.5 cells
   in studies, or report the placement uncertainty with the trend.
 

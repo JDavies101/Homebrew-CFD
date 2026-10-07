@@ -52,7 +52,8 @@ def inspect_mesh(triangles, cells_per_unit, weld_tolerance=1e-9):
     Size and closure report for an STL triangle soup.
 
     Returns a dict: lower_corner, upper_corner, size, cells_across (size * cells_per_unit),
-    triangle_count, open_edges, nonmanifold_edges, flipped_edges, degenerate_triangles, watertight.
+    triangle_count, open_edges, nonmanifold_edges, flipped_edges, degenerate_triangles, watertight,
+    smallest_radius (STL units, 1st percentile over smoothly curved edges; inf when none).
     """
 
     # bounding box
@@ -84,6 +85,26 @@ def inspect_mesh(triangles, cells_per_unit, weld_tolerance=1e-9):
     nonmanifold_edges = int(np.sum(use_count > 2))
     flipped_edges = int(np.sum((use_count == 2) & (forward_count != 1)))
 
+
+    # smallest radius of curvature: centroid distance / dihedral angle across edges that bend gently
+    # (1 to 60 degrees); sharp creases such as trailing edges and box corners are left out
+    normals = np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0])
+    normals /= np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-30)
+    centroids = triangles.mean(axis=1)
+    edge_ids = edge_index.ravel()
+    order = np.argsort(edge_ids, kind="stable")
+    sorted_edges = edge_ids[order]
+    owner = np.repeat(np.arange(len(triangles)), 3)[order]
+    shared = (sorted_edges[:-1] == sorted_edges[1:]) & (use_count[sorted_edges[:-1]] == 2)
+    first = owner[:-1][shared]
+    second = owner[1:][shared]
+    cosine = np.clip(np.einsum("ij,ij->i", normals[first], normals[second]), -1.0, 1.0)
+    angle = np.arccos(cosine)
+    distance = np.linalg.norm(centroids[first] - centroids[second], axis=1)
+    smooth = (angle > np.radians(1.0)) & (angle < np.radians(60.0))
+    radii = distance[smooth] / angle[smooth]
+    smallest_radius = float(np.percentile(radii, 1)) if radii.size else float("inf")
+
     return {
         "lower_corner": lower_corner,
         "upper_corner": upper_corner,
@@ -94,7 +115,8 @@ def inspect_mesh(triangles, cells_per_unit, weld_tolerance=1e-9):
         "nonmanifold_edges": nonmanifold_edges,
         "flipped_edges": flipped_edges,
         "degenerate_triangles": int(np.sum(degenerate)),
-        "watertight": open_edges == 0 and nonmanifold_edges == 0 and flipped_edges == 0
+        "watertight": open_edges == 0 and nonmanifold_edges == 0 and flipped_edges == 0,
+        "smallest_radius": smallest_radius
     }
 
 def icosphere(center, radius, subdivisions=3):

@@ -1,6 +1,6 @@
 # airfoil geometry: NACA thickness and area, placement, signed distance
 import numpy as np
-from src.geometry.airfoil import naca_four_digit, place_section, extruded_section_sdf
+from src.geometry.airfoil import naca_four_digit, place_section, extruded_section_sdf, naca_leading_edge_radius
 
 # test 1: NACA 0012 max thickness is 12% of chord at ~30% chord
 def test_naca_0012_thickness():
@@ -42,3 +42,13 @@ def test_extruded_section_sdf():
     assert phi(-10.0, 0.0, 0.0) > 0.0
     assert abs(phi(top_x, top_y + 5.0, 0.0) - 5.0) < 1e-6
     assert np.isclose(phi(top_x, top_y + 5.0, 3.0), phi(top_x, top_y + 5.0, 0.0))
+
+# test 5: leading-edge radius 1.1019 t^2 matches the generated section's nose, y^2 / (2 x) at the first point
+def test_leading_edge_radius_matches_section():
+
+    polygon_x, polygon_y = naca_four_digit("0012", point_count=2000)
+    nose = np.argmin(np.where(polygon_x > 0.0, polygon_x, np.inf))
+    radius_from_points = polygon_y[nose] * polygon_y[nose] / (2.0 * polygon_x[nose])
+
+    assert np.isclose(naca_leading_edge_radius("0012"), 0.015867, atol=1e-6)
+    assert abs(radius_from_points / naca_leading_edge_radius("0012") - 1.0) < 0.02
