@@ -45,6 +45,16 @@ def naca_four_digit(designation, point_count=200):
 
     return polygon_x, polygon_y
 
+def naca_leading_edge_radius(designation):
+    """
+    Leading-edge radius of a NACA 4-digit section of unit chord, r = 1.1019 t^2 (the 0.2969 sqrt(x) term).
+
+    Returns the radius as a fraction of chord.
+    """
+
+    thickness = int(designation[2:]) / 100 # t
+    return 1.1019 * thickness * thickness
+
 def place_section(polygon_x, polygon_y, chord, angle_degrees, leading_edge_x, lowest_y, inverted=True):
     """
     Place a unit-chord section in lattice units: optionally inverted, rotated about the leading edge

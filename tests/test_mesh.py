@@ -229,3 +229,14 @@ def test_inspect_mesh_far_offset_and_degenerate():
     assert far_report["watertight"]
     assert collapsed_report["degenerate_triangles"] == 1
     assert not collapsed_report["watertight"]
+
+# test 13: smallest radius of an icosphere is near its radius and never above it (uneven facets push the 1st
+# percentile low, so the warning errs early, never late); a box has only creases, so none
+def test_smallest_radius():
+
+    sphere_triangles = icosphere((0.0, 0.0, 0.0), 2.0, subdivisions=3)
+    box_triangles = box_mesh((0.0, 0.0, 0.0), (1.0, 2.0, 3.0))
+    radius_ratio = inspect_mesh(sphere_triangles, 1.0)["smallest_radius"] / 2.0
+
+    assert 0.8 < radius_ratio <= 1.0
+    assert inspect_mesh(box_triangles, 1.0)["smallest_radius"] == float("inf")
