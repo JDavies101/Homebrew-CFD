@@ -34,13 +34,43 @@ folder.
 
 ## Main window
 
-- **Home:** New study (Ctrl+N), New from a template, Open, Save, Save as; Import STL, Remove part.
-- **View:** Fit, Orthographic, the standard views; Voxels (the geometry preview); Console, Reset layout.
-- **Run:** Run (F5), Stop (Shift+F5).
-- **Results:** the coefficient monitors of the current or last run.
+- **Home:** New from a template, Open, Save, Save as; Import STL, Remove part. Ctrl+N opens the start page.
+- **View:** Fit, Orthographic, the standard views; Voxels (the geometry preview); Reset layout.
+- **Run:** Run (F5) runs the selected study; Stop (Shift+F5); New study.
 
-The left pane is the setup tree (Solver, Flow, Domain, Models, Timing, Geometry). The middle pane edits the
-selected node. The right pane shows the case in cells and the summary: the verdict, derived numbers, the
-estimate, every part's size and warnings, and the last run.
+The left half holds the tree and the settings of the selected node:
 
-Inputs are locked while a run or a geometry preview is in progress; the tree stays navigable.
+- **Case:** Flow, Domain, Models, Geometry (one node per part). A part shows only the settings its kind uses.
+- **Study:** one node per study. A study is one way of solving the case: its type, its solver and timing
+  settings, and an optional parametric sweep below it.
+- **Results:** one node per study that has run: its force coefficients, or the sweep plot of a parametric
+  study.
+
+The right half shows the selected item (the case in cells, a run's coefficients, or a sweep plot) above three
+tabs: Summary (the verdict, derived numbers, the estimate, every part's size and warnings, the last run),
+Console (what the solver prints) and Queue (once a parametric sweep has run).
+
+Inputs are locked while a run or a geometry preview is in progress; the tree stays navigable. Save on a case
+that has never been saved asks for a name, like Save as.
+
+## Studies
+
+Right-click **Study > New study** (or Run > New study). A new study copies the case's solver and timing; edit
+them on the study's node. Run (F5) or **Run study** writes the study to the project's `studies\` folder and runs
+it. A study that has run shows **Run again**: it runs the study with its current settings and replaces its
+earlier results, after a confirmation.
+
+A parametric sweep runs the same study once per value. Right-click a study that has not run yet and choose
+**Add parametric sweep**, then on the sweep's node pick the part, the parameter (position y in cells, or
+angle in degrees) and the values, as a list or as start, end and count. The node shows the number of runs and
+the total time. The runs queue one after another; the Results node of the study plots C_x and C_y against
+the swept value.
+
+## Queue
+
+The Queue tab lists the runs waiting and the one running. Waiting runs can be removed or moved; Clear queue
+drops them all. Pause lets the current run finish and then holds the queue; Start/Resume continues it. Stop
+ends the run in progress and the rest of its study.
+
+Stop needs two clicks within three seconds (the button turns to Stop?), on the ribbon or on the square next
+to the progress bar.
