@@ -594,18 +594,19 @@ gates do not.
   - **App:** run queue, parametric sweeps (ride height, angle) as one study, run comparison on the existing
     coefficients.
   - **Gate:** suite green; each sweep point reproduces a single run of the same case; run 151.
-  - **Blocker found by the first study (runs 177-184):** wing C_y varies 12% over a one-cell move of the
-    wing (-0.3368, -0.3443, -0.3293, -0.3020, -0.3355 at y 24.5 to 25.5), periodic in the lattice phase.
-    `q_from_sdf` builds neighbor solids without wrap, so every link crossing a periodic boundary is dropped:
-    364 of 3456 wing links (xz / yz diagonals at k = 0 and nz - 1) get no Bouzidi treatment at every
-    position. Affects SDF and STL parts on periodic axes (the quasi-2D wing runs since 4.4); the analytic
-    cylinder q spans z and is unaffected. Fix: periodic wrap in `q_from_sdf`, then repeat the placement
-    study; pass = C_y within 1% over the cell. Logged wing results stand as relative trends at half-cell
-    positions until rerun.
+  - **Found by the first study (runs 177-234):** wing C_y depended on the sub-cell position of the wing.
+    Two defects fixed: links across periodic faces were dropped (10% of the wing's links), and a trailing
+    edge thinner than a cell was invisible to Bouzidi (thin-wall links). The remaining spread is the
+    leading-edge resolution, recorded as E7 (section 7a).
+  - **Remaining:** pre-run warning for an under-resolved leading edge (NACA nose radius in cells; smallest
+    curvature radius in cells for STL parts, in the import report); study dialog warning when position steps
+    are not multiples of 0.5 cells; queue per project with Clear all; layout rework (tree with Study and
+    Results branches, two-click stop, Save / Save as behavior, spin-box arrows, form fields per part kind).
 - v0.5.0 - outputs.
   - **Engine:** one output-definition system evaluated while the solver runs: time-averaged velocity and
     pressure with RMS accumulated on the GPU, point / line probes, planes, surface C_p. Checkpoints share the
-    same field I/O: write f and the accumulators, restart from them.
+    same field I/O: write f and the accumulators, restart from them. Force by surface region plus a
+    momentum-flux box balance (now `tools/force_regions.py`) becomes a supported output.
   - **App:** field views, probes on the monitors, comparisons and exports read these outputs. Experimental
     data as input (pressure taps, force balance, PIV overlaid on results and used as comparison bounds).
     Default outputs on every run (per-part coefficients with mean, SE, drift and the averaging window
@@ -618,7 +619,9 @@ gates do not.
     outlet_pressure read f twice), boundary-link / solid lists instead of full-grid scans in `_bounce_back`
     and `_drag_mask`, GPU kernel or bounding-box culling for `extruded_section_sdf`. Then AA-pattern in-place
     streaming (drops f_new, about 40% more cells). FP16 storage with FP32 arithmetic is research and ships
-    only if the ladder passes. Bouzidi walls on the Ahmed body.
+    only if the ladder passes. Bouzidi walls on the Ahmed body. Force sums with float64 or compensated
+    accumulation (float32 atomics over thousands of links of size ~0.06 that cancel to a small net give
+    run-to-run noise of about 1% of a weak force; float64 atomics may be missing on Vulkan).
   - **App:** memory estimate for the new layout, wheel body template, 3D front wing case.
   - **Gate:** every reference run reproduces exactly or within its standard error, with MLUPS logged; the
     full ladder plus E1 and E6 at the new resolution (Ahmed at H = 64 or more).
@@ -637,7 +640,8 @@ gates do not.
     does not claim every .json); signed builds; complete manual and in-app tutorials.
   - **Gate:** every validation gate green on the release build.
 - After v1.0: D3Q15 / D3Q27 (section 8), 2D engine parity with the 3D physics, mixed precision beyond v0.6.0,
-  full car, thermal and aeroacoustic extensions (scope note below), and rotors driven by the flow (a
+  local grid refinement (resolves leading edges and other small radii on a 3D car without refining the whole
+  domain, E7), full car, thermal and aeroacoustic extensions (scope note below), and rotors driven by the flow (a
   free-spinning part whose angular velocity follows from the aerodynamic torque and its inertia, instead of a
   prescribed rpm). Apple version: a separate repository (not a fork; no shared code), native SwiftUI +
   Metal, one codebase for iPad, iPhone and macOS, built on my Mac. Scope: 2D D2Q9 first (TRT, bounce-back,
@@ -842,6 +846,38 @@ stays at h/c 0.3 and every relative change agrees to within 1.5 percentage point
 itself, same sign everywhere). Relative trends are therefore more robust to resolution than absolute
 coefficients, which supports the project's stated accuracy target; the Ahmed body could not show this
 because its 25 and 35 degree cases are in the same separated regime at Re_H 30000.
+
+These wing results (E5 and this table) were run before the periodic and thin-wall link fixes (E7). They
+stand as relative trends, since every point sat at the same half-cell lattice position; absolute -CL values
+moved by those fixes (template wing C_y -0.3368 before, -0.3987 after).
+
+### E7: sub-cell placement (NACA 4412 inverted, alpha 4, runs 177-234)
+
+Moving a part by a fraction of a cell must not change its forces beyond the resolution error. The first
+parametric study showed the wing's C_y changing by up to 12% within one cell, periodic in the lattice phase.
+Each step below changes one thing and repeats a placement study (y in quarter cells):
+
+| Step | Case | Spread over one cell |
+|---|---|---|
+| Found | ground effect, Re_c 5000, c = 80 (runs 177-184) | 12% |
+| Periodic links fixed | 364 of 3456 wing links crossed the periodic z face and were dropped (runs 185-189) | 9% |
+| Not the cause | Reynolds number (Re_c 2000, runs 197-201), turbulence model off (211-214), ground removed (215-218) | 11% |
+| Not the cause | Bouzidi wall location and force on flat, shallow-angle (slope 1/16) and curved walls; exact q; box momentum balance equals the link sums | within 0.06 cells, 1% |
+| Trailing edge | blunt 2.5-cell base (diagnostic, runs 219-222) | 5% |
+| Thin-wall links | sub-cell trailing edge seen by Bouzidi; lift +25% (runs 224-227) | 7.3% |
+| Resolution | thin walls, c = 120 (runs 229-232) | 5.4% |
+
+- Cause of the remaining spread (runs 233-234): the leading edge. Its radius is about 1.6% of chord (1.3
+  cells at c = 80, 1.9 at c = 120); the lower leading-edge station carries half the difference between
+  positions and the rest is the circulation change it sets. It falls at about first order with resolution
+  (factor 0.74 from c = 80 to 120).
+- For comparison, a cylinder (D = 45, analytic q, Re 20) spreads 1.0% over the same placements (runs
+  207-210): linear Bouzidi on a well-resolved curve.
+- Uncertainty to state with wing results: about +/-3.5% (c = 80) and +/-2.7% (c = 120) from sub-cell
+  placement; absolute lift also changes 15% between c = 80 and 120 with thin walls (not converged).
+- Practice until local refinement exists: keep the leading-edge radius at 5 cells or more where the
+  coefficients matter (chord about 300 for NACA 4412, affordable quasi-2D), move parts in steps of 0.5 cells
+  in studies, or report the placement uncertainty with the trend.
 
 ## 8. Additional lattice stencils (future)
 
