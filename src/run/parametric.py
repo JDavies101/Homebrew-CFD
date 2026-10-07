@@ -1,15 +1,85 @@
-# parametric studies: one swept parameter, one case file per value
+# studies: solver and timing settings, optionally one swept parameter, one case file per run
 import copy
 import json
+from dataclasses import dataclass, fields, asdict, replace
 from pathlib import Path
 import numpy as np
-from src.run.case_file import save_case_file
+from src.run.case import Timing, check_choice
+from src.run.case_file import save_case_file, load_case_file
+from src.run.project import check_project_name
 from src.run.run_folder import case_hash, write_json_atomic
+
+study_schema_version = 2
+study_types = {"steady": "Steady (averaged forces)"}
 
 # parameter -> {geometry kind: (field, index into a list field or None)}
 sweep_parameters = {"position_y": {"naca": ("leading_edge", 1), "stl": ("offset", 1), "sphere": ("center", 1), "cylinder": ("center", 1)},
                     "angle": {"naca": ("angle_degrees", None), "ahmed": ("slant_angle", None)}}
 sweep_labels = {"position_y": "Position y (cells)", "angle": "Angle (degrees)"}
+
+@dataclass
+class StudySolver:
+    """
+    The solver choices a study sets for its runs (the case file keeps the same fields as the defaults a new study copies).
+    """
+
+    collision: str = "regularized"
+    inlet: str = "neem_open"
+    start: str = "rest_ramp"
+    allow_below_floor: bool = False
+
+def study_defaults(case_file):
+    """
+    The solver and timing settings a new study starts from: the case's own.
+
+    Returns (StudySolver, Timing), both copies.
+    """
+
+    solver = StudySolver(case_file.collision, case_file.inlet, case_file.start, case_file.allow_below_floor)
+
+    return solver, replace(case_file.timing)
+
+def apply_study_settings(case_file, solver, timing):
+    """
+    A deep copy of the case with the study's solver and timing fields set; nothing else changes.
+
+    Returns a CaseFile.
+    """
+
+    solver_names = [item.name for item in fields(StudySolver)]
+    applied = copy.deepcopy(case_file)
+    for name, value in solver.items():
+        if name not in solver_names:
+            raise ValueError(f"{name} is not a study solver setting")
+
+        setattr(applied, name, value)
+
+    applied.timing = replace(applied.timing, **timing)
+
+    return applied
+
+def check_study_name(name):
+    """
+    Raise if a study name cannot be a folder name everywhere (letters, digits, space, _ - . only; not empty).
+    """
+
+    try:
+        check_project_name(name)
+    except ValueError:
+        raise ValueError(f"study name {name!r}: use letters, digits, space, _ - . only") from None
+
+def default_study_name(studies_directory, taken):
+    """
+    The first name of the form Study N not used by a folder in the studies directory or by a name in taken.
+
+    Returns the name.
+    """
+
+    number = 1
+    while f"Study {number}" in taken or (Path(studies_directory) / f"Study {number}").exists():
+        number += 1
+
+    return f"Study {number}"
 
 def sweep_choices(spec):
     """
@@ -95,17 +165,29 @@ def unique_study_name(studies_directory, base_name):
 
     return name
 
-def write_study(folder, base_case_file, part_name, parameter, values, study_name):
+def write_study(folder, base_case_file, study):
     """
-    Create the study folder with one case file per value and study.json describing the sweep.
+    Create the study folder with study.json (schema 2) and one case file per swept value, or one file without a sweep.
+    Every case file is the base case with the study's solver and timing applied (and the sweep variant when there is one).
+    The study dict holds name, type, solver and timing as dicts, and sweep (None or part, parameter, values).
 
-    Returns (study dict, list of (variant CaseFile, path)).
+    Returns (study dict as written, list of (CaseFile, path)).
     """
 
-    variants = make_variants(base_case_file, part_name, parameter, values, study_name)
+    name = study["name"]
+    check_study_name(name)
+    check_choice("study type", study["type"], tuple(study_types))
+    applied = apply_study_settings(base_case_file, study["solver"], study["timing"])
+    sweep = study["sweep"]
+    if sweep is None:
+        applied.name = name
+        variants = [applied]
+    else:
+        variants = make_variants(applied, sweep["part"], sweep["parameter"], sweep["values"], name)
+
     folder = Path(folder)
     if folder.exists():
-        raise ValueError(f"a study named {study_name} already exists in this project")
+        raise ValueError(f"a study named {name} already exists in this project")
 
     folder.mkdir(parents=True, exist_ok=False)
 
@@ -115,17 +197,36 @@ def write_study(folder, base_case_file, part_name, parameter, values, study_name
         save_case_file(variant, path)
         written.append((variant, path))
 
-    study = {"schema_version": 1, "name": study_name, "part": part_name, "parameter": parameter, "values": [float(value) for value in values],
-             "base_case_hash": case_hash(base_case_file), "cases": [path.name for _, path in written]}
-    write_json_atomic(folder / "study.json", study)
+    record_sweep = None
+    if sweep is not None:
+        record_sweep = {"part": sweep["part"], "parameter": sweep["parameter"], "values": [float(value) for value in sweep["values"]]}
 
-    return study, written
+    record = {"schema_version": study_schema_version, "name": name, "type": study["type"], "solver": dict(study["solver"]),
+              "timing": dict(study["timing"]), "sweep": record_sweep, "base_case_hash": case_hash(base_case_file),
+              "cases": [path.name for _, path in written]}
+    write_json_atomic(folder / "study.json", record)
+
+    return record, written
 
 def load_study(folder):
     """
-    Read study.json from a study folder.
+    Read study.json from a study folder. A schema 1 folder (a sweep only) is read as a steady study whose
+    solver and timing come from its first case file.
 
-    Returns the study dict.
+    Returns the study dict in the schema 2 shape.
     """
 
-    return json.loads((Path(folder) / "study.json").read_text())
+    folder = Path(folder)
+    record = json.loads((folder / "study.json").read_text())
+    version = record.get("schema_version")
+    if version == study_schema_version:
+        return record
+
+    if version != 1:
+        raise ValueError(f"study schema {version}, this build reads 1 and 2")
+
+    solver, timing = study_defaults(load_case_file(folder / record["cases"][0]))
+    sweep = {"part": record["part"], "parameter": record["parameter"], "values": record["values"]}
+
+    return {"schema_version": study_schema_version, "name": record["name"], "type": "steady", "solver": asdict(solver),
+            "timing": asdict(timing), "sweep": sweep, "base_case_hash": record["base_case_hash"], "cases": record["cases"]}

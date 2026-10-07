@@ -18,6 +18,7 @@ class MonitorPlot(QWidget):
         super().__init__(parent)
         self.plot = pyqtgraph.PlotWidget(background=theme.panel)
         for side in ("left", "bottom"):
+            self.plot.getAxis(side).enableAutoSIPrefix(False)
             self.plot.getAxis(side).setPen(theme.grid)
             self.plot.getAxis(side).setTextPen(theme.muted)
         self.plot.showGrid(x=True, y=True, alpha=0.3)

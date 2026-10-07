@@ -1,10 +1,27 @@
 # property form: one editor per dataclass field, writing accepted edits straight back into the object
 import dataclasses
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import QCheckBox, QComboBox, QFormLayout, QLineEdit, QWidget
 from app import theme
 
 invalid_style = f"border: 1px solid {theme.error}"
+
+# geometry part fields: the common ones always, the rest by kind
+part_common_fields = ("name", "kind", "reference_area", "wall")
+part_kind_fields = {"stl": ("path", "cells_per_unit", "offset"),
+                    "naca": ("section", "chord", "angle_degrees", "leading_edge"),
+                    "sphere": ("center", "radius"),
+                    "cylinder": ("center", "radius", "spin_ratio"),
+                    "ahmed": ("x_start", "body_height", "slant_angle", "nose")}
+
+def part_field_names(kind):
+    """
+    The geometry fields a part of this kind uses: the common fields, then the kind's own.
+
+    Returns a tuple of field names (the common ones only for an unknown kind).
+    """
+
+    return part_common_fields + part_kind_fields.get(kind, ())
 
 def format_value(value):
     """
@@ -45,6 +62,7 @@ class PropertyForm(QWidget):
     """
 
     changed = Signal()
+    rejected = Signal(str) # why a typed edit was refused
 
     def __init__(self, target, choices, field_names=None, parent=None, labels=None):
         """
@@ -55,15 +73,27 @@ class PropertyForm(QWidget):
         super().__init__(parent)
         self.target = target
         self.labels = labels or {}
+        self.choices = choices
         self.editors = {}
-        layout = QFormLayout(self)
-        for item in dataclasses.fields(target):
+        self.layout_rows = QFormLayout(self)
+        self.build(field_names)
+
+    def build(self, field_names):
+        """
+        Replace the rows with one per chosen field (all fields when field_names is None).
+        """
+
+        while self.layout_rows.rowCount():
+            self.layout_rows.removeRow(0)
+
+        self.editors = {}
+        for item in dataclasses.fields(self.target):
             if field_names is not None and item.name not in field_names:
                 continue
 
-            editor = self.editor_for(item, choices)
+            editor = self.editor_for(item, self.choices)
             self.editors[item.name] = editor
-            layout.addRow(self.labels.get(item.name, item.name.replace("_", " ")), editor)
+            self.layout_rows.addRow(self.labels.get(item.name, item.name.replace("_", " ")), editor)
 
     def editor_for(self, item, choices):
         """
@@ -93,15 +123,17 @@ class PropertyForm(QWidget):
     
     def commit_text(self, editor, name, annotation):
         """
-        Parse a finished text edit; write it if it fits the type, else mark the editor and keep the old value.
+        Parse a finished text edit; write it if it fits the type, else mark the editor, say why and keep the old value.
         """
 
         try:
             value = parse_value(editor.text(), annotation)
-        
-        except ValueError:
+
+        except ValueError as error:
             editor.setStyleSheet(invalid_style)
             editor.setToolTip(f"not a valid {annotation}")
+            label = name.replace("_", " ")
+            self.rejected.emit(f"{label[:1].upper() + label[1:]} not changed: {error}")
             return
         
         editor.setStyleSheet("")
@@ -115,3 +147,28 @@ class PropertyForm(QWidget):
 
         setattr(self.target, name, value)
         self.changed.emit()
+
+class PartForm(PropertyForm):
+    """
+    The form of one geometry part: only the fields its kind uses, rebuilt when the kind changes.
+    """
+
+    def __init__(self, target, choices, parent=None):
+        """
+        Rows for the part's present kind.
+        """
+
+        super().__init__(target, choices, part_field_names(target.kind), parent)
+
+    def write(self, name, value):
+        """
+        Store the value; a new kind rebuilds the rows once the drop-down has finished its signal.
+        An ahmed body has staircase walls only, so that kind sets them.
+        """
+
+        if name == "kind" and value == "ahmed":
+            self.target.wall = "staircase"
+
+        super().write(name, value)
+        if name == "kind":
+            QTimer.singleShot(0, lambda: self.build(part_field_names(self.target.kind)))

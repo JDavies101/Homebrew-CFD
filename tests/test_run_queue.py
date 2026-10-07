@@ -1,4 +1,5 @@
 # tests for the run queue model
+from pathlib import Path
 from src.run.case_file import load_case_file
 from app.run_queue import RunQueue
 
@@ -63,16 +64,19 @@ def test_remove(tmp_path):
     assert queue.entries[0]["id"] == running["id"]
     assert not (tmp_path / f"{pending['id']}_sphere.json").exists()
 
-# test 6: clear_finished keeps pending and running entries
-def test_clear_finished(tmp_path):
+# test 6: move passes over finished and running entries, which keep their place
+def test_move_skips_inactive(tmp_path):
 
     queue = RunQueue(tmp_path)
+    first = queue.add(case_file, tmp_path)
     done = queue.add(case_file, tmp_path)
-    waiting = queue.add(case_file, tmp_path)
-    queue.mark(done["id"], "blow_up")
-    queue.clear_finished()
+    second = queue.add(case_file, tmp_path)
+    queue.mark(done["id"], "finished")
+    queue.move(second["id"], -1)
+    queue.move(done["id"], 1)
 
-    assert [entry["id"] for entry in queue.entries] == [waiting["id"]]
+    assert [entry["id"] for entry in queue.entries] == [second["id"], done["id"], first["id"]]
+
 # test 7: study and value are stored and study_entries returns that study in queue order
 def test_study_entries(tmp_path):
 
@@ -88,3 +92,46 @@ def test_study_entries(tmp_path):
     assert [entry["id"] for entry in reloaded.study_entries(study_path)] == [first["id"], second["id"]]
     assert reloaded.find(second["id"])["value"] == 2.5
     assert reloaded.find(first["id"])["study"] == study_path
+
+# test 8: project_entries returns only the entries of that runs folder, in queue order
+def test_project_entries(tmp_path):
+
+    queue = RunQueue(tmp_path)
+    first = queue.add(case_file, tmp_path / "project_a" / "runs")
+    queue.add(case_file, tmp_path / "project_b" / "runs")
+    second = queue.add(case_file, tmp_path / "project_a" / "runs")
+
+    assert [entry["id"] for entry in queue.project_entries(tmp_path / "project_a" / "runs")] == [first["id"], second["id"]]
+    assert len(queue.project_entries(tmp_path / "project_c" / "runs")) == 0
+
+# test 9: next_pending with a runs folder skips pending entries of other projects
+def test_next_pending_by_runs_directory(tmp_path):
+
+    queue = RunQueue(tmp_path)
+    queue.add(case_file, tmp_path / "project_a" / "runs")
+    wanted = queue.add(case_file, tmp_path / "project_b" / "runs")
+
+    assert queue.next_pending(tmp_path / "project_b" / "runs")["id"] == wanted["id"]
+    assert queue.next_pending(tmp_path / "project_c" / "runs") is None
+
+# test 10: clear_pending drops this project's pending entries and snapshots; running, finished and other projects stay;
+# active_entries lists only pending and running
+def test_clear_pending_and_active_entries(tmp_path):
+
+    queue = RunQueue(tmp_path)
+    runs_directory = tmp_path / "project_a" / "runs"
+    pending = queue.add(case_file, runs_directory)
+    done = queue.add(case_file, runs_directory)
+    running = queue.add(case_file, runs_directory)
+    other = queue.add(case_file, tmp_path / "project_b" / "runs")
+    queue.mark(done["id"], "finished")
+    queue.mark(running["id"], "running")
+    active_before = [entry["id"] for entry in queue.active_entries(runs_directory)]
+    queue.clear_pending(runs_directory)
+
+    assert active_before == [pending["id"], running["id"]]
+    assert [entry["id"] for entry in queue.entries] == [done["id"], running["id"], other["id"]]
+    assert not Path(pending["case"]).exists()
+    assert Path(done["case"]).exists()
+    assert Path(running["case"]).exists()
+    assert Path(other["case"]).exists()

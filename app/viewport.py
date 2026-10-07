@@ -7,6 +7,7 @@ from src.geometry.ahmed_body import ahmed_body
 from src.geometry.mesh import read_stl, inspect_mesh
 from src.geometry.preview import wall_points
 from src.run.estimate import case_device_bytes, run_seconds, format_duration
+from src.run.case_file import ahmed_fit_error
 from app import theme
 
 minimum_cells_across = 10 # fewer cells than this across a part's smallest in-plane size resolves it poorly
@@ -138,6 +139,10 @@ def part_surface(spec, domain, stl_cache=None):
                                 height=float(domain.nz), resolution=96)
 
     if spec.kind == "ahmed":
+        fit_error = ahmed_fit_error(spec, domain)
+        if fit_error is not None:
+            raise ValueError(fit_error)
+
         return mask_surface(ahmed_body(domain.nx, domain.ny, domain.nz, spec.x_start, spec.body_height, spec.slant_angle, spec.nose))
 
     # stl: read once per path, then scale and offset like build_part does

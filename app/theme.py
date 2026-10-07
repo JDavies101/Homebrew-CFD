@@ -44,6 +44,11 @@ QDockWidget::title {{ background: {raised}; padding: 4px 8px; }}
 QToolTip {{ background: {raised}; color: {text}; border: 1px solid {grid}; }}
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{ border: 1px solid {grid}; border-radius: 3px; padding: 2px 4px; }}
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{ border-color: {accent}; }}
+QSpinBox::up-button, QDoubleSpinBox::up-button {{ subcontrol-origin: border; subcontrol-position: top right; width: 16px; border-left: 1px solid {grid}; }}
+QSpinBox::down-button, QDoubleSpinBox::down-button {{ subcontrol-origin: border; subcontrol-position: bottom right; width: 16px; border-left: 1px solid {grid}; }}
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover, QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{ background: {hover}; }}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ image: url("{icons_directory.as_posix()}/spin_up.svg"); width: 8px; height: 8px; }}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ image: url("{icons_directory.as_posix()}/spin_down.svg"); width: 8px; height: 8px; }}
 QToolButton#card {{ text-align: left; padding: 8px; border: 1px solid {grid}; border-radius: 6px; }}
 QToolButton#card:checked {{ border-color: {accent}; background: {hover}; }}
 """

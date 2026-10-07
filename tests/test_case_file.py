@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from src.run.case import Flow, Domain, Turbulence, Timing
-from src.run.case_file import GeometrySpec, CaseFile, save_case_file, load_case_file, build_part, stl_spec, part_free_case
+from src.run.case_file import GeometrySpec, CaseFile, save_case_file, load_case_file, build_part, stl_spec, part_free_case, ahmed_fit_error
 from src.geometry.mesh import box_mesh, inspect_mesh
 from src.geometry.sphere_body import sphere
 from src.geometry.cylinder_body import cylinder
@@ -160,4 +160,20 @@ def test_ahmed_bouzidi_refused():
     except ValueError:
         refused = True
 
+    assert refused
+
+# test 12: an Ahmed body too wide for a thin domain is refused with the reason before voxelizing; it fits the template domain
+def test_ahmed_fit():
+
+    spec = GeometrySpec(name="ahmed", kind="ahmed", reference_area=1.0, wall="staircase", x_start=116, body_height=32)
+    thin = ahmed_fit_error(spec, Domain(nx=800, ny=400, nz=4))
+    wide = ahmed_fit_error(spec, Domain(nx=800, ny=400, nz=128))
+    refused = False
+    try:
+        build_part(spec, Domain(nx=800, ny=400, nz=4), "cpu", 0.05)
+    except ValueError:
+        refused = True
+
+    assert "nz" in thin
+    assert wide is None
     assert refused
